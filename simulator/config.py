@@ -24,8 +24,8 @@ PHYSICS_HZ = 240  # frecuencia del paso de física (sub-pasos por frame)
 WHEEL_NAME_HINTS = ("thrustmaster", "t300", "t150", "tmx", "t248", "tx", "t-gt")
 
 AXIS_STEERING = 0        # eje de dirección
-AXIS_THROTTLE = 1        # acelerador
-AXIS_BRAKE = 2           # freno
+AXIS_THROTTLE = 2        # acelerador (en el T300RS es el eje 2)
+AXIS_BRAKE = 1           # freno (en el T300RS es el eje 1)
 AXIS_CLUTCH = 3          # embrague (si no existe, se ignora)
 
 # Los pedales Thrustmaster reposan en +32767 y bajan al pisar.

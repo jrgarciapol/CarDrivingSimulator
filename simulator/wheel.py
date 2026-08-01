@@ -251,7 +251,11 @@ class ForceFeedback:
         # --- texturas --------------------------------------------------
         mag = 0.0
         period_ms = 50
-        if surface == "kerb":
+        if getattr(car_state, "abs_active", False):
+            # pulsación del ABS en el volante
+            mag = 0.30
+            period_ms = 35
+        elif surface == "kerb":
             mag = cfg.FFB_KERB_MAGNITUDE
             period_ms = max(8, int(1000.0 / max(8.0, speed_ms * 3.0)))
         elif surface == "grass":

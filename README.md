@@ -16,14 +16,30 @@ feedback realista** calculado a partir de la física del vehículo.
   ralentí del motor.
 - Sacudida al cambiar de marcha.
 
-**Física del vehículo:**
-- Modelo de bicicleta con deriva de neumáticos (curva tipo Pacejka con
-  saturación): subviraje estable en el límite y sobreviraje de potencia si
-  pisas a fondo en curva (tracción trasera con círculo de fricción).
-- Transferencia de carga al frenar/acelerar.
-- Motor con curva de par, limitador, y caja de 6 marchas + marcha atrás con
-  levas.
+**Física del vehículo (4 ruedas independientes):**
+- Cada rueda tiene su velocidad de giro: **bloqueo de frenada real** (una
+  rueda bloqueada agarra menos y no dirige), patinaje de tracción y **ABS**
+  desconectable por configuración.
+- Neumáticos con curva combinada tipo Pacejka (círculo de fricción continuo),
+  **sensibilidad a la carga** y retardo de respuesta lateral (*relaxation
+  length*).
+- **Suspensión completa**: altura, cabeceo y balanceo con muelle y
+  amortiguador por rueda y barras estabilizadoras por eje. La transferencia
+  de carga (frenar carga el morro, la curva carga las ruedas exteriores)
+  emerge de la suspensión; apurando, la rueda interior puede llegar a
+  levantarse.
+- **Tracción configurable**: propulsión (RWD), delantera (FWD) o total (AWD),
+  con **diferencial** abierto, autoblocante o bloqueado por eje.
+- Motor con curva de par, **freno motor**, limitador con histéresis y caja de
+  6 marchas + marcha atrás con levas.
+- **Pendientes y rasantes físicas**: las subidas frenan, las bajadas empujan
+  y las crestas descargan el coche (se siente en el volante).
+- Superficie por rueda: con dos ruedas en la hierba el coche tira hacia ese
+  lado, como en la realidad.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
+- Verificado con una batería de 23 pruebas físicas (`python tests/test_physics.py`):
+  0-100 en ~7 s, frenada 100-0 en ~39 m con ABS (y peor sin él), subviraje
+  estable en el límite, AWD saliendo más rápido que RWD, etc.
 
 **Entorno:** circuito de 2,8 km con curvas rápidas, chicane, horquilla y
 cambios de rasante, gráficos pseudo-3D, cronómetro de vueltas y sonido de
@@ -86,31 +102,44 @@ Otros ajustes útiles en `config.py`:
 | `FFB_INVERT` | Ponlo a `True` si el volante empuja hacia fuera de la curva |
 | `FFB_KERB_MAGNITUDE` | Fuerza de la vibración de los pianos |
 | `WHEEL_ROTATION_DEG` | Grados configurados en el panel Thrustmaster |
+| `DRIVE_TYPE` | `"RWD"` propulsión, `"FWD"` delantera, `"AWD"` total |
+| `DIFF_TYPE` | Diferencial: `"open"`, `"lsd"` o `"locked"` |
+| `ABS_ENABLED` | `False` para frenar sin ayudas (bloqueos reales) |
 | `TIRE_MU` | Agarre del asfalto (baja a ~0.7 para "lluvia") |
 | `TIRE_REAR_GRIP_FACTOR` | <1.0 hace el coche sobrevirador (drift) |
+| `ARB_FRONT` / `ARB_REAR` | Estabilizadoras: su reparto ajusta el equilibrio |
+| `SUSP_SPRING_*` / `SUSP_DAMPER` | Rigidez y amortiguación de la suspensión |
 
 ## Consejos de conducción
 
 - El volante comunica: cuando en plena curva **se aligera de golpe**, el tren
   delantero está saturado — abre un poco la dirección o levanta gas.
 - Frena en recta: al frenar el peso pasa al eje delantero y el trasero pierde
-  agarre.
-- En 2ª/3ª a fondo el trasero puede patinar (aviso `TRACCION` en pantalla).
-- Los pianos vibran con frecuencia proporcional a la velocidad; la hierba
-  resta mucho agarre.
+  agarre. Con `ABS_ENABLED = False`, pasarte de frenada **bloquea las
+  ruedas**: el coche sigue recto aunque gires (aviso `BLOQUEO` en pantalla) y
+  frena más largo.
+- En 2ª/3ª a fondo el trasero puede patinar (aviso `TRACCION`); en las
+  crestas el coche se aligera y pierde agarre.
+- Los pianos vibran con frecuencia proporcional a la velocidad (solo en el
+  lado que los pisa); la hierba resta mucho agarre y frena el coche.
+- Prueba `DRIVE_TYPE = "FWD"` o `"AWD"` y los tres diferenciales: el
+  comportamiento al acelerar en curva cambia por completo.
 
 ## Estructura del código
 
 ```
 simulator/
-  main.py     bucle principal (eventos, física a 120 Hz, render, FFB)
+  main.py     bucle principal (eventos, física a 240 Hz, render, FFB)
   config.py   toda la configuración: mapeo, FFB, física, circuito
   wheel.py    entrada DirectInput del volante y efectos de force feedback
-  physics.py  modelo del vehículo (neumáticos, motor, transmisión)
-  track.py    definición del circuito y superficies
+  physics.py  modelo del vehículo de 4 ruedas (neumáticos, suspensión,
+              transmisión, diferenciales, ABS, motor)
+  track.py    circuito: curvas, pendientes, superficies y baches
   render.py   carretera pseudo-3D, coche y HUD
   audio.py    sonido de motor sintetizado
   font.py     fuente bitmap del HUD
+tests/
+  test_physics.py  bateria de 23 pruebas del modelo fisico (sin volante)
 ```
 
 ## Solución de problemas

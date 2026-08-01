@@ -125,14 +125,10 @@ def main(argv=None):
         # ------------------------------------------------ física
         while accumulator >= physics_dt:
             st = car.state
-            surface, mu = track.surface_at(st.n, st.s)
-            kappa = track.kappa_at(st.s)
+            surface, _ = track.surface_at(st.n, st.s)
             prev_s = st.s
             car.step(physics_dt, wheel.steering, wheel.throttle, wheel.brake,
-                     kappa, mu)
-            # resistencia extra sobre hierba
-            if surface == "grass" and abs(st.vx) > 1.0:
-                st.vx *= max(0.0, 1.0 - 0.35 * physics_dt)
+                     track)
             # cronometraje de vueltas
             lap_time += physics_dt
             if prev_s % track.length > st.s % track.length and st.vx > 1.0:

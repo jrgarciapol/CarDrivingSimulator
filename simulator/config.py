@@ -51,6 +51,9 @@ FFB_INVERT = False       # invierte el sentido de la fuerza si "empuja" hacia
                          # fuera de la curva en lugar de centrar el volante
 FFB_MAX_TORQUE_NM = 45.0 # par de columna que equivale al 100 % de fuerza
 
+FFB_COLUMN_DAMPING = 0.9     # Nm por rad/s de giro del volante: amortigua
+                             # el par calculado para evitar oscilaciones
+                             # del volante en recta a alta velocidad
 FFB_SPRING_LOWSPEED = 0.35   # muelle de centrado al aparcar (0..1)
 FFB_DAMPER_LOWSPEED = 0.55   # amortiguación a baja velocidad (0..1)
 FFB_DAMPER_HIGHSPEED = 0.08  # amortiguación residual en marcha (0..1)
@@ -68,13 +71,20 @@ CAR_MASS = 1250.0            # kg
 CAR_INERTIA_Z = 1900.0       # kg·m² (guiñada)
 CAR_INERTIA_PITCH = 2100.0   # kg·m² (cabeceo)
 CAR_INERTIA_ROLL = 550.0     # kg·m² (balanceo)
-CAR_CG_TO_FRONT = 1.18       # m, del centro de gravedad al eje delantero
-CAR_CG_TO_REAR = 1.42        # m, al eje trasero
-CAR_CG_HEIGHT = 0.52         # m
+WHEELBASE = 2.60             # m, batalla (distancia entre ejes)
+WEIGHT_DIST_FRONT = 0.546    # fracción del peso sobre el eje delantero,
+                             # como en la ficha técnica (0.546 = 54.6/45.4)
+CAR_CG_HEIGHT = 0.52         # m, altura del centro de gravedad
 CAR_TRACK_WIDTH = 1.55       # m, vía (distancia entre ruedas izda/dcha)
 CAR_WHEEL_RADIUS = 0.31      # m
 CAR_WHEEL_INERTIA = 1.4      # kg·m² por rueda
 STEER_RATIO = 12.0           # relación de dirección volante:rueda
+STEER_SCRUB_RADIUS = 0.04    # m, radio de pivotamiento: las fuerzas
+                             # longitudinales asimétricas tiran del volante
+
+# Derivados de la geometría (no editar: se calculan del reparto)
+CAR_CG_TO_FRONT = WHEELBASE * (1.0 - WEIGHT_DIST_FRONT)
+CAR_CG_TO_REAR = WHEELBASE * WEIGHT_DIST_FRONT
 
 # --- Transmisión / tracción ---
 DRIVE_TYPE = "RWD"           # "RWD" propulsión | "FWD" delantera | "AWD" total
@@ -90,6 +100,8 @@ TIRE_C = 1.4                 # forma (caída a ~81 % del pico al deslizar)
 TIRE_PEAK_SLIP_ANGLE_DEG = 7.0   # deriva del pico de agarre lateral
 TIRE_PEAK_SLIP_RATIO = 0.12      # deslizamiento longitudinal del pico
 TIRE_LOAD_SENS = 0.10        # caída de mu por unidad de sobrecarga relativa
+TIRE_LONG_GRIP_RATIO = 1.10  # elipse de fricción: el neumático aguanta un
+                             # 10 % más de fuerza longitudinal que lateral
 TIRE_RELAX_LENGTH = 0.6      # m, retardo de respuesta lateral del neumático
 TIRE_REAR_GRIP_FACTOR = 1.04 # agarre extra del eje trasero (subviraje base;
                              # <1.0 haría el coche sobrevirador)
@@ -104,10 +116,15 @@ ARB_FRONT = 26000.0          # estabilizadora delantera (N/m de diferencia)
 ARB_REAR = 14000.0           # estabilizadora trasera (más rígida delante
                              # -> más transferencia delante -> subviraje)
 
-# --- Frenos ---
-AERO_DRAG = 0.38             # 0.5*rho*Cd*A
+# --- Aerodinámica y resistencias ---
+AERO_DRAG = 0.38             # 0.5*rho*Cd*A (resistencia al avance)
+AERO_DOWNFORCE = 0.55        # N por (m/s)²: carga aerodinámica total
+                             # (~1700 N a 200 km/h, un turismo con apéndices)
+AERO_DF_FRONT_SHARE = 0.42   # fracción de la carga aero al eje delantero
 ROLLING_RESIST = 210.0       # N constantes
-BRAKE_FORCE_MAX = 16000.0    # N equivalentes con el pedal a fondo (supera
+
+# --- Frenos ---
+BRAKE_FORCE_MAX = 18500.0    # N equivalentes con el pedal a fondo (supera
                              # el agarre: sin ABS las ruedas se bloquean)
 BRAKE_BIAS_FRONT = 0.62
 ABS_ENABLED = True           # antibloqueo de frenos

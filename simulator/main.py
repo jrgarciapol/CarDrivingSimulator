@@ -11,6 +11,7 @@ Teclado (siempre activo):
   A / Z          subir / bajar marcha
   R              recolocar el coche
   F1             diagnostico de ejes y botones
+  F2             telemetria: circulo de friccion por rueda
   ESC            salir
 """
 
@@ -77,6 +78,7 @@ def main(argv=None):
     best_lap = None
     lap_count = 1
     show_debug = False
+    show_telemetry = False
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -93,6 +95,8 @@ def main(argv=None):
                     running = False
                 elif sym == sdl2.SDLK_F1:
                     show_debug = not show_debug
+                elif sym == sdl2.SDLK_F2:
+                    show_telemetry = not show_telemetry
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                 elif sym == sdl2.SDLK_a:
@@ -153,6 +157,8 @@ def main(argv=None):
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
+        if show_telemetry:
+            hud.draw_telemetry(car.state)
         sdl2.SDL_RenderPresent(renderer)
 
         frame += 1

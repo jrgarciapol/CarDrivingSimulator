@@ -278,6 +278,45 @@ class Hud:
             y += 20
 
 
+    def draw_telemetry(self, car_state):
+        """Superposición F2: círculo de fricción de cada rueda en vivo.
+        Eje X = deriva normalizada (alfa/alfa_pico), eje Y = deslizamiento
+        longitudinal normalizado (s/s_pico). El círculo marca rho = 1 (el
+        pico de agarre); el punto fuera del círculo = neumático saturado."""
+        W = cfg.WINDOW_WIDTH
+        box_x, box_y, box_w, box_h = W - 320, 130, 300, 360
+        self._fill(box_x, box_y, box_w, box_h, (0, 0, 0, 190))
+        font.draw_text(self.r, "F2: CIRCULO DE FRICCION", box_x + 12, box_y + 10, 2)
+        names = ("DI", "DD", "TI", "TD")
+        radius = 52
+        for i in range(4):
+            cx = box_x + 80 + (i % 2) * 145
+            cy = box_y + 90 + (i // 2) * 150
+            # aro rho = 1
+            sdl2.SDL_SetRenderDrawColor(self.r, 110, 110, 110, 255)
+            for deg in range(0, 360, 5):
+                a = math.radians(deg)
+                self._fill(cx + radius * math.cos(a) - 1,
+                           cy + radius * math.sin(a) - 1, 2, 2, (110, 110, 110))
+            # ejes
+            self._fill(cx - radius, cy, radius * 2, 1, (70, 70, 70))
+            self._fill(cx, cy - radius, 1, radius * 2, (70, 70, 70))
+            # punto de estado (saturado = rojo)
+            a_n = car_state.slip_angle[i] / math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
+            s_n = car_state.slip_ratio[i] / cfg.TIRE_PEAK_SLIP_RATIO
+            rho = math.hypot(a_n, s_n)
+            a_n = max(-1.5, min(1.5, a_n))
+            s_n = max(-1.5, min(1.5, s_n))
+            color = (255, 70, 50) if rho > 1.0 else (90, 230, 90)
+            self._fill(cx + a_n * radius - 3, cy - s_n * radius - 3, 6, 6, color)
+            # etiqueta y carga
+            font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)
+            load_frac = min(1.0, car_state.fz[i] / 8000.0)
+            self._fill(cx - radius, cy + radius + 6, radius * 2, 6, (60, 60, 60))
+            self._fill(cx - radius, cy + radius + 6,
+                       int(radius * 2 * load_frac), 6, (120, 180, 255))
+
+
 def _fmt_time(t):
     if t is None:
         return "--:--.-"

@@ -217,6 +217,41 @@ def main():
                          total_crest < cfg.CAR_MASS * 9.81 * 0.75,
                          f"carga={total_crest:.0f}N vs peso={cfg.CAR_MASS*9.81:.0f}N"))
 
+    # reparto de pesos derivado de la configuracion (ficha tecnica)
+    car = Car()
+    settle(car, flat, 1.5)
+    st = car.state
+    front_share = (st.fz[FL] + st.fz[FR]) / max(1.0, sum(st.fz))
+    results.append(check("reparto estatico = WEIGHT_DIST_FRONT",
+                         abs(front_share - cfg.WEIGHT_DIST_FRONT) < 0.02,
+                         f"medido={front_share:.3f} config={cfg.WEIGHT_DIST_FRONT}"))
+
+    # parado en bajada con freno: el morro se hunde (carga delantera extra)
+    car = Car()
+    downhill = SlopeTrack(grade=-0.10)
+    for _ in range(int(3.0 / DT)):
+        car.step(DT, 0.0, 0.0, 1.0, downhill)
+    st = car.state
+    front = st.fz[FL] + st.fz[FR]
+    static_front = cfg.CAR_MASS * 9.81 * cfg.WEIGHT_DIST_FRONT
+    results.append(check("parado cuesta abajo carga el morro",
+                         front > static_front + 80.0,
+                         f"del={front:.0f} estatico={static_front:.0f}"))
+    results.append(check("parada rigida: sin jitter de ruedas",
+                         all(abs(o) < 0.01 for o in st.omega) and abs(st.vx) < 0.2,
+                         f"omega={[round(o, 3) for o in st.omega]}"))
+
+    # downforce: a alta velocidad el coche pesa mas
+    car = Car()
+    settle(car, flat, 1.0)
+    set_speed(car, 50.0)
+    for _ in range(int(1.5 / DT)):
+        car.step(DT, 0.0, 0.5, 0.0, flat)
+    total_fast = sum(car.state.fz)
+    results.append(check("downforce anade carga a alta velocidad",
+                         total_fast > cfg.CAR_MASS * 9.81 + 700.0,
+                         f"carga={total_fast:.0f}N vs peso={cfg.CAR_MASS*9.81:.0f}N"))
+
     # pendiente: subir frena
     car = Car()
     settle(car, flat, 1.0)

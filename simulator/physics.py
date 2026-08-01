@@ -50,10 +50,10 @@ def tire_force_magnitude(rho: float, mu: float, fz: float) -> float:
     return mu * fz * math.sin(cfg.TIRE_C * math.atan(cfg.TIRE_B * rho))
 
 
-def mu_with_load(mu_base: float, fz: float) -> float:
-    """Sensibilidad a la carga: el mu cae al sobrecargar la rueda.
+def mu_with_load(mu_base: float, fz: float, fz_ref: float) -> float:
+    """Sensibilidad a la carga: el mu cae al sobrecargar la rueda respecto
+    a SU carga estática (que depende del reparto de pesos del vehículo).
     Esto hace que transferir peso reduzca el agarre total del eje."""
-    fz_ref = cfg.CAR_MASS * G / 4.0
     factor = 1.0 - cfg.TIRE_LOAD_SENS * (fz - fz_ref) / fz_ref
     return mu_base * max(0.6, min(1.3, factor))
 
@@ -124,6 +124,9 @@ class Car:
         self._bump_kick = 0.0
         self._kick_lp = 0.0
         self._limiter_cut = False
+        self._fx_tires = 0.0
+        self._steer_prev = 0.0
+        self._steer_rate_lp = 0.0
         a, b = cfg.CAR_CG_TO_FRONT, cfg.CAR_CG_TO_REAR
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
@@ -145,6 +148,9 @@ class Car:
         self._bump_kick = 0.0
         self._kick_lp = 0.0
         self._limiter_cut = False
+        self._fx_tires = 0.0
+        self._steer_prev = 0.0
+        self._steer_rate_lp = 0.0
 
     # ------------------------------------------------------------------
     def shift_up(self):
@@ -254,8 +260,15 @@ class Car:
         f_susp[RL] += arb_r
         f_susp[RR] -= arb_r
 
+        # carga aerodinámica: crece con el cuadrado de la velocidad y se
+        # reparte entre ejes; pasa por la sensibilidad a la carga del
+        # neumático como cualquier otra carga
+        df = cfg.AERO_DOWNFORCE * st.vx * st.vx
+        df_front = df * cfg.AERO_DF_FRONT_SHARE / 2.0
+        df_rear = df * (1.0 - cfg.AERO_DF_FRONT_SHARE) / 2.0
         for i in range(4):
-            st.fz[i] = max(0.0, self._static_fz[i] + f_susp[i])
+            aero = df_front if i < 2 else df_rear
+            st.fz[i] = max(0.0, self._static_fz[i] + f_susp[i] + aero)
 
         # --- dinámica vertical del chasis -------------------------------
         grade = track.grade_at(st.s)
@@ -266,7 +279,12 @@ class Car:
         sum_mx = sum(f_susp[i] * self.X_POS[i] for i in range(4))
         sum_my = sum(f_susp[i] * self.Y_POS[i] for i in range(4))
         heave_acc = sum_f / m - a_road
-        pitch_acc = (sum_mx + m * st.ax * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_PITCH
+        # el momento de cabeceo lo generan las fuerzas longitudinales de los
+        # neumáticos (aplicadas al nivel del suelo, a CG_HEIGHT por debajo
+        # del centro de masas), NO la aceleración neta: así, parado en
+        # pendiente con freno, los neumáticos sostienen el coche y el morro
+        # se hunde aunque ax sea cero
+        pitch_acc = (sum_mx + self._fx_tires * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_PITCH
         roll_acc = (sum_my + m * st.ay * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_ROLL
         st.heave_v += heave_acc * dt
         st.pitch_v += pitch_acc * dt
@@ -356,16 +374,19 @@ class Car:
             st.slip_ratio[i] = slip
             st.slip_angle[i] = alpha
 
-            mu_i = mu_with_load(mu_wheel[i], st.fz[i])
+            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
+            # elipse de fricción: más capacidad longitudinal que lateral
+            ratio_l = cfg.TIRE_LONG_GRIP_RATIO
             s_n = slip / peak_s
             a_n = alpha / peak_a
-            rho = math.hypot(s_n, a_n)
+            s_e = s_n / ratio_l
+            rho = math.hypot(s_e, a_n)
             if rho < 1e-6:
                 fx, fy_ss = 0.0, 0.0
                 grip_used[i] = 0.0
             else:
                 f_total = tire_force_magnitude(rho, mu_i, st.fz[i])
-                fx = f_total * (s_n / rho)
+                fx = f_total * (s_e / rho) * ratio_l
                 fy_ss = -f_total * (a_n / rho)
                 grip_used[i] = min(1.0, rho)
             # retardo de respuesta lateral (relaxation length)
@@ -396,6 +417,10 @@ class Car:
             fx_total += fx_b
             fy_total += fy_b
             yaw_moment += self.X_POS[i] * fy_b - self.Y_POS[i] * fx_b
+
+        # guardar la suma de fuerzas de neumático para el cabeceo del
+        # siguiente paso (se aplican a nivel del suelo)
+        self._fx_tires = fx_total
 
         st.ax = (fx_total - drag - rolling + gravity_x) / m
         st.ay = fy_total / m
@@ -441,8 +466,12 @@ class Car:
             else:
                 t_b = 0.0
             t_app = t_drive[i] + t_b
-            mu_i = mu_with_load(mu_wheel[i], st.fz[i])
-            grip_force = mu_i * st.fz[i]
+            # parada rígida: coche casi detenido con el freno dominando
+            if abs(st.vx) < 0.15 and t_brake_max[i] > abs(t_drive[i]) + 5.0:
+                st.omega[i] = 0.0
+                continue
+            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
+            grip_force = mu_i * st.fz[i] * cfg.TIRE_LONG_GRIP_RATIO
             slip_now = (st.omega[i] * R - v_along) / denom
             deep_slip = abs(slip_now) > 0.9 * peak_s \
                 or abs(t_app) / R > 0.9 * grip_force
@@ -490,6 +519,17 @@ class Car:
         mz = 0.0
         for i in (FL, FR):
             mz += -fy_w[i] * pneumatic_trail(st.slip_angle[i])
+        # radio de pivotamiento (scrub radius): la diferencia de fuerza
+        # longitudinal entre las ruedas delanteras tira del volante
+        # (torque steer en FWD, tirón al frenar con media pista de hierba,
+        # pulsación natural del ABS...)
+        mz += (fx_w[FL] - fx_w[FR]) * cfg.STEER_SCRUB_RADIUS
+        # amortiguación de columna: se opone a la velocidad de giro del
+        # volante para evitar oscilaciones autoexcitadas en recta
+        rate = (wheel_angle - self._steer_prev) / dt if dt > 0 else 0.0
+        self._steer_prev = wheel_angle
+        self._steer_rate_lp += (rate - self._steer_rate_lp) * min(1.0, 30.0 * dt)
+        damping = -cfg.FFB_COLUMN_DAMPING * self._steer_rate_lp
         # sacudida por baches asimétricos en el eje delantero, filtrada
         # paso-alto: la transferencia de carga estacionaria de las curvas
         # no debe entrar, solo los transitorios (pianos, baches)
@@ -497,4 +537,5 @@ class Car:
         self._kick_lp += (kick_raw - self._kick_lp) * min(1.0, 2.0 * dt)
         kick_hp = kick_raw - self._kick_lp
         self._bump_kick += (kick_hp - self._bump_kick) * min(1.0, 25.0 * dt)
-        st.steer_column_torque = mz / cfg.STEER_RATIO * 2.0 + self._bump_kick
+        st.steer_column_torque = mz / cfg.STEER_RATIO * 2.0 \
+            + self._bump_kick + damping

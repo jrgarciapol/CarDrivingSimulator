@@ -232,18 +232,29 @@ class Hud:
         # estado del dispositivo
         dev = wheel_name if wheel_name else "TECLADO - FLECHAS"
         ffb = "FFB OK" if ffb_ok else "SIN FFB"
-        font.draw_text(self.r, f"{dev[:34]}  {ffb}", 20, 20, 2,
+        font.draw_text(self.r, f"{dev[:30]}  {ffb}  {cfg.DRIVE_TYPE}", 20, 20, 2,
                        (180, 255, 180, 255) if ffb_ok else (255, 180, 140, 255))
 
         # avisos de conducción
+        y_warn = H - 190
+        if st.abs_active:
+            font.draw_text(self.r, "ABS", W / 2 - 18, y_warn, 2, (255, 220, 60, 255))
+            y_warn -= 24
+        if st.front_locked or st.rear_locked:
+            which = "DEL" if st.front_locked else "TRAS"
+            font.draw_text(self.r, f"BLOQUEO {which}", W / 2 - 60, y_warn, 2,
+                           (255, 90, 60, 255))
+            y_warn -= 24
         if st.wheelspin:
-            font.draw_text(self.r, "TRACCION", W / 2 - 48, H - 190, 2, (255, 120, 60, 255))
+            font.draw_text(self.r, "TRACCION", W / 2 - 48, y_warn, 2, (255, 120, 60, 255))
+            y_warn -= 24
         if st.front_grip_used > 0.95 and st.speed_kmh > 30:
-            font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, H - 214, 2, (255, 220, 80, 255))
+            font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, y_warn, 2, (255, 220, 80, 255))
 
     def draw_debug(self, wheel, car_state, surface):
-        """Superposición F1: ejes y botones en crudo para configurar el mapeo."""
-        self._fill(20, 60, 460, 240, (0, 0, 0, 190))
+        """Superposición F1: ejes y botones en crudo para configurar el mapeo,
+        más telemetría por rueda."""
+        self._fill(20, 60, 540, 330, (0, 0, 0, 190))
         font.draw_text(self.r, "F1: DIAGNOSTICO DE EJES/BOTONES", 32, 70, 2)
         axes = wheel.raw_axes()
         y = 96
@@ -256,6 +267,15 @@ class Hud:
         font.draw_text(self.r, f"SUPERFICIE: {surface}", 32, y, 2)
         y += 20
         font.draw_text(self.r, f"PAR COLUMNA: {car_state.steer_column_torque:5.1f} NM", 32, y, 2)
+        y += 24
+        names = ("DI", "DD", "TI", "TD")
+        for i in range(4):
+            font.draw_text(
+                self.r,
+                f"{names[i]} CARGA {int(car_state.fz[i]):5d} N  "
+                f"DESL {car_state.slip_ratio[i]:5.2f}  "
+                f"DERIVA {car_state.slip_angle[i] * 57.3:5.1f}", 32, y, 2)
+            y += 20
 
 
 def _fmt_time(t):

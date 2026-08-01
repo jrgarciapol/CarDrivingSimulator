@@ -70,13 +70,50 @@ class Track:
     def __init__(self):
         self.segments = build()
         self.length = len(self.segments) * cfg.SEGMENT_LENGTH
+        self._precompute_vertical()
+
+    def _precompute_vertical(self):
+        """Pendiente (dy/ds) y curvatura vertical (d²y/ds²) suavizadas,
+        para que la gravedad y las rasantes actúen sobre la física."""
+        n = len(self.segments)
+        L = cfg.SEGMENT_LENGTH
+        ys = [seg.y for seg in self.segments]
+        self._grade = []
+        self._vcurv = []
+        span = 3  # suavizado sobre ±3 segmentos
+        for i in range(n):
+            y_prev = ys[(i - span) % n]
+            y_next = ys[(i + span) % n]
+            y_here = ys[i]
+            self._grade.append((y_next - y_prev) / (2 * span * L))
+            self._vcurv.append((y_next - 2 * y_here + y_prev) / (span * L) ** 2)
 
     def segment_at(self, s: float) -> Segment:
         i = int(s / cfg.SEGMENT_LENGTH) % len(self.segments)
         return self.segments[i]
 
+    def _index_at(self, s: float) -> int:
+        return int(s / cfg.SEGMENT_LENGTH) % len(self.segments)
+
     def kappa_at(self, s: float) -> float:
         return self.segment_at(s).kappa
+
+    def grade_at(self, s: float) -> float:
+        return self._grade[self._index_at(s)]
+
+    def vcurv_at(self, s: float) -> float:
+        return self._vcurv[self._index_at(s)]
+
+    def bump_at(self, s: float, n: float, surface: str) -> float:
+        """Altura del microrrelieve bajo una rueda (m). Determinista en
+        función de la posición: cada rueda ve su propio bache."""
+        if surface == "kerb":
+            # piano corrugado: dientes de ~40 cm
+            return 0.028 * max(0.0, math.sin(s * (2 * math.pi / 0.4)))
+        if surface == "grass":
+            return 0.020 * math.sin(s * 3.7) + 0.016 * math.sin(s * 9.3 + n * 2.1)
+        # asfalto: rugosidad leve
+        return 0.005 * math.sin(s * 2.9) + 0.003 * math.sin(s * 7.1 + n * 0.8)
 
     def surface_at(self, n: float, s: float):
         """Devuelve (superficie, mu) según la posición lateral.

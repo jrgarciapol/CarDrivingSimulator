@@ -96,6 +96,7 @@ class CarState:
         self.rpm = cfg.ENGINE_IDLE_RPM
         self.gear = 1         # 1..6; 0 = punto muerto; -1 = marcha atrás
         self.limiter_on = False
+        self.engine_on = True
         # indicadores
         self.abs_active = False
         self.front_locked = False
@@ -175,6 +176,14 @@ class Car:
             self._shift_cooldown = 0.25
             return True
         return False
+
+    def toggle_engine(self) -> bool:
+        """Arranca o para el motor. Devuelve el nuevo estado."""
+        st = self.state
+        st.engine_on = not st.engine_on
+        if st.engine_on:
+            st.rpm = cfg.ENGINE_IDLE_RPM
+        return st.engine_on
 
     def auto_shift(self, throttle: float) -> bool:
         """Cambio automático: sube cerca del corte (si no hay patinaje),
@@ -333,7 +342,11 @@ class Car:
             rpm_wheels = 0.0
         clutch_slipping = rpm_wheels < cfg.ENGINE_IDLE_RPM
         # el régimen tiene inercia: no sigue instantáneamente a las ruedas
-        rpm_target = max(cfg.ENGINE_IDLE_RPM, rpm_wheels)
+        if st.engine_on:
+            rpm_target = max(cfg.ENGINE_IDLE_RPM, rpm_wheels)
+        else:
+            # motor parado: en marcha lo arrastran las ruedas, si no cae a 0
+            rpm_target = rpm_wheels if ratio != 0.0 else 0.0
         st.rpm += (rpm_target - st.rpm) * min(1.0, dt / 0.12)
         # limitador con histéresis
         if st.rpm >= cfg.ENGINE_LIMITER_RPM:
@@ -348,6 +361,9 @@ class Car:
         t_engine = engine_torque(st.rpm) * eff_throttle
         engine_brake = cfg.ENGINE_BRAKE_COEFF * (st.rpm / cfg.ENGINE_LIMITER_RPM)
         t_engine -= engine_brake * (1.0 - eff_throttle)
+        if not st.engine_on:
+            # motor parado: no empuja y arrastra (compresión) si va engranado
+            t_engine = -(engine_brake + 20.0) if ratio != 0.0 else 0.0
         if clutch_slipping:
             t_engine *= 0.75            # embrague patinando en la salida
             if t_engine < 0.0:

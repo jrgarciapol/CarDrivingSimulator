@@ -39,9 +39,12 @@ WHEEL_ROTATION_DEG = 900.0
 BUTTON_SHIFT_UP = 1      # leva derecha (subir marcha) - T300RS: botón 1
 BUTTON_SHIFT_DOWN = 0    # leva izquierda (bajar marcha) - T300RS: botón 0
 BUTTON_TOGGLE_AUTO = 2   # alternar cambio automático/manual (tecla G también)
+BUTTON_TOGGLE_VIEW = 3   # alternar vista cercana / coche completo (tecla C)
+BUTTON_ENGINE = 9        # arrancar / parar el motor (tecla E también)
 BUTTON_RESET = 8         # recolocar el coche en pista
 
 AUTO_GEAR = False        # arrancar con cambio automático (True) o manual
+CHASE_VIEW = False       # arrancar con la vista de coche completo
 
 STEERING_DEADZONE = 0.005
 
@@ -167,3 +170,4 @@ TRACK_POLES = True           # balizas de colores en los bordes
 AUDIO_ENABLED = True
 AUDIO_RATE = 22050
 AUDIO_VOLUME = 0.5
+SCREECH_VOLUME = 0.8         # volumen del chirrido de neumáticos al límite

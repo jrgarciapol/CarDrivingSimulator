@@ -73,9 +73,10 @@ class Renderer:
             sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     # ------------------------------------------------------------------
-    def draw_road(self, track, car_state):
+    def draw_road(self, track, car_state, show_line=True):
         """Devuelve la altura del horizonte usada (para el fondo)."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        speed = abs(car_state.vx)
         segs = track.segments
         n_segs = len(segs)
         seg_len = cfg.SEGMENT_LENGTH
@@ -118,7 +119,9 @@ class Renderer:
 
         # Dibujar de lejos a cerca no: de cerca a lejos con recorte por
         # elevación (solo se dibuja lo que asoma por encima de lo anterior)
+        n_track = len(track.segments)
         clip_y = H
+        poles = []
         for idx in range(len(rows) - 1):
             y1, x1, w1, si = rows[idx]
             y2, x2, w2, _ = rows[idx + 1]
@@ -136,6 +139,17 @@ class Renderer:
             kerb_c = KERB[(si // 2) % 2] if seg.kerb else grass_c
             lane_mark = (si // 4) % 2 == 0
 
+            # trazada ideal: color según la velocidad admisible en ese
+            # punto (incluye la distancia de frenada a la curva siguiente)
+            if show_line and cfg.RACING_LINE:
+                line_n = track.line_n[si % n_track]
+                line_v = track.line_v_allowed[si % n_track]
+                if speed > line_v * 1.02:
+                    line_c = (235, 45, 35)      # no llegas a frenar: FRENA
+                elif speed > line_v * 0.88:
+                    line_c = (250, 205, 60)     # al límite
+                else:
+                    line_c = (140, 235, 140)    # margen de sobra
             span = max(1, int(y1) - int(y2))
             for y in range(top, bottom):
                 t = (y - y2) / span if span else 0.0
@@ -157,8 +171,29 @@ class Renderer:
                 ew = max(1, ww * 0.04)
                 self._fill(cxx - ww, y, ew, 1, LINE)
                 self._fill(cxx + ww - ew, y, ew, 1, LINE)
+                # trazada ideal
+                if show_line and cfg.RACING_LINE and ww > 10:
+                    lx = cxx + line_n * ww / cfg.ROAD_HALF_WIDTH
+                    lw2 = max(2, ww * 0.05)
+                    self._fill(lx - lw2 / 2, y, lw2, 1, line_c)
+            # balizas laterales cada pocos segmentos (amarilla izda,
+            # azul dcha) para leer el trazado de la siguiente curva
+            if cfg.TRACK_POLES and si % 6 == 0 and w2 > 7:
+                poles.append((y2, x2, w2))
             clip_y = min(clip_y, y2)
             min_y = min(min_y, top)
+
+        # postes de lejos a cerca para que los cercanos tapen a los lejanos
+        for y2, x2, w2 in reversed(poles):
+            px_m = w2 / cfg.ROAD_HALF_WIDTH
+            kerb_px = w2 * (cfg.KERB_WIDTH / cfg.ROAD_HALF_WIDTH)
+            h = px_m * 1.5
+            pw = max(2, px_m * 0.20)
+            for side, color in ((-1, (250, 210, 40)), (1, (70, 150, 255))):
+                px = x2 + side * (w2 + kerb_px + px_m * 0.5)
+                self._fill(px - pw / 2, y2 - h, pw, h, color)
+                self._fill(px - pw / 2, y2 - h, pw, max(1, h * 0.22),
+                           (240, 240, 240))
         return min_y
 
     # ------------------------------------------------------------------

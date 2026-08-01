@@ -60,10 +60,11 @@ def mu_with_load(mu_base: float, fz: float, fz_ref: float) -> float:
 
 def pneumatic_trail(alpha: float) -> float:
     """El avance neumático cae con la deriva (el volante se aligera al
-    saturar el tren delantero); el avance mecánico (~30 %) permanece."""
+    saturar el tren delantero); el avance mecánico (~15 %) permanece.
+    El contraste alto hace el aviso de subviraje claramente perceptible."""
     sat = math.radians(cfg.TIRE_TRAIL_SAT_DEG)
     falloff = max(0.0, 1.0 - abs(alpha) / sat)
-    return cfg.TIRE_TRAIL * (0.3 + 0.7 * falloff)
+    return cfg.TIRE_TRAIL * (0.15 + 0.85 * falloff)
 
 
 class CarState:

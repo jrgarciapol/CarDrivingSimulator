@@ -12,6 +12,7 @@ Teclado (siempre activo):
   R              recolocar el coche
   F1             diagnostico de ejes y botones
   F2             telemetria: circulo de friccion por rueda
+  L              mostrar/ocultar la trazada ideal
   ESC            salir
 """
 
@@ -79,6 +80,7 @@ def main(argv=None):
     lap_count = 1
     show_debug = False
     show_telemetry = False
+    show_line = cfg.RACING_LINE
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -97,6 +99,8 @@ def main(argv=None):
                     show_debug = not show_debug
                 elif sym == sdl2.SDLK_F2:
                     show_telemetry = not show_telemetry
+                elif sym == sdl2.SDLK_l:
+                    show_line = not show_line
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                 elif sym == sdl2.SDLK_a:
@@ -152,7 +156,7 @@ def main(argv=None):
         base_seg = track.segment_at(car.state.s)
         scene.draw_background(cfg.WINDOW_HEIGHT // 2,
                               car.state.psi + base_seg.kappa * 40.0)
-        scene.draw_road(track, car.state)
+        scene.draw_road(track, car.state, show_line)
         scene.draw_car(car.state, wheel.steering)
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name)
         if show_debug:

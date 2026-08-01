@@ -13,6 +13,7 @@ Teclado (siempre activo):
   F1             diagnostico de ejes y botones
   F2             telemetria: circulo de friccion por rueda
   L              mostrar/ocultar la trazada ideal
+  G              alternar cambio automatico/manual
   ESC            salir
 """
 
@@ -81,6 +82,7 @@ def main(argv=None):
     show_debug = False
     show_telemetry = False
     show_line = cfg.RACING_LINE
+    auto_gear = cfg.AUTO_GEAR
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -101,6 +103,8 @@ def main(argv=None):
                     show_telemetry = not show_telemetry
                 elif sym == sdl2.SDLK_l:
                     show_line = not show_line
+                elif sym == sdl2.SDLK_g:
+                    auto_gear = not auto_gear
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                 elif sym == sdl2.SDLK_a:
@@ -120,8 +124,14 @@ def main(argv=None):
         if wheel.button_pressed_edge(cfg.BUTTON_SHIFT_DOWN):
             if car.shift_down():
                 ffb.notify_gear_shift()
+        if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_AUTO):
+            auto_gear = not auto_gear
         if wheel.button_pressed_edge(cfg.BUTTON_RESET):
             car.reset(car.state.s)
+
+        # cambio automático (las levas siguen funcionando en manual)
+        if auto_gear and car.auto_shift(wheel.throttle):
+            ffb.notify_gear_shift()
 
         # ------------------------------------------------ tiempo
         now = sdl2.SDL_GetPerformanceCounter()
@@ -158,7 +168,8 @@ def main(argv=None):
                               car.state.psi + base_seg.kappa * 40.0)
         scene.draw_road(track, car.state, show_line)
         scene.draw_car(car.state, wheel.steering)
-        hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name)
+        hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
+                 auto_gear)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:

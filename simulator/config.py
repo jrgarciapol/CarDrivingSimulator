@@ -38,7 +38,10 @@ WHEEL_ROTATION_DEG = 900.0
 
 BUTTON_SHIFT_UP = 1      # leva derecha (subir marcha) - T300RS: botón 1
 BUTTON_SHIFT_DOWN = 0    # leva izquierda (bajar marcha) - T300RS: botón 0
+BUTTON_TOGGLE_AUTO = 2   # alternar cambio automático/manual (tecla G también)
 BUTTON_RESET = 8         # recolocar el coche en pista
+
+AUTO_GEAR = False        # arrancar con cambio automático (True) o manual
 
 STEERING_DEADZONE = 0.005
 
@@ -153,6 +156,8 @@ CAMERA_HEIGHT = 1.55         # m (un poco alta para leer mejor las curvas)
 CAMERA_DEPTH = 0.84          # 1/tan(fov/2)
 RACING_LINE = True           # trazada ideal (tecla L): verde = bien,
                              # ámbar = al límite, rojo = demasiado rápido
+CAR_BODY_MOTION_EXAG = 3.0   # exageración visual del cabeceo/balanceo de
+                             # la carrocería del coche en pantalla
 TRACK_POLES = True           # balizas de colores en los bordes
                              # (amarillo = izquierda, azul = derecha)
 

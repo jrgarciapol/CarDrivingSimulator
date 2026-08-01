@@ -56,6 +56,15 @@ motor sintetizado que sigue a las RPM.
   comerciales).
 - **Balizas de colores** en los bordes (amarillas a la izquierda, azules a
   la derecha) para leer el trazado de la siguiente curva desde lejos.
+- **Carrocería viva**: el coche en pantalla cabecea al frenar/acelerar y se
+  balancea en las curvas con los ángulos reales de la suspensión (algo
+  exagerados, ajustable con `CAR_BODY_MOTION_EXAG`), para leer las
+  transferencias de peso de un vistazo.
+- **Cambio automático** conmutables con `G` o el botón 2 del volante
+  (indicador `AUTO`/`MAN` junto al cuentavueltas); las levas siguen
+  activas en modo manual.
+- **Cuentavueltas grande** arriba centrado, con zonas verde/ámbar/roja,
+  marca del corte y la marcha en grande — siempre a la vista.
 
 ## Instalación (Windows)
 
@@ -86,6 +95,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | Pedal derecho | Acelerador |
 | Pedal central | Freno |
 | Leva derecha / izquierda | Subir / bajar marcha |
+| Botón 2 | Alternar cambio automático / manual |
 
 | Teclado | Acción |
 | --- | --- |
@@ -95,6 +105,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `F1` | Diagnóstico de ejes y botones |
 | `F2` | Telemetría: círculo de fricción de cada rueda en vivo |
 | `L` | Mostrar/ocultar la trazada ideal |
+| `G` | Alternar cambio automático / manual |
 | `ESC` | Salir |
 
 ## Ajustar el mapeo del volante

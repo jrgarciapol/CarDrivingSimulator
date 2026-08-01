@@ -128,6 +128,7 @@ class Car:
         self._fx_tires = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
+        self._auto_dwell = 0.0
         a, b = cfg.CAR_CG_TO_FRONT, cfg.CAR_CG_TO_REAR
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
@@ -152,6 +153,7 @@ class Car:
         self._fx_tires = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
+        self._auto_dwell = 0.0
 
     # ------------------------------------------------------------------
     def shift_up(self):
@@ -172,6 +174,30 @@ class Car:
             st.gear -= 1
             self._shift_cooldown = 0.25
             return True
+        return False
+
+    def auto_shift(self, throttle: float) -> bool:
+        """Cambio automático: sube cerca del corte (si no hay patinaje),
+        baja a bajas vueltas o por kick-down pisando a fondo. Con tiempo
+        de permanencia entre cambios para no cazar marchas, y protección
+        de sobrerégimen al reducir. N y R se manejan a mano."""
+        st = self.state
+        if st.gear < 1 or self._auto_dwell > 0.0:
+            return False
+        if st.rpm > 6350 and st.gear < len(cfg.GEAR_RATIOS) \
+                and max(st.slip_ratio) < 0.4:
+            if self.shift_up():
+                self._auto_dwell = 1.2
+                return True
+        low_rpm = st.rpm < 2000.0
+        # el kick-down no baja a 1a: esa marcha es solo de salida
+        kick_down = throttle > 0.85 and st.rpm < 3600.0 and st.gear > 2
+        if st.gear > 1 and (low_rpm or kick_down):
+            # no reducir si dejaría el motor pasado de vueltas
+            projected = st.rpm * cfg.GEAR_RATIOS[st.gear - 2] / cfg.GEAR_RATIOS[st.gear - 1]
+            if projected < 6200.0 and self.shift_down():
+                self._auto_dwell = 1.2
+                return True
         return False
 
     # ------------------------------------------------------------------
@@ -216,6 +242,7 @@ class Car:
              track):
         st = self.state
         self._shift_cooldown = max(0.0, self._shift_cooldown - dt)
+        self._auto_dwell = max(0.0, self._auto_dwell - dt)
 
         m = cfg.CAR_MASS
         R = cfg.CAR_WHEEL_RADIUS

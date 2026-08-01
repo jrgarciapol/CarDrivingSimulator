@@ -198,32 +198,58 @@ class Renderer:
 
     # ------------------------------------------------------------------
     def draw_car(self, car_state, steering):
-        """Coche visto desde atrás, en la parte baja de la pantalla."""
+        """Coche visto desde atrás con la carrocería VIVA: cabecea al
+        acelerar/frenar, se balancea en las curvas y flota en las crestas
+        (ángulos reales de la suspensión, exagerados para percibirlos).
+        Las ruedas quedan fijas al suelo: el hueco que se abre y se cierra
+        entre rueda y carrocería es el recorrido de suspensión."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        ex = cfg.CAR_BODY_MOTION_EXAG
         cx = W / 2 + steering * 18 - car_state.psi * 120
         cy = H - 88
-        lean = int(car_state.ay * 1.2)
-
         car_w, car_h = 190, 96
         x = cx - car_w / 2
-        # sombra
+
+        # movimiento de la carrocería: + abajo. Frenar (pitch<0, morro
+        # abajo) LEVANTA la cola que vemos; acelerar la hunde (squat);
+        # las crestas la hacen flotar
+        body_dy = int((car_state.pitch * 250.0 - car_state.heave * 120.0) * ex)
+        body_dy = max(-22, min(22, body_dy))
+        # balanceo: pendiente vertical por columna (roll + = derecha
+        # elevada -> en pantalla el lado izquierdo baja)
+        tilt = -car_state.roll * ex
+        braking = car_state.ax < -2.0
+
+        # sombra y ruedas, fijas al suelo
         self._fill(x + 6, cy + car_h - 14, car_w - 12, 16, (20, 20, 20))
-        # ruedas
         wheel_w, wheel_h = 34, 26
         self._fill(x - 8, cy + car_h - wheel_h - 6, wheel_w, wheel_h, (25, 25, 25))
-        self._fill(x + car_w - wheel_w + 8, cy + car_h - wheel_h - 6, wheel_w, wheel_h, (25, 25, 25))
-        # carrocería
-        self._fill(x, cy + 30 + lean, car_w, car_h - 44, (178, 24, 30))
-        self._fill(x + 18, cy + 14 + lean, car_w - 36, 26, (150, 18, 24))
-        # luneta
-        self._fill(x + 30, cy + 18 + lean, car_w - 60, 16, (35, 40, 60))
-        # pilotos
-        self._fill(x + 8, cy + 44 + lean, 26, 10, (255, 60, 40))
-        self._fill(x + car_w - 34, cy + 44 + lean, 26, 10, (255, 60, 40))
-        # luces de freno encendidas
-        if car_state.ax < -2.0:
-            self._fill(x + 8, cy + 44 + lean, 26, 10, (255, 160, 120))
-            self._fill(x + car_w - 34, cy + 44 + lean, 26, 10, (255, 160, 120))
+        self._fill(x + car_w - wheel_w + 8, cy + car_h - wheel_h - 6,
+                   wheel_w, wheel_h, (25, 25, 25))
+
+        # carrocería por columnas verticales inclinadas por el balanceo
+        n_cols = 16
+        col_w = car_w / n_cols
+        light_zone = 34  # px desde cada extremo con piloto trasero
+        for i in range(n_cols):
+            dx = (i + 0.5) * col_w - car_w / 2
+            dyc = body_dy + int(tilt * dx)
+            colx = x + i * col_w
+            cw = int(col_w) + 1
+            # techo
+            self._fill(colx, cy + 14 + dyc, cw, 6, (150, 18, 24))
+            # luneta trasera (con margen a los lados)
+            if abs(dx) < car_w / 2 - 28:
+                self._fill(colx, cy + 20 + dyc, cw, 14, (35, 40, 60))
+            else:
+                self._fill(colx, cy + 20 + dyc, cw, 14, (150, 18, 24))
+            # cuerpo principal
+            self._fill(colx, cy + 34 + dyc, cw, 48, (178, 24, 30))
+            # pilotos traseros (más brillantes al frenar)
+            edge = car_w / 2 - abs(dx)
+            if 8 < edge < light_zone:
+                lc = (255, 170, 130) if braking else (225, 55, 40)
+                self._fill(colx, cy + 44 + dyc, cw, 10, lc)
 
 
 class Hud:
@@ -238,24 +264,47 @@ class Hud:
         self._rect.w, self._rect.h = int(w), int(h)
         sdl2.SDL_RenderFillRect(self.r, self._rect)
 
-    def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name):
+    def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name,
+             auto_gear=False):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
 
-        # panel inferior izquierdo: velocidad y marcha
-        self._fill(20, H - 150, 300, 130, (0, 0, 0, 160))
-        font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 135, 6)
-        font.draw_text(self.r, "KM/H", 160, H - 120, 2)
-        gear_txt = "R" if st.gear < 0 else ("N" if st.gear == 0 else str(st.gear))
-        font.draw_text(self.r, gear_txt, 250, H - 135, 7, (255, 200, 60, 255))
-
-        # cuentavueltas RPM
+        # ------- cuentavueltas grande arriba, centrado, siempre a la vista
+        bar_w, bar_h = 520, 30
+        bx = (W - bar_w) // 2
+        by = 18
+        self._fill(bx - 104, by - 8, bar_w + 116, bar_h + 34, (0, 0, 0, 160))
+        self._fill(bx, by, bar_w, bar_h, (52, 52, 52))
         rpm_frac = min(1.0, st.rpm / cfg.ENGINE_LIMITER_RPM)
-        bar_w = 260
-        self._fill(40, H - 55, bar_w, 14, (60, 60, 60))
-        color = (90, 220, 90) if rpm_frac < 0.85 else (235, 60, 50)
-        self._fill(40, H - 55, int(bar_w * rpm_frac), 14, color)
-        font.draw_text(self.r, f"{int(st.rpm)} RPM", 40, H - 38, 2)
+        fill_w = int(bar_w * rpm_frac)
+        # tramo verde, ámbar y rojo
+        w_green = min(fill_w, int(bar_w * 0.62))
+        w_amber = min(fill_w, int(bar_w * 0.85)) - int(bar_w * 0.62)
+        w_red = fill_w - int(bar_w * 0.85)
+        self._fill(bx, by, w_green, bar_h, (85, 215, 85))
+        if w_amber > 0:
+            self._fill(bx + int(bar_w * 0.62), by, w_amber, bar_h, (245, 205, 60))
+        if w_red > 0:
+            self._fill(bx + int(bar_w * 0.85), by, w_red, bar_h, (235, 55, 45))
+        # marcas cada 1000 rpm y línea del corte
+        for k in range(1, int(cfg.ENGINE_LIMITER_RPM // 1000) + 1):
+            tx = bx + int(bar_w * k * 1000.0 / cfg.ENGINE_LIMITER_RPM)
+            self._fill(tx, by, 2, bar_h, (25, 25, 25))
+        red_x = bx + int(bar_w * cfg.ENGINE_REDLINE_RPM / cfg.ENGINE_LIMITER_RPM)
+        self._fill(red_x, by - 4, 3, bar_h + 8, (255, 255, 255))
+        font.draw_text(self.r, f"{int(st.rpm)}", bx, by + bar_h + 6, 2)
+        # marcha en grande junto a la barra + modo de cambio
+        gear_txt = "R" if st.gear < 0 else ("N" if st.gear == 0 else str(st.gear))
+        gear_c = (235, 55, 45, 255) if rpm_frac > 0.85 else (255, 200, 60, 255)
+        font.draw_text(self.r, gear_txt, bx - 68, by - 8, 6, gear_c)
+        font.draw_text(self.r, "AUTO" if auto_gear else "MAN",
+                       bx - 100, by + bar_h + 8, 2,
+                       (140, 220, 255, 255) if auto_gear else (200, 200, 200, 255))
+
+        # ------- panel inferior izquierdo: velocidad
+        self._fill(20, H - 116, 260, 96, (0, 0, 0, 160))
+        font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 100, 6)
+        font.draw_text(self.r, "KM/H", 170, H - 84, 2)
 
         # tiempos
         self._fill(W - 320, 20, 300, 92, (0, 0, 0, 160))
@@ -264,10 +313,10 @@ class Hud:
         best_txt = _fmt_time(best_lap) if best_lap else "--:--.-"
         font.draw_text(self.r, f"MEJOR  {best_txt}", W - 300, 80, 2, (255, 200, 60, 255))
 
-        # estado del dispositivo
+        # estado del dispositivo (abajo, junto al velocímetro)
         dev = wheel_name if wheel_name else "TECLADO - FLECHAS"
         ffb = "FFB OK" if ffb_ok else "SIN FFB"
-        font.draw_text(self.r, f"{dev[:30]}  {ffb}  {cfg.DRIVE_TYPE}", 20, 20, 2,
+        font.draw_text(self.r, f"{dev[:30]}  {ffb}  {cfg.DRIVE_TYPE}", 20, H - 140, 2,
                        (180, 255, 180, 255) if ffb_ok else (255, 180, 140, 255))
 
         # avisos de conducción

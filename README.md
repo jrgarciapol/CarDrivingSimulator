@@ -49,6 +49,14 @@ feedback realista** calculado a partir de la física del vehículo.
 cambios de rasante, gráficos pseudo-3D, cronómetro de vueltas y sonido de
 motor sintetizado que sigue a las RPM.
 
+**Ayudas de pilotaje:**
+- **Trazada ideal** sobre el asfalto (tecla `L`): verde = margen de sobra,
+  ámbar = al límite, **rojo = ya no llegas a frenar para la siguiente curva**
+  (calculado con la distancia de frenada real, como en los juegos
+  comerciales).
+- **Balizas de colores** en los bordes (amarillas a la izquierda, azules a
+  la derecha) para leer el trazado de la siguiente curva desde lejos.
+
 ## Instalación (Windows)
 
 1. Instala los **drivers de Thrustmaster** ([soporte oficial](https://support.thrustmaster.com))
@@ -86,6 +94,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `R` | Recolocar el coche |
 | `F1` | Diagnóstico de ejes y botones |
 | `F2` | Telemetría: círculo de fricción de cada rueda en vivo |
+| `L` | Mostrar/ocultar la trazada ideal |
 | `ESC` | Salir |
 
 ## Ajustar el mapeo del volante

@@ -71,6 +71,49 @@ class Track:
         self.segments = build()
         self.length = len(self.segments) * cfg.SEGMENT_LENGTH
         self._precompute_vertical()
+        self._precompute_racing_line()
+
+    def _precompute_racing_line(self):
+        """Trazada ideal simplificada: desplazamiento lateral hacia el
+        interior de cada curva (suavizado para que la aproximación sea
+        gradual) y velocidad máxima de paso según el agarre disponible."""
+        n = len(self.segments)
+        ks = [seg.kappa for seg in self.segments]
+
+        def smooth(vals, half_win):
+            out = []
+            for i in range(n):
+                acc = 0.0
+                for j in range(-half_win, half_win + 1):
+                    acc += vals[(i + j) % n]
+                out.append(acc / (2 * half_win + 1))
+            return out
+
+        k_offset = smooth(ks, 25)   # ~100 m: aproximación gradual al vértice
+        k_speed = smooth(ks, 8)     # ~32 m: velocidad de paso de la curva
+
+        max_off = cfg.ROAD_HALF_WIDTH - 1.3
+        ay_max = cfg.TIRE_MU * 9.81 * 0.92   # apurar al 92 % del agarre
+        self.line_n = []
+        self.line_v = []
+        for i in range(n):
+            off = max(-max_off, min(max_off, k_offset[i] * 150.0))
+            self.line_n.append(off)
+            k = abs(k_speed[i])
+            v = math.sqrt(ay_max / k) if k > 1e-5 else 70.0
+            self.line_v.append(min(70.0, v))
+
+        # velocidad ADMISIBLE en cada punto teniendo en cuenta la distancia
+        # de frenada hasta la curva siguiente (inducción hacia atrás): si
+        # vas más rápido que esto, ya no llegas a frenar -> línea roja
+        a_brake = 8.5
+        L = cfg.SEGMENT_LENGTH
+        self.line_v_allowed = list(self.line_v)
+        for _ in range(2):  # dos pasadas para cerrar el circuito circular
+            for i in range(n - 1, -1, -1):
+                nxt = self.line_v_allowed[(i + 1) % n]
+                limit = math.sqrt(nxt * nxt + 2.0 * a_brake * L)
+                self.line_v_allowed[i] = min(self.line_v_allowed[i], limit)
 
     def _precompute_vertical(self):
         """Pendiente (dy/ds) y curvatura vertical (d²y/ds²) suavizadas,

@@ -36,8 +36,8 @@ PEDALS_INVERTED = True
 # Recomendado: 900. Debe coincidir para que la relación de dirección sea real.
 WHEEL_ROTATION_DEG = 900.0
 
-BUTTON_SHIFT_UP = 4      # leva derecha (subir marcha)
-BUTTON_SHIFT_DOWN = 5    # leva izquierda (bajar marcha)
+BUTTON_SHIFT_UP = 1      # leva derecha (subir marcha) - T300RS: botón 1
+BUTTON_SHIFT_DOWN = 0    # leva izquierda (bajar marcha) - T300RS: botón 0
 BUTTON_RESET = 8         # recolocar el coche en pista
 
 STEERING_DEADZONE = 0.005
@@ -49,7 +49,9 @@ FFB_ENABLED = True
 FFB_GAIN = 0.9           # ganancia global 0..1 del par de autoalineado
 FFB_INVERT = False       # invierte el sentido de la fuerza si "empuja" hacia
                          # fuera de la curva en lugar de centrar el volante
-FFB_MAX_TORQUE_NM = 45.0 # par de columna que equivale al 100 % de fuerza
+FFB_MAX_TORQUE_NM = 28.0 # par de columna que equivale al 100 % de fuerza:
+                         # bajarlo hace el volante más duro en apoyo y más
+                         # evidente el aligeramiento al subvirar
 
 FFB_COLUMN_DAMPING = 0.9     # Nm por rad/s de giro del volante: amortigua
                              # el par calculado para evitar oscilaciones
@@ -147,8 +149,12 @@ ROAD_HALF_WIDTH = 4.6        # m (ancho total ~9.2 m)
 KERB_WIDTH = 1.1             # m de piano a cada lado
 SEGMENT_LENGTH = 4.0         # m por segmento de render
 DRAW_DISTANCE = 220          # segmentos dibujados
-CAMERA_HEIGHT = 1.35         # m
+CAMERA_HEIGHT = 1.55         # m (un poco alta para leer mejor las curvas)
 CAMERA_DEPTH = 0.84          # 1/tan(fov/2)
+RACING_LINE = True           # trazada ideal (tecla L): verde = bien,
+                             # ámbar = al límite, rojo = demasiado rápido
+TRACK_POLES = True           # balizas de colores en los bordes
+                             # (amarillo = izquierda, azul = derecha)
 
 # ---------------------------------------------------------------------------
 # Sonido

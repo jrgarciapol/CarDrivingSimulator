@@ -50,6 +50,8 @@ GLYPHS = {
 
 
 def draw_text(renderer, text, x, y, scale=2, color=(255, 255, 255, 255)):
+    # SDL_Rect exige enteros: aceptar coordenadas con decimales
+    x, y, scale = int(x), int(y), int(scale)
     sdl2.SDL_SetRenderDrawColor(renderer, *color)
     cx = x
     rect = sdl2.SDL_Rect()

@@ -33,7 +33,11 @@ feedback realista** calculado a partir de la física del vehículo.
 - Motor con curva de par, **freno motor**, limitador con histéresis y caja de
   6 marchas + marcha atrás con levas.
 - **Pendientes y rasantes físicas**: las subidas frenan, las bajadas empujan
-  y las crestas descargan el coche (se siente en el volante).
+  y las crestas descargan el coche (se siente en el volante); aparcado en
+  pendiente, el peso se desplaza al eje que corresponde.
+- **Carga aerodinámica**: el apoyo crece con el cuadrado de la velocidad y
+  pasa por la sensibilidad a la carga del neumático (más aplomo en curvas
+  rápidas y más peso en el volante).
 - Superficie por rueda: con dos ruedas en la hierba el coche tira hacia ese
   lado, como en la realidad.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
@@ -81,6 +85,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `A` / `Z` | Subir / bajar marcha |
 | `R` | Recolocar el coche |
 | `F1` | Diagnóstico de ejes y botones |
+| `F2` | Telemetría: círculo de fricción de cada rueda en vivo |
 | `ESC` | Salir |
 
 ## Ajustar el mapeo del volante
@@ -102,6 +107,8 @@ Otros ajustes útiles en `config.py`:
 | `FFB_INVERT` | Ponlo a `True` si el volante empuja hacia fuera de la curva |
 | `FFB_KERB_MAGNITUDE` | Fuerza de la vibración de los pianos |
 | `WHEEL_ROTATION_DEG` | Grados configurados en el panel Thrustmaster |
+| `WHEELBASE` / `WEIGHT_DIST_FRONT` | Batalla y reparto de pesos, como en la ficha técnica |
+| `AERO_DOWNFORCE` | Carga aerodinámica (súbelo para sentir un GT/fórmula) |
 | `DRIVE_TYPE` | `"RWD"` propulsión, `"FWD"` delantera, `"AWD"` total |
 | `DIFF_TYPE` | Diferencial: `"open"`, `"lsd"` o `"locked"` |
 | `ABS_ENABLED` | `False` para frenar sin ayudas (bloqueos reales) |

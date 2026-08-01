@@ -14,11 +14,14 @@ Teclado (siempre activo):
   F2             telemetria: circulo de friccion por rueda
   L              mostrar/ocultar la trazada ideal
   G              alternar cambio automatico/manual
+  C              alternar vista cercana / coche completo
+  E              arrancar / parar el motor
   ESC            salir
 """
 
 import argparse
 import ctypes
+import math
 import sys
 
 import sdl2
@@ -83,6 +86,7 @@ def main(argv=None):
     show_telemetry = False
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
+    chase_view = cfg.CHASE_VIEW
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -105,6 +109,10 @@ def main(argv=None):
                     show_line = not show_line
                 elif sym == sdl2.SDLK_g:
                     auto_gear = not auto_gear
+                elif sym == sdl2.SDLK_c:
+                    chase_view = not chase_view
+                elif sym == sdl2.SDLK_e:
+                    car.toggle_engine()
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                 elif sym == sdl2.SDLK_a:
@@ -126,6 +134,10 @@ def main(argv=None):
                 ffb.notify_gear_shift()
         if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_AUTO):
             auto_gear = not auto_gear
+        if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_VIEW):
+            chase_view = not chase_view
+        if wheel.button_pressed_edge(cfg.BUTTON_ENGINE):
+            car.toggle_engine()
         if wheel.button_pressed_edge(cfg.BUTTON_RESET):
             car.reset(car.state.s)
 
@@ -158,7 +170,21 @@ def main(argv=None):
 
         # ------------------------------------------------ force feedback
         ffb.update(frame_dt, car.state, surface, abs(car.state.vx))
-        sound.update(car.state.rpm, wheel.throttle)
+
+        # chirrido de neumáticos: cuánto excede del pico de agarre la
+        # rueda que más desliza (la hierba no chirría)
+        st = car.state
+        over = 0.0
+        if abs(st.vx) > 4.0:
+            peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
+            for i in range(4):
+                if st.wheel_surface[i] == "grass":
+                    continue
+                over = max(over,
+                           abs(st.slip_ratio[i]) / cfg.TIRE_PEAK_SLIP_RATIO,
+                           abs(st.slip_angle[i]) / peak_a)
+        screech = max(0.0, min(1.0, (over - 1.05) * 1.2))
+        sound.update(st.rpm, wheel.throttle, screech, st.engine_on)
 
         # ------------------------------------------------ render
         sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
@@ -166,8 +192,12 @@ def main(argv=None):
         base_seg = track.segment_at(car.state.s)
         scene.draw_background(cfg.WINDOW_HEIGHT // 2,
                               car.state.psi + base_seg.kappa * 40.0)
-        scene.draw_road(track, car.state, show_line)
-        scene.draw_car(car.state, wheel.steering)
+        cam_h = 3.0 if chase_view else cfg.CAMERA_HEIGHT
+        scene.draw_road(track, car.state, show_line, cam_h)
+        if chase_view:
+            scene.draw_car_chase(car.state, wheel.steering)
+        else:
+            scene.draw_car(car.state, wheel.steering)
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
                  auto_gear)
         if show_debug:

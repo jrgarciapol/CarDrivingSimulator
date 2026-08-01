@@ -73,10 +73,12 @@ class Renderer:
             sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     # ------------------------------------------------------------------
-    def draw_road(self, track, car_state, show_line=True):
+    def draw_road(self, track, car_state, show_line=True, cam_height=None):
         """Devuelve la altura del horizonte usada (para el fondo)."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         speed = abs(car_state.vx)
+        if cam_height is None:
+            cam_height = cfg.CAMERA_HEIGHT
         segs = track.segments
         n_segs = len(segs)
         seg_len = cfg.SEGMENT_LENGTH
@@ -84,7 +86,7 @@ class Renderer:
         base_i = int(car_state.s / seg_len)
         frac = (car_state.s - base_i * seg_len) / seg_len
         base_seg = segs[base_i % n_segs]
-        cam_y = base_seg.y + cfg.CAMERA_HEIGHT
+        cam_y = base_seg.y + cam_height
 
         # Proyección de cada segmento por delante de la cámara
         cam_d = cfg.CAMERA_DEPTH
@@ -251,6 +253,77 @@ class Renderer:
                 lc = (255, 170, 130) if braking else (225, 55, 40)
                 self._fill(colx, cy + 44 + dyc, cw, 10, lc)
 
+    def draw_car_chase(self, car_state, steering):
+        """Vista de coche completo desde atrás y arriba: se ven las 4
+        ruedas (las delanteras giran con el volante) y la carrocería
+        cabecea y se balancea SOBRE ellas con los ángulos reales de la
+        suspensión, como en las vistas chase de los simuladores."""
+        W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        ex = cfg.CAR_BODY_MOTION_EXAG
+        cx = W / 2 + steering * 14 - car_state.psi * 110
+        y0 = H - 46
+        tilt = -car_state.roll * ex
+        pitch_off = max(-16.0, min(16.0, car_state.pitch * 250.0 * ex))
+        dy_h = int(max(-14.0, min(14.0, -car_state.heave * 120.0 * ex)))
+        braking = car_state.ax < -2.0
+        delta = steering * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0) / cfg.STEER_RATIO
+        shear = math.tan(max(-0.7, min(0.7, delta)))
+
+        rear_half, front_half = 74, 59
+        y_front_ax = y0 - 140      # eje delantero en pantalla
+        # sombra
+        self._fill(cx - rear_half - 4, y0 - 150, rear_half * 2 + 8, 152,
+                   (38, 38, 42))
+
+        # ruedas traseras (fijas al suelo)
+        for side in (-1, 1):
+            wx = cx + side * (rear_half + 16) - 13
+            self._fill(wx, y0 - 30, 26, 30, (20, 20, 20))
+            self._fill(wx + 8, y0 - 20, 10, 10, (70, 70, 70))
+        # ruedas delanteras giradas con el volante (a rebanadas)
+        for side in (-1, 1):
+            wxc = cx + side * (front_half + 12)
+            for r in range(0, 26, 3):
+                off = shear * (13 - r)
+                self._fill(wxc + off - 10, y_front_ax - 26 + r, 20, 3,
+                           (20, 20, 20))
+
+        # carrocería por bandas (morro, cabina, zaga), cada una con
+        # columnas verticales inclinadas por el balanceo
+        bands = (
+            # (y_sup, alto, semiancho, factor_cabeceo, tipo)
+            (y0 - 176, 46, front_half, -0.8, "nose"),
+            (y0 - 130, 66, 67, 0.0, "cabin"),
+            (y0 - 64, 60, rear_half, 0.8, "rear"),
+        )
+        n_cols = 16
+        for y_top, h, half, pf, kind in bands:
+            dy_band = int(pf * pitch_off) + dy_h
+            colw = half * 2.0 / n_cols
+            for i in range(n_cols):
+                dx = (i + 0.5) * colw - half
+                dyc = dy_band + int(tilt * dx)
+                colx = cx - half + i * colw
+                cw = int(colw) + 1
+                yy = y_top + dyc
+                if kind == "nose":
+                    self._fill(colx, yy, cw, 8, (150, 18, 24))
+                    self._fill(colx, yy + 8, cw, h - 8, (178, 24, 30))
+                elif kind == "cabin":
+                    # parabrisas delante, techo detrás
+                    self._fill(colx, yy, cw, 14, (35, 40, 60))
+                    self._fill(colx, yy + 14, cw, h - 14, (150, 18, 24))
+                else:
+                    # luneta trasera, maletero y pilotos
+                    self._fill(colx, yy, cw, 16, (35, 40, 60))
+                    self._fill(colx, yy + 16, cw, h - 26, (178, 24, 30))
+                    edge = half - abs(dx)
+                    if 4 < edge < 26:
+                        lc = (255, 170, 130) if braking else (225, 55, 40)
+                        self._fill(colx, yy + h - 10, cw, 8, lc)
+                    else:
+                        self._fill(colx, yy + h - 10, cw, 8, (150, 18, 24))
+
 
 class Hud:
     def __init__(self, renderer):
@@ -318,6 +391,20 @@ class Hud:
         ffb = "FFB OK" if ffb_ok else "SIN FFB"
         font.draw_text(self.r, f"{dev[:30]}  {ffb}  {cfg.DRIVE_TYPE}", 20, H - 140, 2,
                        (180, 255, 180, 255) if ffb_ok else (255, 180, 140, 255))
+
+        # motor parado: aviso grande en el centro
+        if not st.engine_on:
+            msg = "MOTOR PARADO"
+            sub = "PULSA E O EL BOTON DE ARRANQUE"
+            w1 = font.text_width(msg, 4)
+            w2 = font.text_width(sub, 2)
+            bxc = W // 2
+            self._fill(bxc - w1 // 2 - 20, H // 2 - 120, w1 + 40, 78,
+                       (90, 10, 10, 210))
+            font.draw_text(self.r, msg, bxc - w1 // 2, H // 2 - 106, 4,
+                           (255, 90, 70, 255))
+            font.draw_text(self.r, sub, bxc - w2 // 2, H // 2 - 66, 2,
+                           (255, 210, 200, 255))
 
         # avisos de conducción
         y_warn = H - 190
@@ -399,6 +486,7 @@ class Hud:
             self._fill(cx - radius, cy + radius + 6, radius * 2, 6, (60, 60, 60))
             self._fill(cx - radius, cy + radius + 6,
                        int(radius * 2 * load_frac), 6, (120, 180, 255))
+
 
 
 def _fmt_time(t):

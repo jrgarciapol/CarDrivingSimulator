@@ -412,6 +412,37 @@ def main():
                          f"s={car.state.s:.0f}m"))
 
     # ------------------------------------------------------------------
+    print("--- Garaje: los 8 coches ---")
+    from simulator import garage
+    snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS
+                if hasattr(cfg, k)}
+    snapshot["CAR_CG_TO_FRONT"] = cfg.CAR_CG_TO_FRONT
+    snapshot["CAR_CG_TO_REAR"] = cfg.CAR_CG_TO_REAR
+    floors = {"AUTOBUS": 40.0, "UTILITARIO": 60.0, "BERLINA DE LUJO": 90.0,
+              "TODOTERRENO": 80.0}
+    for name, path, desc in garage.list_cars():
+        garage.load_car(path)
+        c = Car()
+        settle(c, flat, 1.0)
+        t = 0.0
+        while t < 8.0:
+            c.auto_shift(1.0)
+            c.step(DT, 0.0, 1.0, 0.0, flat)
+            t += DT
+        v_top = c.state.speed_kmh
+        for _ in range(int(4.0 / DT)):
+            c.step(DT, 0.05, 0.0, 1.0, flat)
+        stable = all(math.isfinite(x) for x in
+                     (c.state.vx, c.state.vy, c.state.yaw_rate,
+                      c.state.roll, c.state.pitch))
+        ok_car = stable and v_top > floors.get(name, 95.0) \
+            and c.state.speed_kmh < v_top * 0.6
+        results.append(check(f"{name}: acelera, frena y no diverge", ok_car,
+                             f"vmax={v_top:.0f} km/h vfinal={c.state.speed_kmh:.0f}"))
+    for k, v in snapshot.items():
+        setattr(cfg, k, v)
+
+    # ------------------------------------------------------------------
     n_ok = sum(1 for r in results if r)
     print(f"\n{n_ok}/{len(results)} pruebas correctas")
     return 0 if n_ok == len(results) else 1

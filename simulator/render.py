@@ -15,7 +15,7 @@ import sdl2
 from . import config as cfg
 from . import font
 
-# Paleta
+# Paleta (mutable: set_condition() la ajusta al estado del asfalto)
 SKY_TOP = (78, 154, 219)
 SKY_BOTTOM = (170, 210, 240)
 GRASS = [(16, 122, 40), (12, 105, 34)]
@@ -23,6 +23,31 @@ ROAD = [(84, 84, 88), (78, 78, 82)]
 KERB = [(214, 40, 40), (235, 235, 235)]
 LINE = (235, 235, 235)
 HORIZON_MOUNTAIN = (58, 108, 76)
+
+
+def set_condition(cond):
+    """Ajusta la paleta al estado del asfalto elegido en el menú."""
+    global SKY_TOP, SKY_BOTTOM, GRASS, ROAD, LINE
+    if cond == "LLUVIA":
+        SKY_TOP = (95, 105, 120)
+        SKY_BOTTOM = (150, 158, 170)
+        ROAD = [(52, 54, 62), (47, 49, 57)]
+        GRASS = [(14, 96, 34), (10, 82, 28)]
+        LINE = (200, 200, 205)
+    elif cond == "ARENA":
+        SKY_TOP = (120, 150, 190)
+        SKY_BOTTOM = (215, 205, 175)
+        ROAD = [(120, 110, 92), (112, 102, 85)]
+        GRASS = [(105, 115, 45), (92, 102, 38)]
+    elif cond == "HORMIGON":
+        ROAD = [(150, 150, 148), (141, 141, 139)]
+        LINE = (250, 210, 60)
+
+
+def _shade(color, f):
+    return (max(0, min(255, int(color[0] * f))),
+            max(0, min(255, int(color[1] * f))),
+            max(0, min(255, int(color[2] * f))))
 
 
 class Renderer:
@@ -416,15 +441,17 @@ class Renderer:
             dyc = body_dy + int(tilt * dx)
             colx = x + i * col_w
             cw = int(col_w) + 1
+            body_c = getattr(cfg, "CAR_COLOR", (178, 24, 30))
+            dark_c = _shade(body_c, 0.82)
             # techo
-            self._fill(colx, cy + 17 + dyc, cw, 7, (150, 18, 24))
+            self._fill(colx, cy + 17 + dyc, cw, 7, dark_c)
             # luneta trasera (con margen a los lados)
             if abs(dx) < car_w / 2 - 34:
                 self._fill(colx, cy + 24 + dyc, cw, 17, (35, 40, 60))
             else:
-                self._fill(colx, cy + 24 + dyc, cw, 17, (150, 18, 24))
+                self._fill(colx, cy + 24 + dyc, cw, 17, dark_c)
             # cuerpo principal
-            self._fill(colx, cy + 41 + dyc, cw, 57, (178, 24, 30))
+            self._fill(colx, cy + 41 + dyc, cw, 57, body_c)
             # pilotos traseros (más brillantes al frenar)
             edge = car_w / 2 - abs(dx)
             if 10 < edge < light_zone:
@@ -512,11 +539,12 @@ class Renderer:
                     0.98, 1.58, (22, 22, 22), (40, 40, 40),
                     yaw2=delta, cx0=sx_ * 0.83, cz0=1.28)
 
-        # carrocería y cabina (con dinámica)
+        # carrocería y cabina (con dinámica), en el color del coche
+        body_c = getattr(cfg, "CAR_COLOR", (178, 24, 30))
         add_box(-0.89, 0.89, 0.34, 0.95, -2.08, 2.08,
-                (152, 20, 26), (196, 40, 44), body=True)
+                _shade(body_c, 0.85), _shade(body_c, 1.12), body=True)
         add_box(-0.72, 0.72, 0.95, 1.40, -0.85, 0.95,
-                (38, 44, 66), (170, 24, 30), body=True)
+                (38, 44, 66), _shade(body_c, 0.95), body=True)
 
         # pilotos traseros
         lc = (255, 170, 130) if braking else (228, 58, 42)

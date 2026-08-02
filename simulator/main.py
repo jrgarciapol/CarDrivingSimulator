@@ -236,7 +236,10 @@ def main(argv=None):
         sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
         sdl2.SDL_RenderClear(renderer)
         base_seg = track.segment_at(car.state.s)
-        scene.draw_background(cfg.WINDOW_HEIGHT // 2,
+        horizon_px = cfg.WINDOW_HEIGHT // 2
+        if view_mode < 2:
+            horizon_px += int(render_mod.camera_pitch_px(car.state))
+        scene.draw_background(horizon_px,
                               car.state.psi * cfg.CAMERA_YAW_GAIN
                               + base_seg.kappa * 40.0)
         # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,

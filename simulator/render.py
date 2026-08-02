@@ -44,6 +44,13 @@ def set_condition(cond):
         LINE = (250, 210, 60)
 
 
+def camera_pitch_px(car_state):
+    """Desplazamiento vertical de la escena por el cabeceo del chasis
+    (cámara solidaria al coche): frenando, el morro baja y el mundo SUBE
+    en pantalla. Lo usan draw_road y el horizonte del fondo."""
+    return cfg.CAMERA_DEPTH * car_state.pitch * 2.5 * (cfg.WINDOW_HEIGHT / 2.0)
+
+
 def _shade(color, f):
     return (max(0, min(255, int(color[0] * f))),
             max(0, min(255, int(color[1] * f))),
@@ -121,6 +128,13 @@ class Renderer:
         base_i = int(car_state.s / L)
         frac = (car_state.s - base_i * L) / L
         cam_y = segs[base_i % n_segs].y + cam_height
+        # en las vistas a bordo, la cámara es solidaria al chasis: sube y
+        # baja con la suspensión y cabecea con el coche
+        if cam_back == 0.0:
+            cam_y += car_state.heave
+            pitch_px = camera_pitch_px(car_state)
+        else:
+            pitch_px = 0.0
         if yaw_gain is None:
             yaw_gain = cfg.CAMERA_YAW_GAIN
         psi_c = car_state.psi * yaw_gain
@@ -278,9 +292,9 @@ class Renderer:
             izl = np.where(zl > 0.25, 1.0 / np.maximum(zl, 0.25), 0.0)
             izr = np.where(zrg > 0.25, 1.0 / np.maximum(zrg, 0.25), 0.0)
             sxl = W / 2 + f * xl * izl * (W / 2)
-            syl = H / 2 - f * dy * izl * (H / 2)
+            syl = H / 2 - f * dy * izl * (H / 2) + pitch_px
             sxr = W / 2 + f * xrg * izr * (W / 2)
-            syr = H / 2 - f * dy * izr * (H / 2)
+            syr = H / 2 - f * dy * izr * (H / 2) + pitch_px
             valid = (zl > 0.25) & (zrg > 0.25)
             return sxl, syl, sxr, syr, valid
 
@@ -382,7 +396,7 @@ class Renderer:
                     if pz_w < 0.3:
                         continue
                     sx = W / 2 + f * px_w / pz_w * (W / 2)
-                    sy = H / 2 - f * dy[j] / pz_w * (H / 2)
+                    sy = H / 2 - f * dy[j] / pz_w * (H / 2) + pitch_px
                     self._fill(sx - pw / 2, sy - h_px, pw, h_px, color)
                     self._fill(sx - pw / 2, sy - h_px, pw, cap, (245, 245, 245))
         return H // 2

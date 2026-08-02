@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.5"
+VERSION = "v2.6"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -148,6 +148,10 @@ ENGINE_REDLINE_RPM = 6800.0      # rpm de zona roja [5500 .. 9000]
 ENGINE_LIMITER_RPM = 7000.0      # rpm del corte de inyección
 ENGINE_BRAKE_COEFF = 45.0        # Nm de freno motor a régimen máximo
                                  # [20 .. 90]
+ENGINE_INERTIA = 0.15            # kg·m², inercia rotacional del motor y
+                                 # volante: multiplicada por el desarrollo
+                                 # al cuadrado, hace que acelerar/retener
+                                 # en 1a cueste más que en 6a [0.05 .. 3]
 GEAR_RATIOS = [3.62, 2.19, 1.51, 1.17, 0.95, 0.81]  # desarrollos 1a..6a
 FINAL_DRIVE = 3.70               # relación del grupo final [3.0 .. 4.5]
 REVERSE_RATIO = 3.40             # relación de la marcha atrás
@@ -196,6 +200,11 @@ ARB_FRONT = 23000.0          # estabilizadora delantera (N/m de diferencia
                              # subviraje [0 .. 40000]
 ARB_REAR = 14000.0           # estabilizadora trasera; subirla acerca el
                              # coche al sobreviraje [0 .. 40000]
+SUSP_ANTI_PITCH = 0.30       # geometría anti-dive/anti-squat: fracción de
+                             # la fuerza longitudinal que los brazos de
+                             # suspensión desvían directamente al chasis
+                             # (menos cabeceo, misma transferencia de
+                             # carga, plataforma más estable) [0 .. 0.5]
 
 # ===========================================================================
 # AERODINÁMICA Y RESISTENCIAS

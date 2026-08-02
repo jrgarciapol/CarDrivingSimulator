@@ -45,9 +45,18 @@ feedback realista** calculado a partir de la física del vehículo.
   0-100 en ~7 s, frenada 100-0 en ~39 m con ABS (y peor sin él), subviraje
   estable en el límite, AWD saliendo más rápido que RWD, etc.
 
-**Entorno:** circuito de 2,8 km con curvas rápidas, chicane, horquilla y
-cambios de rasante, gráficos pseudo-3D, cronómetro de vueltas y sonido de
-motor sintetizado que sigue a las RPM.
+**Entorno:** gráficos pseudo-3D, cronómetro de vueltas y sonido de motor
+sintetizado que sigue a las RPM. Tres circuitos:
+
+- **Silverstone** (5,9 km) y **Spa-Francorchamps** (7,0 km) reales,
+  importados del eje central escaneado del
+  [racetrack-database de la TU München](https://github.com/TUMFTM/racetrack-database)
+  (sin altimetría). Se elige con `TRACK_FILE` en `config.py`; por defecto
+  arranca Silverstone.
+- El circuito de pruebas integrado (2,8 km, con colinas y rasantes),
+  poniendo `TRACK_FILE = ""`.
+- Puedes importar más circuitos del mismo repositorio con
+  `python tools/import_track.py <entrada.csv> simulator/tracks/<nombre>.csv`.
 
 **Ayudas de pilotaje:**
 - **Trazada ideal** sobre el asfalto (tecla `L`): verde = margen de sobra,

@@ -97,6 +97,8 @@ def check(name, cond, detail=""):
 def main():
     results = []
     flat = FlatTrack()
+    # las pruebas del circuito usan el trazado integrado (determinista)
+    cfg.TRACK_FILE = ""
 
     # ------------------------------------------------------------------
     print("--- Aceleracion y frenada ---")

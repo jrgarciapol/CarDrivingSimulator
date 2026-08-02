@@ -229,6 +229,10 @@ DRAW_DISTANCE = 220          # segmentos dibujados; bajar si va lento
 CAMERA_HEIGHT = 1.55         # m, altura de la cámara en las vistas bajas
                              # [1.1 .. 2.5]
 CAMERA_DEPTH = 0.84          # proyección (1/tan(fov/2)); subir = teleobjetivo
+CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
+                             # respecto a la carretera: 1.0 = geométrico
+                             # exacto, más alto = giro de vista más
+                             # perceptible al derrapar o girar [1.0 .. 2.5]
 RACING_LINE = True           # trazada ideal (tecla L): verde = margen,
                              # ámbar = al límite, rojo = no llegas a frenar
 TRACK_POLES = True           # balizas de colores en los bordes (amarillo =

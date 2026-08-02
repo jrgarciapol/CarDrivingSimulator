@@ -197,7 +197,8 @@ def main(argv=None):
         sdl2.SDL_RenderClear(renderer)
         base_seg = track.segment_at(car.state.s)
         scene.draw_background(cfg.WINDOW_HEIGHT // 2,
-                              car.state.psi + base_seg.kappa * 40.0)
+                              car.state.psi * cfg.CAMERA_YAW_GAIN
+                              + base_seg.kappa * 40.0)
         # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,
         # 2 = coche completo desde arriba
         cam_h = (1.30, cfg.CAMERA_HEIGHT, 3.0)[view_mode]

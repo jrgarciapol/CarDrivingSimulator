@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.3"
+VERSION = "v2.4"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -82,8 +82,10 @@ FFB_KICK_GAIN = 0.0015   # sacudida por baches asimétricos delanteros, en
                          # [0 .. 0.005]
 FFB_SPRING_LOWSPEED = 0.35   # muelle de centrado al aparcar [0 .. 1]
 FFB_DAMPER_LOWSPEED = 0.55   # pesadez del volante parado [0 .. 1]
-FFB_DAMPER_HIGHSPEED = 0.16  # amortiguación residual en marcha; sube si
-                             # el volante vibra en recta [0 .. 0.4]
+FFB_DAMPER_HIGHSPEED = 0.30  # amortiguación residual en marcha (efecto
+                             # damper del firmware del volante): evita que
+                             # el volante oscile con violencia al soltarlo
+                             # en recta; sube si aún se agita [0 .. 0.5]
 FFB_ROAD_TEXTURE = 0.05      # vibración fina del asfalto [0 .. 0.3]
 FFB_KERB_MAGNITUDE = 0.45    # vibración al pisar pianos [0 .. 1]
 FFB_GRASS_MAGNITUDE = 0.35   # vibración sobre hierba [0 .. 1]

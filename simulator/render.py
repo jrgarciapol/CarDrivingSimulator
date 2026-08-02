@@ -217,14 +217,23 @@ class Renderer:
         inv_z = np.where(z_ok, 1.0 / np.maximum(zr, 0.25), 0.0)
 
         def clip_col(xc, zc):
-            """Recorta una columna de puntos contra el plano cercano
-            interpolando el punto de cruce: el quad que atraviesa la
-            cámara no desaparece (evita el parpadeo del borde inferior)."""
-            crossings = np.nonzero((zc[:-1] <= 0.28) & (zc[1:] > 0.28))[0]
-            for j in crossings:
-                t = (0.28 - zc[j]) / (zc[j + 1] - zc[j])
+            """Recorta una columna de puntos contra el plano cercano en
+            AMBOS sentidos: donde la geometría entra al campo de visión
+            (detrás -> delante) y donde sale (curvas muy cerradas cuyo
+            borde interior vuelve a cruzar el plano). Sin el segundo caso,
+            el quad desaparecía un frame y asomaba la hierba."""
+            zn = 0.28
+            z0 = zc.copy()
+            enter = np.nonzero((z0[:-1] <= zn) & (z0[1:] > zn))[0]
+            for j in enter:
+                t = (zn - z0[j]) / (z0[j + 1] - z0[j])
                 xc[j] += (xc[j + 1] - xc[j]) * t
-                zc[j] = 0.2801
+                zc[j] = zn + 1e-4
+            leave = np.nonzero((z0[:-1] > zn) & (z0[1:] <= zn))[0]
+            for j in leave:
+                t = (zn - z0[j]) / (z0[j + 1] - z0[j])
+                xc[j + 1] = xc[j] + (xc[j + 1] - xc[j]) * t
+                zc[j + 1] = zn + 1e-4
 
         def project(o_left, o_right, per_section=None):
             """Devuelve (P0x,P0y,P1x,P1y) proyectados por sección para un
@@ -832,44 +841,116 @@ class Hud:
         cx_, cy_ = to_px(pts[i_car])
         self._fill(cx_ - 3, cy_ - 3, 7, 7, (235, 45, 35))
 
-    def draw_telemetry(self, car_state):
-        """Superposición F2: círculo de fricción de cada rueda en vivo.
-        Eje X = deriva normalizada (alfa/alfa_pico), eje Y = deslizamiento
-        longitudinal normalizado (s/s_pico). El círculo marca rho = 1 (el
-        pico de agarre); el punto fuera del círculo = neumático saturado."""
+    def draw_telemetry(self, car_state, steering=0.0, sim_time=0.0):
+        """Superposición F2 rediseñada:
+        - Círculo de fricción por rueda con ESTELA de los últimos 2 s
+          (desvaneciéndose) y punto actual suavizado (~0.3 s) cuyo
+          DIÁMETRO es la carga vertical de esa rueda.
+        - Brújula de trayectoria: flecha fija = trayectoria del centro de
+          gravedad; flecha roja = eje del coche (deriva del chasis, beta);
+          flecha amarilla = ruedas delanteras.
+        Los tiempos son de simulación: la cámara lenta también ralentiza
+        la estela."""
         W = cfg.WINDOW_WIDTH
-        box_x, box_y, box_w, box_h = W - 320, 130, 300, 360
+        if not hasattr(self, "_tel_t"):
+            self._tel_t = None
+            self._tel_dot = [[0.0, 0.0, 1.0] for _ in range(4)]  # aN,sN,carga
+            self._tel_trail = [[] for _ in range(4)]
+            self._tel_ang = [0.0, 0.0]                           # alfa, beta
+        dt = 0.0
+        if self._tel_t is not None:
+            dt = max(0.0, min(0.2, sim_time - self._tel_t))
+        self._tel_t = sim_time
+        k_dot = min(1.0, dt / 0.30) if dt > 0 else 0.0
+        k_ang = min(1.0, dt / 0.30) if dt > 0 else 0.0
+
+        box_x, box_y, box_w, box_h = W - 320, 110, 300, 508
         self._fill(box_x, box_y, box_w, box_h, (0, 0, 0, 190))
         font.draw_text(self.r, "F2: CIRCULO DE FRICCION", box_x + 12, box_y + 10, 2)
         names = ("DI", "DD", "TI", "TD")
         radius = 52
+        peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
+        static_q = cfg.CAR_MASS * 9.81 / 4.0
         for i in range(4):
             cx = box_x + 80 + (i % 2) * 145
-            cy = box_y + 90 + (i // 2) * 150
-            # aro rho = 1
-            sdl2.SDL_SetRenderDrawColor(self.r, 110, 110, 110, 255)
+            cy = box_y + 88 + (i // 2) * 148
+            # aro rho = 1 y ejes
             for deg in range(0, 360, 5):
                 a = math.radians(deg)
                 self._fill(cx + radius * math.cos(a) - 1,
                            cy + radius * math.sin(a) - 1, 2, 2, (110, 110, 110))
-            # ejes
             self._fill(cx - radius, cy, radius * 2, 1, (70, 70, 70))
             self._fill(cx, cy - radius, 1, radius * 2, (70, 70, 70))
-            # punto de estado (saturado = rojo)
-            a_n = car_state.slip_angle[i] / math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
+            font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)
+
+            a_n = car_state.slip_angle[i] / peak_a
             s_n = car_state.slip_ratio[i] / cfg.TIRE_PEAK_SLIP_RATIO
-            rho = math.hypot(a_n, s_n)
             a_n = max(-1.5, min(1.5, a_n))
             s_n = max(-1.5, min(1.5, s_n))
+            load = car_state.fz[i] / static_q
+            # estela (muestras crudas con marca de tiempo de simulación)
+            trail = self._tel_trail[i]
+            if dt > 0:
+                trail.append((sim_time, a_n, s_n))
+            while trail and sim_time - trail[0][0] > 2.0:
+                trail.pop(0)
+            for (ts, ta, tsn) in trail:
+                age = (sim_time - ts) / 2.0
+                al = int(30 + 110 * (1.0 - age))
+                self._fill(cx + ta * radius - 1, cy - tsn * radius - 1,
+                           2, 2, (140, 200, 255, al))
+            # punto actual suavizado, con diámetro segun la carga
+            d0 = self._tel_dot[i]
+            d0[0] += (a_n - d0[0]) * k_dot
+            d0[1] += (s_n - d0[1]) * k_dot
+            d0[2] += (load - d0[2]) * k_dot
+            rho = math.hypot(d0[0], d0[1])
             color = (255, 70, 50) if rho > 1.0 else (90, 230, 90)
-            self._fill(cx + a_n * radius - 3, cy - s_n * radius - 3, 6, 6, color)
-            # etiqueta y carga
-            font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)
-            load_frac = min(1.0, car_state.fz[i] / 8000.0)
-            self._fill(cx - radius, cy + radius + 6, radius * 2, 6, (60, 60, 60))
-            self._fill(cx - radius, cy + radius + 6,
-                       int(radius * 2 * load_frac), 6, (120, 180, 255))
+            r_px = max(2, min(11, int(2 + 4.5 * d0[2])))
+            self._fill(cx + d0[0] * radius - r_px, cy - d0[1] * radius - r_px,
+                       r_px * 2, r_px * 2, color)
+        font.draw_text(self.r, "PUNTO GRANDE = MAS CARGA",
+                       box_x + 12, box_y + 322, 2, (170, 170, 170, 255))
 
+        # ---- brújula de trayectoria ------------------------------------
+        comp_y = box_y + 348
+        font.draw_text(self.r, "TRAYECTORIA / EJE / RUEDAS",
+                       box_x + 12, comp_y, 2)
+        ccx, ccy = box_x + 84, comp_y + 92
+        arrow_len = 62
+        st = car_state
+        if abs(st.vx) > 2.0:
+            beta = math.atan2(st.vy, abs(st.vx))
+        else:
+            beta = 0.0
+        alpha_f = (st.slip_angle[0] + st.slip_angle[1]) / 2.0
+        self._tel_ang[0] += (alpha_f - self._tel_ang[0]) * k_ang
+        self._tel_ang[1] += (beta - self._tel_ang[1]) * k_ang
+        beta_s = self._tel_ang[1]
+        delta = steering * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0) / cfg.STEER_RATIO
+
+        def arrow(ang, color, ln):
+            # ang 0 = trayectoria (vertical); positivo = inclinado a la dcha
+            dx, dyy = math.sin(ang), -math.cos(ang)
+            steps = int(ln / 3)
+            for k in range(steps):
+                px = ccx + dx * k * 3
+                py = ccy + dyy * k * 3
+                self._fill(px - 1, py - 1, 3, 3, color)
+            # punta
+            self._fill(ccx + dx * ln - 3, ccy + dyy * ln - 3, 6, 6, color)
+
+        # amplificar x3 para que se aprecien ángulos pequeños
+        AMP = 3.0
+        arrow(0.0, (170, 170, 170), arrow_len)               # trayectoria CG
+        arrow(-beta_s * AMP, (235, 60, 50), arrow_len - 6)    # eje del coche
+        arrow((-beta_s + delta) * AMP, (250, 205, 60), arrow_len - 14)  # ruedas
+        font.draw_text(self.r, f"RUEDAS {math.degrees(self._tel_ang[0]):+5.1f}",
+                       box_x + 150, comp_y + 42, 2, (250, 205, 60, 255))
+        font.draw_text(self.r, f"CHASIS {math.degrees(beta_s):+5.1f}",
+                       box_x + 150, comp_y + 66, 2, (235, 60, 50, 255))
+        font.draw_text(self.r, "GRADOS (X3)",
+                       box_x + 150, comp_y + 90, 2, (150, 150, 150, 255))
 
 
 def _fmt_time(t):

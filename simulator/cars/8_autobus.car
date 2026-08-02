@@ -39,3 +39,7 @@ BRAKE_FORCE_MAX = 90000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.58           # fraccion de frenada al eje delantero
 ENGINE_INERTIA = 2.2              # kg*m2, volante motor: retencion al reducir
 CAMERA_HEIGHT = 2.30              # m, ojo del conductor: en lo alto de todo
+UNSPRUNG_MASS = 320.0             # kg por rueda: eje rigido y gemelas
+TIRE_VERT_STIFF = 2000000.0       # N/m, neumatico de camion
+TIRE_VERT_DAMP = 8000.0           # N*s/m
+SUSP_CAMBER_GAIN = 0.0            # eje rigido: no gana caida

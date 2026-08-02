@@ -46,10 +46,18 @@ feedback realista** calculado a partir de la física del vehículo.
 - **Peralte** con física completa: la gravedad empuja hacia el vértice, la
   fuerza centrípeta aprieta el coche contra el asfalto (más agarre y más
   peso en el volante) y la carrocería se tumba hacia el lado bajo.
+- **Masas no suspendidas**: cada rueda tiene su grado de libertad vertical
+  y el neumático es un muelle contra el asfalto — sobre un piano agresivo
+  la rueda "vuela" y pierde la carga aunque el chasis lo filtre.
+- **Temperatura del neumático**: derrapar y frenar fuerte calienta la
+  goma, el aire la enfría; fría o recalentada agarra menos (temperaturas
+  en vivo en la telemetría F2).
+- **Camber gain**: la suspensión gana caída al comprimirse y endereza la
+  rueda exterior en el apoyo (cada coche según su geometría).
 - Superficie por rueda: con dos ruedas en la hierba el coche tira hacia ese
   lado, como en la realidad.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **39 pruebas físicas** (`python tests/test_physics.py`):
+- Verificado con una batería de **45 pruebas físicas** (`python tests/test_physics.py`):
   0-100 en ~7 s, frenada 100-0 en ~39 m con ABS (y peor sin él), subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte, etc. El modelo está explicado ecuación a ecuación en
@@ -101,6 +109,12 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
   coche como punto rojo — para leer la siguiente curva con antelación.
 - **Cámara lenta** (tecla `T` o botón 10): 1×/0,5×/0,25×/0,1× para estudiar
   el comportamiento del coche con calma.
+- **Coche fantasma**: al completar una vuelta, tu mejor vuelta de la sesión
+  se reproduce como un coche translúcido sobre la pista — la referencia
+  perfecta para encontrar dónde pierdes tiempo (`GHOST_ENABLED`).
+- **Humo, chispas y polvo**: partículas procedurales al pasarse del límite
+  de agarre — humo blanco derrapando en asfalto, chispas naranjas sobre
+  los pianos y polvo en la hierba (`PARTICLES_ENABLED`).
 - **Chirrido de neumáticos**: cuando una rueda supera el pico de agarre
   (bloqueo de frenada o deriva al límite en curva) se oye chirriar, con
   volumen proporcional al deslizamiento. La hierba no chirría (`SCREECH_VOLUME`).
@@ -242,7 +256,7 @@ docs/
   FISICA.md        el modelo físico explicado para un ingeniero
   NOTA_REVISION.md orientación para revisores del código
 tests/
-  test_physics.py  bateria de 39 pruebas del modelo fisico (sin volante)
+  test_physics.py  bateria de 45 pruebas del modelo fisico (sin volante)
 ```
 
 ## Solución de problemas

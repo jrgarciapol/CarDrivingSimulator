@@ -35,3 +35,6 @@ AERO_DOWNFORCE = 0.0              # N/(m/s)2, carga aerodinamica (aprieta al sue
 BRAKE_FORCE_MAX = 24000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.80              # m, ojo del conductor: dominando el trafico
+UNSPRUNG_MASS = 65.0              # kg por rueda, llanta y freno grandes
+TIRE_VERT_STIFF = 400000.0        # N/m, globo de perfil alto
+SUSP_CAMBER_GAIN = 0.15           # eje casi rigido

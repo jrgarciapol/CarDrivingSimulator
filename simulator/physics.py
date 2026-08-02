@@ -104,6 +104,11 @@ class CarState:
         # ruedas
         self.omega = [0.0, 0.0, 0.0, 0.0]      # rad/s
         self.fz = [0.0, 0.0, 0.0, 0.0]         # carga vertical (N)
+        self.zu = [0.0, 0.0, 0.0, 0.0]         # posición vertical de la masa
+                                               # no suspendida (m, + arriba,
+                                               # desviación del equilibrio)
+        self.zu_v = [0.0, 0.0, 0.0, 0.0]       # y su velocidad (m/s)
+        self.tire_temp = [60.0, 60.0, 60.0, 60.0]  # C, goma templada de inicio
         self.susp_def = [0.0, 0.0, 0.0, 0.0]   # deflexión muelle (m, + comprimido)
         self.slip_ratio = [0.0, 0.0, 0.0, 0.0]
         self.slip_angle = [0.0, 0.0, 0.0, 0.0]
@@ -299,11 +304,25 @@ class Car:
             st.wheel_surface[i] = surf
             if i >= 2:
                 mu *= cfg.TIRE_REAR_GRIP_FACTOR
+            # temperatura de la goma: parábola invertida centrada en el
+            # óptimo — fría no agarra (hay que calentarla) y recalentada
+            # por abusar del derrape tampoco
+            dev = st.tire_temp[i] - cfg.TIRE_TEMP_OPT
+            mu *= max(0.72, 1.0 - cfg.TIRE_TEMP_SENS * dev * dev)
             mu_wheel[i] = mu
             bump[i] = track.bump_at(s_i, n_i, surf)
 
-        # --- suspensión: cargas por rueda -------------------------------
-        # deflexión dinámica de cada esquina (positiva = comprimida)
+        # --- suspensión: chasis <-> masa no suspendida <-> asfalto ------
+        # Cada rueda tiene su propio GDL vertical (zu): el muelle y el
+        # amortiguador trabajan entre el chasis y la MANGUETA, y el
+        # neumático es otro muelle (mucho más rígido) entre la mangueta y
+        # el asfalto. Sobre un piano agresivo la rueda "vuela": el
+        # neumático se descomprime y la carga cae aunque el chasis apenas
+        # se entere (la carga de Pacejka sale del muelle del neumático).
+        grade = track.grade_at(st.s)
+        vcurv = track.vcurv_at(st.s)
+        a_road = vcurv * st.vx * st.vx   # aceleración vertical impuesta
+        # por la rasante (cresta: vcurv<0 -> el suelo "cae")
         d = [0.0] * 4
         dv = [0.0] * 4
         f_susp = [0.0] * 4
@@ -312,10 +331,8 @@ class Car:
             # derecha el balanceo sale positivo: carga las ruedas izquierdas)
             corner_h = st.heave + st.pitch * self.X_POS[i] + st.roll * self.Y_POS[i]
             corner_v = st.heave_v + st.pitch_v * self.X_POS[i] + st.roll_v * self.Y_POS[i]
-            bump_v = (bump[i] - self._prev_bump[i]) / dt if dt > 0 else 0.0
-            self._prev_bump[i] = bump[i]
-            d[i] = bump[i] - corner_h
-            dv[i] = bump_v - corner_v
+            d[i] = st.zu[i] - corner_h
+            dv[i] = st.zu_v[i] - corner_v
             k = cfg.SUSP_SPRING_FRONT if i < 2 else cfg.SUSP_SPRING_REAR
             f_susp[i] = k * d[i] + cfg.SUSP_DAMPER * dv[i]
             st.susp_def[i] = d[i]
@@ -327,6 +344,20 @@ class Car:
         f_susp[FR] -= arb_f
         f_susp[RL] += arb_r
         f_susp[RR] -= arb_r
+
+        # muelle del neumático + dinámica de la masa no suspendida
+        f_tire_v = [0.0] * 4
+        for i in range(4):
+            bump_v = (bump[i] - self._prev_bump[i]) / dt if dt > 0 else 0.0
+            self._prev_bump[i] = bump[i]
+            comp = bump[i] - st.zu[i]          # compresión de la goma
+            comp_v = bump_v - st.zu_v[i]
+            f_tire_v[i] = cfg.TIRE_VERT_STIFF * comp + cfg.TIRE_VERT_DAMP * comp_v
+            # la rueda también vive en el sistema de la carretera: la
+            # rasante (a_road) la acelera igual que al chasis
+            zu_acc = (f_tire_v[i] - f_susp[i]) / cfg.UNSPRUNG_MASS - a_road
+            st.zu_v[i] += zu_acc * dt
+            st.zu[i] += st.zu_v[i] * dt
 
         # carga aerodinámica: crece con el cuadrado de la velocidad y se
         # reparte entre ejes; pasa por la sensibilidad a la carga del
@@ -343,13 +374,12 @@ class Car:
         for i in range(4):
             aero = df_front if i < 2 else df_rear
             geo = anti_fz if i < 2 else -anti_fz
-            st.fz[i] = max(0.0, self._static_fz[i] + f_susp[i] + aero + geo)
+            # la carga de contacto sale del MUELLE DEL NEUMÁTICO (no del
+            # de suspensión): si la goma se despega del asfalto, Fz = 0
+            # aunque el muelle de suspensión siga empujando la mangueta
+            st.fz[i] = max(0.0, self._static_fz[i] + f_tire_v[i] + aero + geo)
 
         # --- dinámica vertical del chasis -------------------------------
-        grade = track.grade_at(st.s)
-        vcurv = track.vcurv_at(st.s)
-        a_road = vcurv * st.vx * st.vx   # aceleración vertical impuesta
-        # por la rasante (cresta: vcurv<0 -> el suelo "cae" -> descarga)
         sum_f = sum(f_susp)
         sum_mx = sum(f_susp[i] * self.X_POS[i] for i in range(4))
         sum_my = sum(f_susp[i] * self.Y_POS[i] for i in range(4))
@@ -493,12 +523,32 @@ class Car:
             # hacia FUERA, así que este empuje RESTA agarre lateral: los
             # coches altos y blandos (autobús, todoterreno) subviran mucho
             # más apoyados que los rígidos (fórmula), que apenas se tumban.
-            fy_ss -= cfg.TIRE_CAMBER_THRUST * st.roll * st.fz[i]
+            # La GEOMETRÍA de suspensión lo compensa en parte: al
+            # comprimirse, cada lado gana caída hacia el centro del coche
+            # (camber gain), enderezando la rueda exterior en el apoyo.
+            # El signo es opuesto en cada lado: la misma compresión tumba
+            # la rueda izquierda hacia la derecha y viceversa.
+            side = 1.0 if self.Y_POS[i] > 0.0 else -1.0
+            lean = -st.roll - side * cfg.SUSP_CAMBER_GAIN * st.susp_def[i]
+            fy_ss += cfg.TIRE_CAMBER_THRUST * lean * st.fz[i]
             # retardo de respuesta lateral (relaxation length)
             blend = min(1.0, (vx_abs + 0.5) * dt / cfg.TIRE_RELAX_LENGTH)
             self._fy_state[i] += (fy_ss - self._fy_state[i]) * blend
             fx_w[i] = fx
             fy_w[i] = self._fy_state[i]
+            # termodinámica: la potencia de fricción calienta la goma
+            # (P = |F|·|v_deslizamiento|) y el aire la refrigera con la
+            # velocidad (más un residuo de convección en parado)
+            v_slip_mag = math.hypot(slip * denom, v_side)
+            p_fric = math.hypot(fx, self._fy_state[i]) * v_slip_mag
+            # tasa limitada: la masa térmica de la goma no permite subir
+            # más de ~6 C/s ni en el derrape más salvaje
+            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric)
+            cool = cfg.TIRE_COOL_COEFF * (2.0 + vx_abs) \
+                * (st.tire_temp[i] - cfg.TIRE_TEMP_AMB)
+            st.tire_temp[i] += (heat - cool) * dt
+            st.tire_temp[i] = max(cfg.TIRE_TEMP_AMB,
+                                  min(160.0, st.tire_temp[i]))
 
         # --- fuerzas sobre el chasis ------------------------------------
         sign_v = 1.0 if st.vx >= 0.0 else -1.0

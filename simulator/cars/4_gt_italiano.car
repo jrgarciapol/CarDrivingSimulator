@@ -36,3 +36,6 @@ AERO_DF_FRONT_SHARE = 0.44        # fraccion de carga aero en el eje delantero
 BRAKE_FORCE_MAX = 26000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.05              # m, ojo del conductor: casi tumbado
+UNSPRUNG_MASS = 28.0              # kg por rueda, llanta forjada
+SUSP_CAMBER_GAIN = 1.2            # geometria de circuito
+TIRE_TEMP_OPT = 95.0              # goma semislick: pide temperatura

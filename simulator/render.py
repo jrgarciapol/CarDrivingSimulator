@@ -6,6 +6,7 @@ Las curvas se acumulan como desplazamiento lateral creciente con la distancia
 y las colinas mueven el horizonte.
 """
 
+import bisect
 import ctypes
 import math
 
@@ -279,6 +280,11 @@ class Renderer:
         z_ok = zr > 0.25
         inv_z = np.where(z_ok, 1.0 / np.maximum(zr, 0.25), 0.0)
 
+        # caché del frame para proyectar objetos del mundo (fantasma,
+        # partículas) con la misma cámara y la misma malla
+        self._w2s = (s0, rels, xr, zr, rxr, rzr, elev, sinb, cam_y,
+                     pitch_px, f)
+
         def clip_col(xc, zc):
             """Recorta una columna de puntos contra el plano cercano en
             AMBOS sentidos: donde la geometría entra al campo de visión
@@ -455,6 +461,81 @@ class Renderer:
                     self._fill(sx - pw / 2, sy - h_px, pw, h_px, color)
                     self._fill(sx - pw / 2, sy - h_px, pw, cap, (245, 245, 245))
         return H // 2
+
+    def world_to_screen(self, track, s_world, n, z_up):
+        """Proyecta un punto del mundo dado en coordenadas de carretera
+        (s, desplazamiento lateral n, altura sobre el asfalto) usando la
+        malla del draw_road del frame actual: sigue las curvas, rasantes
+        y peralte reales. Devuelve (sx, sy, px_por_m) o None."""
+        c = getattr(self, "_w2s", None)
+        if c is None:
+            return None
+        s0, rels, xr, zr, rxr, rzr, elev, sinb, cam_y, pitch_px, f = c
+        L = track.length
+        ds = (s_world - s0 + L / 2.0) % L - L / 2.0
+        if ds <= rels[0] or ds >= rels[-1]:
+            return None
+        j = bisect.bisect_right(rels, ds) - 1
+        j = min(max(j, 0), len(rels) - 2)
+        t = (ds - rels[j]) / (rels[j + 1] - rels[j])
+        rx = rxr[j] + (rxr[j + 1] - rxr[j]) * t
+        rz = rzr[j] + (rzr[j + 1] - rzr[j]) * t
+        x = xr[j] + (xr[j + 1] - xr[j]) * t + rx * n
+        z = zr[j] + (zr[j + 1] - zr[j]) * t + rz * n
+        if z < 0.45:
+            return None
+        e = elev[j] + (elev[j + 1] - elev[j]) * t
+        sb = sinb[j] + (sinb[j + 1] - sinb[j]) * t
+        dyp = (e - n * sb + z_up) - cam_y
+        W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        sx = W / 2 + f * x / z * (W / 2)
+        sy = H / 2 - f * dyp / z * (H / 2) + pitch_px
+        return sx, sy, f / z * (W / 2)
+
+    def draw_ghost(self, track, s_g, n_g, psi_g):
+        """Coche fantasma translúcido: caja 3D anclada al mundo en la
+        posición grabada de la mejor vuelta. Los offsets de las esquinas
+        se dan en coordenadas de carretera, así que la caja sigue las
+        curvas y el peralte igual que el asfalto."""
+        ch, sh = math.cos(psi_g), math.sin(psi_g)
+
+        def corner(lx, ly, z):
+            dss = lx * ch - ly * sh
+            dnn = lx * sh + ly * ch
+            return self.world_to_screen(track, s_g + dss, n_g + dnn, z)
+
+        bot = [corner(2.1, -0.9, 0.12), corner(2.1, 0.9, 0.12),
+               corner(-2.1, 0.9, 0.12), corner(-2.1, -0.9, 0.12)]
+        top = [corner(1.0, -0.72, 1.15), corner(1.0, 0.72, 1.15),
+               corner(-1.4, 0.72, 1.15), corner(-1.4, -0.72, 1.15)]
+        if any(p is None for p in bot) or any(p is None for p in top):
+            return
+        quads = []
+        for k in range(4):
+            k2 = (k + 1) % 4
+            quads.append((bot[k], bot[k2], top[k2], top[k],
+                          (95, 175, 225, 60)))          # laterales
+        quads.append((top[0], top[1], top[2], top[3],
+                      (185, 240, 255, 85)))             # techo
+        xy = np.empty((len(quads) * 4, 2), dtype=np.float32)
+        col = np.empty((len(quads) * 4, 4), dtype=np.uint8)
+        idx = np.empty((len(quads), 6), dtype=np.int32)
+        for q, (p0, p1, p2, p3, color) in enumerate(quads):
+            for m, p in enumerate((p0, p1, p2, p3)):
+                xy[q * 4 + m, 0] = p[0]
+                xy[q * 4 + m, 1] = p[1]
+            col[q * 4:q * 4 + 4] = color
+            base = q * 4
+            idx[q] = (base, base + 1, base + 2, base, base + 2, base + 3)
+        uv = np.zeros_like(xy)
+        idx_flat = idx.reshape(-1).astype(np.int32)
+        sdl2.SDL_RenderGeometryRaw(
+            self.r, None,
+            xy.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), 8,
+            col.ctypes.data_as(ctypes.POINTER(sdl2.SDL_Color)), 4,
+            uv.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), 8,
+            len(xy), idx_flat.ctypes.data_as(ctypes.c_void_p),
+            len(idx_flat), 4)
 
     def draw_car(self, car_state, steering):
         """Coche visto desde atrás con la carrocería VIVA: cabecea al
@@ -1017,6 +1098,16 @@ class Hud:
             r_px = max(2, min(16, int(1 + cfg.TELEM_DOT_LOAD_GAIN * d0[2])))
             self._fill(cx + d0[0] * radius - r_px, cy - d0[1] * radius - r_px,
                        r_px * 2, r_px * 2, color)
+            # temperatura de la goma: azul fria / verde en ventana / roja
+            tt = car_state.tire_temp[i]
+            if tt < cfg.TIRE_TEMP_OPT - 15.0:
+                tcol = (110, 170, 255, 255)
+            elif tt <= cfg.TIRE_TEMP_OPT + 15.0:
+                tcol = (120, 230, 120, 255)
+            else:
+                tcol = (255, 90, 70, 255)
+            font.draw_text(self.r, f"{tt:3.0f}C", cx + radius - 26,
+                           cy - radius - 4, 2, tcol)
         font.draw_text(self.r, "PUNTO GRANDE = MAS CARGA",
                        box_x + 12, box_y + 322, 2, (170, 170, 170, 255))
 
@@ -1084,3 +1175,89 @@ def _fmt_time(t):
     mins = int(t // 60)
     secs = t - mins * 60
     return f"{mins:02d}:{secs:04.1f}"
+
+
+# ---------------------------------------------------------------------------
+class Particles:
+    """Partículas procedurales (sin imágenes): humo de derrape en asfalto,
+    chispas en los pianos y polvo en la hierba. Viven en coordenadas de
+    carretera (s, n, altura) — quedan ancladas al mundo mientras el coche
+    se aleja — y se dibujan como rectángulos translúcidos que crecen y se
+    desvanecen, proyectados con la malla del frame (world_to_screen)."""
+
+    def __init__(self):
+        self.items = []      # [s, n, z, vs, vn, vz, edad, vida,
+                             #  tamano, crecimiento, r, g, b, a0, chispa]
+        self._seed = 12345
+        self._rect = sdl2.SDL_Rect()
+
+    def _rand(self):
+        self._seed = (self._seed * 1103515245 + 12345) & 0x7FFFFFFF
+        return self._seed / 0x7FFFFFFF
+
+    def emit(self, kind, s, n, v_car):
+        r = self._rand
+        if kind == "spark":
+            p = [s, n, 0.05, v_car * (0.45 + 0.2 * r()),
+                 (r() - 0.5) * 2.5, 1.0 + 1.8 * r(),
+                 0.0, 0.16 + 0.16 * r(), 0.06, 0.0,
+                 255, 190, 70, 235, True]
+        elif kind == "dust":
+            p = [s, n, 0.10, v_car * (0.25 + 0.2 * r()),
+                 (r() - 0.5) * 1.8, 0.5 + 0.7 * r(),
+                 0.0, 0.9 + 0.7 * r(), 0.22, 0.9,
+                 120, 95, 55, 95, False]
+        else:  # humo
+            p = [s, n, 0.12, v_car * (0.20 + 0.2 * r()),
+                 (r() - 0.5) * 1.4, 0.6 + 0.9 * r(),
+                 0.0, 0.7 + 0.6 * r(), 0.18, 1.1,
+                 205, 205, 208, 80, False]
+        self.items.append(p)
+        if len(self.items) > cfg.PARTICLES_MAX:
+            del self.items[0:len(self.items) - cfg.PARTICLES_MAX]
+
+    def update(self, dt):
+        alive = []
+        for p in self.items:
+            p[6] += dt
+            if p[6] >= p[7]:
+                continue
+            p[0] += p[3] * dt
+            p[1] += p[4] * dt
+            p[2] += p[5] * dt
+            # las chispas caen con la gravedad; el humo apenas
+            p[5] -= (9.81 if p[14] else 1.5) * dt
+            if p[2] < 0.02 and p[14]:
+                p[2] = 0.02
+                p[5] = -p[5] * 0.4      # rebote de la chispa
+            p[3] *= max(0.0, 1.0 - 1.5 * dt)   # arrastre aerodinámico
+            p[8] += p[9] * dt
+            alive.append(p)
+        self.items = alive
+
+    def draw(self, renderer, scene, track):
+        for p in self.items:
+            proj = scene.world_to_screen(track, p[0], p[1], p[2])
+            if proj is None:
+                continue
+            sx, sy, ppm = proj
+            size = min(max(1.0, p[8] * ppm), 110.0)
+            fade = 1.0 - p[6] / p[7]
+            # muy cerca de la cámara la partícula se atenúa en vez de
+            # taparlo todo (el humo que te envuelve, no un muro blanco)
+            if ppm > 140.0:
+                fade *= max(0.22, 140.0 / ppm)
+            a = int(p[13] * fade)
+            sdl2.SDL_SetRenderDrawColor(renderer, p[10], p[11], p[12], a)
+            # soplo en cruz: dos rectángulos solapados, más suave que un
+            # bloque cuadrado y sigue sin necesitar ninguna imagen
+            self._rect.x = int(sx - size / 2)
+            self._rect.y = int(sy - size * 0.3)
+            self._rect.w = max(1, int(size))
+            self._rect.h = max(1, int(size * 0.6))
+            sdl2.SDL_RenderFillRect(renderer, self._rect)
+            self._rect.x = int(sx - size * 0.3)
+            self._rect.y = int(sy - size / 2)
+            self._rect.w = max(1, int(size * 0.6))
+            self._rect.h = max(1, int(size))
+            sdl2.SDL_RenderFillRect(renderer, self._rect)

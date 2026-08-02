@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.9"
+VERSION = "v3.0"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -194,6 +194,32 @@ TIRE_CAMBER_THRUST = 0.6     # empuje por caída: fuerza lateral por radián
                              # las ruedas se inclinan hacia FUERA y restan
                              # agarre: castiga a los coches altos y blandos
                              # (autobús) y apenas a los rígidos [0 .. 1.2]
+TIRE_VERT_STIFF = 250000.0   # N/m, rigidez vertical del neumático (el
+                             # muelle entre asfalto y llanta); con la masa
+                             # no suspendida define la frecuencia de rebote
+                             # de la rueda (~14 Hz) [150000 .. 2500000]
+TIRE_VERT_DAMP = 900.0       # N·s/m, amortiguación interna de la goma:
+                             # sin ella la rueda rebotaría sin fin
+                             # [300 .. 8000]
+UNSPRUNG_MASS = 35.0         # kg de masa no suspendida por rueda (llanta +
+                             # neumático + mangueta + frenos): sobre pianos
+                             # agresivos la rueda "vuela" y pierde carga
+                             # [18 .. 350]
+
+# --- termodinámica del neumático -------------------------------------------
+TIRE_TEMP_AMB = 25.0         # C, temperatura ambiente (y de equilibrio en
+                             # parado) [5 .. 40]
+TIRE_TEMP_OPT = 90.0         # C, temperatura de maximo agarre [80 .. 100]
+TIRE_TEMP_SENS = 5.5e-5      # perdida de agarre por (grado de desvio)^2:
+                             # con 5.5e-5, la goma fria a 25 C rinde ~77 %
+                             # y a 60 C ~95 % [0 .. 1.5e-4]
+TIRE_HEAT_GAIN = 0.0005      # C por julio de friccion (calienta derrapar
+                             # y frenar fuerte); la tasa esta limitada a
+                             # 6 C/s por la masa termica de la goma
+                             # [0.0002 .. 0.002]
+TIRE_COOL_COEFF = 0.0019     # refrigeracion por el aire, proporcional a
+                             # la velocidad (mas un residuo en parado)
+                             # [0.001 .. 0.004]
 
 # ===========================================================================
 # SUSPENSIÓN (por rueda)
@@ -214,6 +240,11 @@ SUSP_ANTI_PITCH = 0.30       # geometría anti-dive/anti-squat: fracción de
                              # suspensión desvían directamente al chasis
                              # (menos cabeceo, misma transferencia de
                              # carga, plataforma más estable) [0 .. 0.5]
+SUSP_CAMBER_GAIN = 0.8       # rad de caída negativa ganada por metro de
+                             # compresión: la rueda exterior (comprimida)
+                             # se endereza compensando el balanceo y
+                             # recupera parte del agarre que roba el
+                             # camber thrust. 0 = eje rígido [0 .. 2.0]
 
 # ===========================================================================
 # AERODINÁMICA Y RESISTENCIAS
@@ -283,6 +314,12 @@ TELEM_DOT_LOAD_GAIN = 8.0    # F2: cuánto crece el diámetro del punto del
                              # (radio px = 1 + ganancia x carga/estática);
                              # sube para hacer más patentes las
                              # transferencias de peso [3 .. 14]
+GHOST_ENABLED = True         # coche fantasma translúcido reproduciendo tu
+                             # mejor vuelta de la sesión (aparece al
+                             # completar una vuelta cronometrada)
+PARTICLES_ENABLED = True     # partículas de humo (derrape en asfalto),
+                             # chispas (pianos) y polvo (hierba)
+PARTICLES_MAX = 260          # tope de partículas vivas [60 .. 500]
 
 # ===========================================================================
 # SONIDO

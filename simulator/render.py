@@ -173,6 +173,16 @@ class Renderer:
         z_ok = zr > 0.25
         inv_z = np.where(z_ok, 1.0 / np.maximum(zr, 0.25), 0.0)
 
+        def clip_col(xc, zc):
+            """Recorta una columna de puntos contra el plano cercano
+            interpolando el punto de cruce: el quad que atraviesa la
+            cámara no desaparece (evita el parpadeo del borde inferior)."""
+            crossings = np.nonzero((zc[:-1] <= 0.28) & (zc[1:] > 0.28))[0]
+            for j in crossings:
+                t = (0.28 - zc[j]) / (zc[j + 1] - zc[j])
+                xc[j] += (xc[j + 1] - xc[j]) * t
+                zc[j] = 0.2801
+
         def project(o_left, o_right, per_section=None):
             """Devuelve (P0x,P0y,P1x,P1y) proyectados por sección para un
             par de offsets (o el offset de la trazada por sección)."""
@@ -186,6 +196,8 @@ class Renderer:
             zl = zr + rzr * oL
             xrg = xr + rxr * oR
             zrg = zr + rzr * oR
+            clip_col(xl, zl)
+            clip_col(xrg, zrg)
             izl = np.where(zl > 0.25, 1.0 / np.maximum(zl, 0.25), 0.0)
             izr = np.where(zrg > 0.25, 1.0 / np.maximum(zrg, 0.25), 0.0)
             sxl = W / 2 + f * xl * izl * (W / 2)
@@ -453,9 +465,15 @@ class Hud:
         sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name,
-             auto_gear=False):
+             auto_gear=False, time_scale=1.0):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
+
+        # indicador de cámara lenta
+        if time_scale < 0.999:
+            txt = f"CAMARA LENTA X{time_scale:.2f}".replace("0.", ".")
+            font.draw_text(self.r, txt, W // 2 - font.text_width(txt, 2) // 2,
+                           92, 2, (120, 220, 255, 255))
 
         # ------- cuentavueltas grande arriba, centrado, siempre a la vista
         bar_w, bar_h = 520, 30
@@ -564,6 +582,51 @@ class Hud:
                 f"DESL {car_state.slip_ratio[i]:5.2f}  "
                 f"DERIVA {car_state.slip_angle[i] * 57.3:5.1f}", 32, y, 2)
             y += 20
+        self._draw_susp_car(cfg.WINDOW_WIDTH - 270, 130, car_state)
+
+    def _draw_susp_car(self, x0, y0, car_state):
+        """Esquema cenital del coche con sus 4 ruedas y muelles que se
+        comprimen (cortos, rojos) o extienden (largos, azules) con la
+        suspensión real. Complemento visual del panel F1."""
+        self._fill(x0, y0, 250, 210, (0, 0, 0, 190))
+        font.draw_text(self.r, "SUSPENSION", x0 + 12, y0 + 10, 2)
+        body_w, body_h = 56, 130
+        bx = x0 + 125 - body_w // 2
+        by = y0 + 46
+        # carrocería (morro arriba)
+        self._fill(bx, by, body_w, body_h, (178, 24, 30))
+        self._fill(bx + 10, by + 26, body_w - 20, 22, (35, 40, 60))
+        static = (cfg.CAR_MASS * 9.81 / 4.0)
+        wheel_w, wheel_h = 14, 34
+        for i in range(4):
+            side = -1 if i % 2 == 0 else 1        # 0,2 izquierda
+            front = i < 2
+            wy = by + (6 if front else body_h - wheel_h - 6)
+            d = car_state.susp_def[i]
+            # longitud del muelle: nominal 26 px; comprimido = corto
+            ln = int(max(8, min(46, 26 - d * 350)))
+            ratio = car_state.fz[i] / max(1.0, static)
+            if ratio > 1.25:
+                sc = (255, 80, 60)      # muy cargado
+            elif ratio < 0.55:
+                sc = (110, 170, 255)    # descargado (casi en el aire)
+            else:
+                sc = (120, 230, 120)
+            if side < 0:
+                sx0 = bx - ln
+                wx = sx0 - wheel_w
+            else:
+                sx0 = bx + body_w
+                wx = sx0 + ln
+            # muelle en zigzag (5 tramos alternando arriba/abajo)
+            segw = ln / 5.0
+            for k in range(5):
+                off = -4 if k % 2 else 4
+                self._fill(sx0 + k * segw, wy + wheel_h / 2 + off - 2,
+                           segw + 1, 4, sc)
+            # rueda
+            self._fill(wx, wy, wheel_w, wheel_h, (25, 25, 25))
+            self._fill(wx + 4, wy + 12, wheel_w - 8, 10, (80, 80, 80))
 
 
     def draw_telemetry(self, car_state):

@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.0 (render 3D)"
+VERSION = "v2.1 (render 3D)"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -46,6 +46,10 @@ BUTTON_TOGGLE_AUTO = 2   # alternar cambio automático/manual (tecla G)
 BUTTON_TOGGLE_VIEW = 3   # cambiar de vista (tecla C)
 BUTTON_ENGINE = 9        # arrancar/parar el motor (tecla E)
 BUTTON_RESET = 8         # recolocar el coche en pista (tecla R)
+BUTTON_SLOWMO = 10       # cámara lenta (tecla T): cicla las velocidades
+                         # de TIME_SCALES para estudiar el comportamiento
+
+TIME_SCALES = (1.0, 0.5, 0.25, 0.1)   # velocidades de la cámara lenta
 
 STEERING_DEADZONE = 0.005    # zona muerta del volante [0 .. 0.05]
 

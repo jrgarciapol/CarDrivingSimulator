@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.2"
+VERSION = "v2.3"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -169,7 +169,7 @@ TIRE_LOAD_SENS = 0.10        # caída de mu por unidad de sobrecarga sobre
                              # transferir peso reste agarre [0 .. 0.2]
 TIRE_LONG_GRIP_RATIO = 1.10  # elipse de fricción: capacidad longitudinal
                              # extra respecto a la lateral [1.0 .. 1.2]
-TIRE_RELAX_LENGTH = 0.6      # m, retardo de respuesta lateral de la
+TIRE_RELAX_LENGTH = 0.3      # m, retardo de respuesta lateral de la
                              # carcasa [0.3 .. 1.2]
 TIRE_REAR_GRIP_FACTOR = 1.04 # agarre relativo del eje trasero: >1 subvira
                              # en el límite (estable), <1 sobrevira (drift)
@@ -185,8 +185,8 @@ TIRE_TRAIL_SAT_DEG = 7.0     # deriva a la que el avance cae (el volante se
 # Frecuencia propia ~1.6 Hz con los valores por defecto (tarado deportivo).
 # Muelles más duros = reacciones más rápidas y menos balanceo.
 # ===========================================================================
-SUSP_SPRING_FRONT = 32000.0  # N/m por rueda delantera [15000 .. 60000]
-SUSP_SPRING_REAR = 26000.0   # N/m por rueda trasera [15000 .. 60000]
+SUSP_SPRING_FRONT = 50000.0  # N/m por rueda delantera [15000 .. 60000]
+SUSP_SPRING_REAR = 44000.0   # N/m por rueda trasera [15000 .. 60000]
 SUSP_DAMPER = 4300.0         # N·s/m por rueda [2000 .. 8000]
 ARB_FRONT = 23000.0          # estabilizadora delantera (N/m de diferencia
                              # entre lados). MÁS dura delante = más
@@ -232,11 +232,11 @@ ROAD_HALF_WIDTH = 5.4        # m, semiancho del asfalto [3.5 .. 8]
 KERB_WIDTH = 1.1             # m de piano a cada lado [0.5 .. 2]
 SEGMENT_LENGTH = 4.0         # m por segmento (no cambiar si se usan
                              # circuitos importados)
-DRAW_DISTANCE = 220          # segmentos dibujados; bajar si va lento
-                             # [100 .. 400]
-CAMERA_HEIGHT = 1.55         # m, altura de la cámara en las vistas bajas
-                             # [1.1 .. 2.5]
-CAMERA_DEPTH = 0.84          # proyección (1/tan(fov/2)); subir = teleobjetivo
+DRAW_DISTANCE = 400          # segmentos dibujados; bajar si va lento
+                             # [100 .. 400] 220
+CAMERA_HEIGHT = 2.5        # m, altura de la cámara en las vistas bajas
+                             # [1.1 .. 2.5] 1.55
+CAMERA_DEPTH = 0.9          # proyección (1/tan(fov/2)); subir = teleobjetivo 0.84
 CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
                              # respecto a la carretera: 1.0 = geométrico
                              # exacto, más alto = giro de vista más
@@ -246,10 +246,10 @@ RACING_LINE = True           # trazada ideal (tecla L): verde = margen,
 MINIMAP = True               # plano del circuito arriba a la izquierda
                              # (tecla M) con el coche recorriéndolo y el
                              # tramo que viene resaltado
-TRACK_POLES = True           # balizas de colores en los bordes (amarillo =
+TRACK_POLES = False           # balizas de colores en los bordes (amarillo =
                              # izquierda, azul = derecha)
-CAR_BODY_MOTION_EXAG = 3.0   # exageración visual del cabeceo/balanceo de la
-                             # carrocería en pantalla; 1 = real [1 .. 5]
+CAR_BODY_MOTION_EXAG = 5.0   # exageración visual del cabeceo/balanceo de la
+                             # carrocería en pantalla; 1 = real [1 .. 5] 3
 
 # ===========================================================================
 # SONIDO

@@ -102,38 +102,79 @@ class Renderer:
         cp, sp = math.cos(psi_c), math.sin(psi_c)
 
         # --- centro de la carretera en el plano local del coche ---------
-        N_BACK = 3
-        N = cfg.DRAW_DISTANCE
-        n_sec = N_BACK + N + 1
+        # Malla ADAPTATIVA: secciones de 1 m cerca de la cámara, 2 m a
+        # media distancia y 4 m lejos, con la curvatura interpolada
+        # linealmente entre segmentos: los bordes cercanos son curvas
+        # suaves en vez de tramos rectos de 4 m, y las transiciones de
+        # curva no "saltan".
+        s0 = car_state.s
+        rels = []
+        d = -4.0
+        while d < cfg.DRAW_DISTANCE * L:
+            rels.append(d)
+            if d < 24.0:
+                d += 1.0
+            elif d < 80.0:
+                d += 2.0
+            else:
+                d += 4.0
+        n_sec = len(rels)
         cx = np.empty(n_sec)
         cz = np.empty(n_sec)
         hx = np.empty(n_sec)   # componentes del vector "derecha"
         hz = np.empty(n_sec)
         elev = np.empty(n_sec)
+        li = np.empty(n_sec)
         seg_idx = np.empty(n_sec, dtype=np.int64)
 
-        # retroceder N_BACK secciones desde la sección base
-        x = 0.0
-        z = -frac * L
-        h = 0.0
-        for j in range(N_BACK):
-            k = (base_i - j - 1) % n_segs
-            h -= segs[k].kappa * L
-            x -= math.sin(h) * L
-            z -= math.cos(h) * L
-        # avanzar registrando secciones
+        def k_interp(sa):
+            """Curvatura interpolada entre centros de segmento."""
+            pos = sa / L - 0.5
+            i0 = math.floor(pos)
+            t = pos - i0
+            return segs[int(i0) % n_segs].kappa * (1.0 - t) \
+                + segs[int(i0 + 1) % n_segs].kappa * t
+
+        def y_interp(sa):
+            pos = sa / L - 0.5
+            i0 = math.floor(pos)
+            t = pos - i0
+            return segs[int(i0) % n_segs].y * (1.0 - t) \
+                + segs[int(i0 + 1) % n_segs].y * t
+
+        def line_interp(sa):
+            pos = sa / L - 0.5
+            i0 = math.floor(pos)
+            t = pos - i0
+            return track.line_n[int(i0) % n_segs] * (1.0 - t) \
+                + track.line_n[int(i0 + 1) % n_segs] * t
+
+        # integrar hacia atrás desde el coche hasta la primera sección
+        x = z = h = 0.0
+        d = 0.0
+        while d > rels[0]:
+            step = min(1.0, d - rels[0])
+            kmid = k_interp(s0 + d - step / 2.0)
+            h -= kmid * step
+            x -= math.sin(h) * step
+            z -= math.cos(h) * step
+            d -= step
+        # avanzar registrando secciones (integración por punto medio)
         for j in range(n_sec):
-            k = (base_i - N_BACK + j) % n_segs
-            seg = segs[k]
             cx[j] = x
             cz[j] = z
             hx[j] = math.cos(h)      # "derecha" = (cos h, -sin h)
             hz[j] = -math.sin(h)
-            elev[j] = seg.y
-            seg_idx[j] = base_i - N_BACK + j
-            x += math.sin(h) * L
-            z += math.cos(h) * L
-            h += seg.kappa * L
+            elev[j] = y_interp(s0 + rels[j])
+            li[j] = line_interp(s0 + rels[j])
+            seg_idx[j] = int(math.floor((s0 + rels[j]) / L))
+            if j < n_sec - 1:
+                step = rels[j + 1] - rels[j]
+                kmid = k_interp(s0 + rels[j] + step / 2.0)
+                h_half = h + kmid * step / 2.0
+                x += math.sin(h_half) * step
+                z += math.cos(h_half) * step
+                h += kmid * step
 
         # desplazar al coche (está a +n del centro) y girar por el rumbo
         cx = cx - car_state.n
@@ -146,7 +187,7 @@ class Renderer:
         # la cámara se interpola exactamente sobre el plano z=0.3 para que
         # el asfalto llegue hasta el borde inferior de la pantalla
         Z_NEAR = 0.3
-        for j in range(min(N_BACK + 3, n_sec - 1)):
+        for j in range(min(14, n_sec - 1)):
             if zr[j] <= Z_NEAR < zr[j + 1]:
                 t = (Z_NEAR - zr[j]) / (zr[j + 1] - zr[j])
                 xr[j] += (xr[j + 1] - xr[j]) * t
@@ -156,7 +197,6 @@ class Renderer:
                 elev[j] += (elev[j + 1] - elev[j]) * t
 
         # --- offsets transversales de la malla --------------------------
-        li = np.array([track.line_n[s % n_segs] for s in seg_idx])
         GW = 38.0
         offs = [
             (-GW, -half_w - kerb_w),          # hierba izquierda
@@ -287,14 +327,17 @@ class Renderer:
 
         # --- balizas (billboards) de lejos a cerca -----------------------
         if cfg.TRACK_POLES:
-            for j in range(n_sec - 1, N_BACK, -1):
-                if seg_idx[j] % (6 if inv_z[j] * f * (W / 2) > 3.0 else 12):
+            last_pole_seg = None
+            for j in range(n_sec - 1, 4, -1):
+                if seg_idx[j] % (6 if inv_z[j] * f * (W / 2) > 3.0 else 12) \
+                        or seg_idx[j] == last_pole_seg:
                     continue
                 if not z_ok[j] or zr[j] > 700.0:
                     continue
                 ppm = f * inv_z[j] * (W / 2)
                 if ppm < 0.8:
                     continue
+                last_pole_seg = seg_idx[j]
                 h_px = max(9.0, ppm * 2.2)
                 pw = max(3.0, ppm * 0.22)
                 cap = max(2.0, h_px * 0.25)

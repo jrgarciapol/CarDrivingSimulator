@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.1 (render 3D)"
+VERSION = "v2.2"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -16,8 +16,8 @@ WINDOW_WIDTH = 1280          # px, ancho de la ventana [800 .. 1920]
 WINDOW_HEIGHT = 720          # px, alto de la ventana [600 .. 1080]
 WINDOW_TITLE = b"Car Driving Simulator - Thrustmaster"
 TARGET_FPS = 60              # objetivo de imágenes por segundo (informativo)
-PHYSICS_HZ = 240             # Hz del paso de física; más alto = más precisa
-                             # y más CPU [120 .. 480]
+PHYSICS_HZ = 480             # Hz del paso de física; más alto = más precisa
+                             # y más CPU [120 .. 960]
 
 # ===========================================================================
 # VOLANTE Y PEDALES (mapeo DirectInput/SDL)
@@ -65,10 +65,10 @@ VIEW_MODE = 0            # vista inicial: 0 = sin coche (cámara interior),
 # FFB_MAX_TORQUE_NM la dureza; el resto son efectos concretos.
 # ===========================================================================
 FFB_ENABLED = True
-FFB_GAIN = 0.9           # ganancia global del par [0 .. 1]
+FFB_GAIN = 0.5           # ganancia global del par [0 .. 1]
 FFB_INVERT = False       # True si el volante empuja hacia FUERA de la
                          # curva en vez de autocentrarse
-FFB_MAX_TORQUE_NM = 40.0 # Nm de columna que saturan el volante; BAJARLO
+FFB_MAX_TORQUE_NM = 25.0 # Nm de columna que saturan el volante; BAJARLO
                          # endurece el volante en apoyo y hace más evidente
                          # el aligeramiento al subvirar [20 .. 60]
 FFB_COLUMN_DAMPING = 1.3 # Nm por rad/s de giro del volante; amortigua las
@@ -243,6 +243,9 @@ CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
                              # perceptible al derrapar o girar [1.0 .. 2.5]
 RACING_LINE = True           # trazada ideal (tecla L): verde = margen,
                              # ámbar = al límite, rojo = no llegas a frenar
+MINIMAP = True               # plano del circuito arriba a la izquierda
+                             # (tecla M) con el coche recorriéndolo y el
+                             # tramo que viene resaltado
 TRACK_POLES = True           # balizas de colores en los bordes (amarillo =
                              # izquierda, azul = derecha)
 CAR_BODY_MOTION_EXAG = 3.0   # exageración visual del cabeceo/balanceo de la
@@ -254,4 +257,4 @@ CAR_BODY_MOTION_EXAG = 3.0   # exageración visual del cabeceo/balanceo de la
 AUDIO_ENABLED = True
 AUDIO_RATE = 22050           # Hz de muestreo
 AUDIO_VOLUME = 0.5           # volumen general [0 .. 1]
-SCREECH_VOLUME = 0.8         # volumen del chirrido de neumáticos [0 .. 1]
+SCREECH_VOLUME = 1.2         # volumen del chirrido de neumáticos [0 .. 1.5]

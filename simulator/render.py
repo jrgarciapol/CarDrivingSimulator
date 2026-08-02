@@ -75,7 +75,8 @@ class Renderer:
             sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     # ------------------------------------------------------------------
-    def draw_road(self, track, car_state, show_line=True, cam_height=None):
+    def draw_road(self, track, car_state, show_line=True, cam_height=None,
+                  cam_back=0.0, yaw_gain=None):
         """Renderizador 3D real: proyección en perspectiva de la malla de
         la carretera con la cámara anclada al coche (posición, rumbo y
         altura reales). La geometría se construye por secciones
@@ -95,7 +96,9 @@ class Renderer:
         base_i = int(car_state.s / L)
         frac = (car_state.s - base_i * L) / L
         cam_y = segs[base_i % n_segs].y + cam_height
-        psi_c = car_state.psi * cfg.CAMERA_YAW_GAIN
+        if yaw_gain is None:
+            yaw_gain = cfg.CAMERA_YAW_GAIN
+        psi_c = car_state.psi * yaw_gain
         cp, sp = math.cos(psi_c), math.sin(psi_c)
 
         # --- centro de la carretera en el plano local del coche ---------
@@ -135,7 +138,7 @@ class Renderer:
         # desplazar al coche (está a +n del centro) y girar por el rumbo
         cx = cx - car_state.n
         xr = cx * cp - cz * sp
-        zr = cx * sp + cz * cp
+        zr = cx * sp + cz * cp + cam_back
         rxr = hx * cp - hz * sp
         rzr = hx * sp + hz * cp
 
@@ -375,6 +378,127 @@ class Renderer:
             if 10 < edge < light_zone:
                 lc = (255, 170, 130) if braking else (225, 55, 40)
                 self._fill(colx, cy + 53 + dyc, cw, 12, lc)
+
+    def draw_car_3d(self, car_state, steering, cam_height, cam_back,
+                    yaw_gain):
+        """Coche 3D real para la vista de coche completo: cajas en
+        perspectiva orientadas con el RUMBO del coche (la parte de psi que
+        la cámara no sigue), con las ruedas delanteras giradas por la
+        dirección y la carrocería cabeceando/balanceando en 3D."""
+        W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        f = cfg.CAMERA_DEPTH
+        ex = cfg.CAR_BODY_MOTION_EXAG * 0.55
+        dpsi = car_state.psi * (1.0 - yaw_gain)
+        cyaw, syaw = math.cos(dpsi), math.sin(dpsi)
+        delta = steering * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0) / cfg.STEER_RATIO
+        delta = max(-0.6, min(0.6, delta))
+        heave = max(-0.12, min(0.12, car_state.heave * ex))
+        pitch = max(-0.10, min(0.10, car_state.pitch * ex))
+        roll = max(-0.12, min(0.12, car_state.roll * ex))
+        braking = car_state.ax < -2.0
+
+        quads = []   # (z_medio, [(x,y) x4], color)
+
+        def to_cam(px, py, pz, yaw_c=cyaw, yaw_s=syaw, ox=0.0, oz=0.0):
+            # coche: x derecha, y arriba (desde el suelo), z adelante
+            x = (px * yaw_c + pz * yaw_s) + ox
+            z = (-px * yaw_s + pz * yaw_c) + oz + cam_back
+            return x, py - cam_height, z
+
+        def add_quad(p0, p1, p2, p3, color):
+            zs = []
+            scr = []
+            for (x, y, z) in (p0, p1, p2, p3):
+                if z < 0.3:
+                    return
+                zs.append(z)
+                scr.append((W / 2 + f * x / z * (W / 2),
+                            H / 2 - f * y / z * (H / 2)))
+            quads.append((sum(zs) / 4.0, scr, color))
+
+        def add_box(x0, x1, y0, y1, z0, z1, cs, ct, body=False,
+                    yaw2=0.0, cx0=0.0, cz0=0.0):
+            """Caja [x0..x1]x[y0..y1]x[z0..z1]; si body, aplica cabeceo/
+            balanceo/altura; yaw2 rota la caja sobre su centro (ruedas
+            directrices)."""
+            c2, s2 = math.cos(yaw2), math.sin(yaw2)
+            corners = {}
+            for ix, xx in enumerate((x0, x1)):
+                for iy, yy in enumerate((y0, y1)):
+                    for iz, zz in enumerate((z0, z1)):
+                        px, pz = xx, zz
+                        if yaw2:
+                            rx, rz = px - cx0, pz - cz0
+                            px = cx0 + rx * c2 + rz * s2
+                            pz = cz0 - rx * s2 + rz * c2
+                        py = yy
+                        if body:
+                            py += heave + pitch * pz + roll * px
+                        corners[(ix, iy, iz)] = to_cam(px, py, pz)
+            # caras: trasera (z0), superior (y1), izquierda, derecha, frontal
+            add_quad(corners[(0, 0, 0)], corners[(1, 0, 0)],
+                     corners[(1, 1, 0)], corners[(0, 1, 0)], cs)
+            add_quad(corners[(0, 0, 1)], corners[(1, 0, 1)],
+                     corners[(1, 1, 1)], corners[(0, 1, 1)], cs)
+            add_quad(corners[(0, 0, 0)], corners[(0, 0, 1)],
+                     corners[(0, 1, 1)], corners[(0, 1, 0)], cs)
+            add_quad(corners[(1, 0, 0)], corners[(1, 0, 1)],
+                     corners[(1, 1, 1)], corners[(1, 1, 0)], cs)
+            add_quad(corners[(0, 1, 0)], corners[(1, 1, 0)],
+                     corners[(1, 1, 1)], corners[(0, 1, 1)], ct)
+
+        # sombra en el suelo
+        sh = [to_cam(px, 0.02, pz) for (px, pz) in
+              ((-1.0, -2.3), (1.0, -2.3), (1.0, 2.3), (-1.0, 2.3))]
+        add_quad(sh[0], sh[1], sh[2], sh[3], (30, 30, 34))
+
+        # ruedas (las delanteras giran con la dirección)
+        for sx_ in (-1, 1):
+            add_box(sx_ * 0.86 - 0.13, sx_ * 0.86 + 0.13, 0.0, 0.62,
+                    -1.62, -0.96, (22, 22, 22), (40, 40, 40))
+            add_box(sx_ * 0.83 - 0.12, sx_ * 0.83 + 0.12, 0.0, 0.58,
+                    0.98, 1.58, (22, 22, 22), (40, 40, 40),
+                    yaw2=delta, cx0=sx_ * 0.83, cz0=1.28)
+
+        # carrocería y cabina (con dinámica)
+        add_box(-0.89, 0.89, 0.34, 0.95, -2.08, 2.08,
+                (152, 20, 26), (196, 40, 44), body=True)
+        add_box(-0.72, 0.72, 0.95, 1.40, -0.85, 0.95,
+                (38, 44, 66), (170, 24, 30), body=True)
+
+        # pilotos traseros
+        lc = (255, 170, 130) if braking else (228, 58, 42)
+        for sx_ in (-1, 1):
+            p0 = to_cam(sx_ * 0.78 - 0.16, 0.62, -2.09)
+            p1 = to_cam(sx_ * 0.78 + 0.16, 0.62, -2.09)
+            p2 = to_cam(sx_ * 0.78 + 0.16, 0.80, -2.09)
+            p3 = to_cam(sx_ * 0.78 - 0.16, 0.80, -2.09)
+            add_quad(p0, p1, p2, p3, lc)
+            quads[-1] = (quads[-1][0] - 0.05, quads[-1][1], quads[-1][2])
+
+        # pintor: de lejos a cerca, en una sola llamada de geometría
+        quads.sort(key=lambda q: -q[0])
+        n_q = len(quads)
+        if not n_q:
+            return
+        xy = np.empty((n_q * 4, 2), dtype=np.float32)
+        col = np.empty((n_q * 4, 4), dtype=np.uint8)
+        idx = np.empty((n_q, 6), dtype=np.int32)
+        for i, (_, scr, color) in enumerate(quads):
+            for k in range(4):
+                xy[i * 4 + k] = scr[k]
+                col[i * 4 + k, :3] = color
+                col[i * 4 + k, 3] = 255
+            b = i * 4
+            idx[i] = (b, b + 1, b + 2, b, b + 2, b + 3)
+        uv = np.zeros_like(xy)
+        sdl2.SDL_RenderGeometryRaw(
+            self.r, None,
+            xy.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), 8,
+            col.ctypes.data_as(ctypes.POINTER(sdl2.SDL_Color)), 4,
+            uv.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), 8,
+            len(xy), idx.reshape(-1).ctypes.data_as(ctypes.c_void_p),
+            n_q * 6, 4)
 
     def draw_car_chase(self, car_state, steering):
         """Vista de coche completo desde atrás y arriba: se ven las 4
@@ -628,6 +752,42 @@ class Hud:
             self._fill(wx, wy, wheel_w, wheel_h, (25, 25, 25))
             self._fill(wx + 4, wy + 12, wheel_w - 8, 10, (80, 80, 80))
 
+
+    def draw_minimap(self, track, car_state):
+        """Plano del circuito arriba a la izquierda: trazado completo, el
+        tramo que viene resaltado en ámbar, la meta y el coche como punto
+        rojo — para leer la siguiente curva y preparar la velocidad."""
+        pts = track.map_points()
+        n = len(pts)
+        box_w, box_h = 236, 176
+        x0, y0 = 16, 16
+        pad = 14
+        aw, ah = track._map_aspect
+        scale = min((box_w - 2 * pad) / max(aw, 1e-6),
+                    (box_h - 2 * pad) / max(ah, 1e-6))
+        ox = x0 + (box_w - aw * scale) / 2
+        oy = y0 + (box_h - ah * scale) / 2
+
+        self._fill(x0, y0, box_w, box_h, (0, 0, 0, 165))
+
+        def to_px(p):
+            return ox + p[0] * scale, oy + (ah - p[1]) * scale
+
+        # trazado completo
+        for i in range(0, n, 2):
+            px, py = to_px(pts[i])
+            self._fill(px, py, 2, 2, (210, 210, 210))
+        # tramo inmediato por delante (600 m) en ámbar, más grueso
+        i_car = track._index_at(car_state.s)
+        for k in range(0, 150, 1):
+            px, py = to_px(pts[(i_car + k) % n])
+            self._fill(px - 1, py - 1, 3, 3, (250, 200, 60))
+        # línea de meta
+        mx, my = to_px(pts[0])
+        self._fill(mx - 2, my - 2, 6, 6, (255, 255, 255))
+        # el coche
+        cx_, cy_ = to_px(pts[i_car])
+        self._fill(cx_ - 3, cy_ - 3, 7, 7, (235, 45, 35))
 
     def draw_telemetry(self, car_state):
         """Superposición F2: círculo de fricción de cada rueda en vivo.

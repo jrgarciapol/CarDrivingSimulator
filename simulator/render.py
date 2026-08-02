@@ -465,8 +465,11 @@ class Renderer:
         que cuando una rueda pisa el piano en la física, se ve pisándolo."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         ex = cfg.CAR_BODY_MOTION_EXAG
-        # escala real: píxeles por metro a la distancia visual del coche
-        z_car = 4.0
+        # escala real: píxeles por metro a la distancia visual del coche.
+        # La distancia crece con el teleobjetivo (CAMERA_DEPTH) para que
+        # el sprite conserve su tamaño y proporciones calibrados aunque
+        # se cambie la proyección de la carretera.
+        z_car = 4.45 * cfg.CAMERA_DEPTH
         ppm = cfg.CAMERA_DEPTH / z_car * (W / 2.0)
         track_px = cfg.CAR_TRACK_WIDTH * ppm
         car_w = int(1.78 * ppm)
@@ -1001,8 +1004,16 @@ class Hud:
             d0[0] += (a_n - d0[0]) * k_dot
             d0[1] += (s_n - d0[1]) * k_dot
             d0[2] += (load - d0[2]) * k_dot
-            rho = math.hypot(d0[0], d0[1])
-            color = (255, 70, 50) if rho > 1.0 else (90, 230, 90)
+            # el COLOR usa el valor instantáneo (sin el suavizado de la
+            # posición, que retrasaba el aviso frente al oído): ámbar
+            # justo donde empieza el chirrido, rojo pasado el pico
+            rho_inst = math.hypot(a_n, s_n)
+            if rho_inst > 1.0:
+                color = (255, 70, 50)
+            elif rho_inst > 0.93:
+                color = (250, 205, 60)
+            else:
+                color = (90, 230, 90)
             r_px = max(2, min(16, int(1 + cfg.TELEM_DOT_LOAD_GAIN * d0[2])))
             self._fill(cx + d0[0] * radius - r_px, cy - d0[1] * radius - r_px,
                        r_px * 2, r_px * 2, color)

@@ -32,3 +32,4 @@ AERO_DRAG = 0.40                  # N/(m/s)2, resistencia al aire
 AERO_DOWNFORCE = 0.2              # N/(m/s)2, carga aerodinamica (aprieta al suelo)
 BRAKE_FORCE_MAX = 22000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.70           # fraccion de frenada al eje delantero
+CAMERA_HEIGHT = 1.30              # m, ojo del conductor: berlina comoda

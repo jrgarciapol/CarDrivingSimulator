@@ -38,7 +38,13 @@ BANK_SCALE = 7.0        # rad de peralte por (1/m) de curvatura: R=100 m
                         # -> 4 grados hacia el interior
 BANK_MAX_DEG = 6.0      # tope de peralte sintetizado (los circuitos de
                         # curvas reales rara vez pasan de 5-6 grados)
-GRADES = ((1, 0.020), (2, 0.018), (3, 0.015))   # (ciclos/vuelta, pendiente)
+# Rasante sintética: lista de ondas (ciclos_por_vuelta, pendiente_maxima).
+# Cada onda sube y baja 'ciclos' veces a lo largo de la vuelta con esa
+# pendiente máxima (0.04 = 4 %); la amplitud en metros sale de ambas
+# (amp = pendiente * longitud / (2*pi*ciclos)). Sumadas dan un perfil
+# variado que empieza y acaba a la misma cota. Pendiente combinada en el
+# peor punto ~9 %: se nota en el motor cuesta arriba y en la frenada.
+GRADES = ((1, 0.038), (2, 0.030), (3, 0.022))
 
 
 def load_points(path):

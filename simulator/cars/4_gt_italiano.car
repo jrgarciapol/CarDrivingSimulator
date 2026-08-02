@@ -35,3 +35,4 @@ AERO_DOWNFORCE = 1.3              # N/(m/s)2, carga aerodinamica (aprieta al sue
 AERO_DF_FRONT_SHARE = 0.44        # fraccion de carga aero en el eje delantero
 BRAKE_FORCE_MAX = 26000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
+CAMERA_HEIGHT = 1.05              # m, ojo del conductor: casi tumbado

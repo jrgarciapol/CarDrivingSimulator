@@ -247,7 +247,9 @@ def main(argv=None):
         if view_mode == 2:
             cam_h, cam_back, ygain = 2.5, 6.5, 0.35
         else:
-            cam_h = (1.30, cfg.CAMERA_HEIGHT)[view_mode]
+            # vista interior: ojo del conductor (depende del coche);
+            # vista trasera: cámara elevada tras el coche
+            cam_h = (cfg.CAMERA_HEIGHT, cfg.CAMERA_HEIGHT_REAR)[view_mode]
             cam_back, ygain = 0.0, None
         scene.draw_road(track, car.state, show_line, cam_h, cam_back, ygain)
         if view_mode == 1:

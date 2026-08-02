@@ -41,3 +41,4 @@ BRAKE_BIAS_FRONT = 0.62           # fraccion de frenada al eje delantero
 ABS_ENABLED = False               # True con ABS, False sin el (bloqueos reales)
 ENGINE_INERTIA = 0.08             # kg*m2, volante motor: retencion al reducir
 SUSP_ANTI_PITCH = 0.45            # geometria anti-hundimiento al frenar/acelerar
+CAMERA_HEIGHT = 0.80              # m, ojo del conductor: a ras de asfalto

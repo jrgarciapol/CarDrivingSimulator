@@ -38,3 +38,4 @@ ROLLING_RESIST = 900.0            # N, resistencia a la rodadura
 BRAKE_FORCE_MAX = 90000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.58           # fraccion de frenada al eje delantero
 ENGINE_INERTIA = 2.2              # kg*m2, volante motor: retencion al reducir
+CAMERA_HEIGHT = 2.30              # m, ojo del conductor: en lo alto de todo

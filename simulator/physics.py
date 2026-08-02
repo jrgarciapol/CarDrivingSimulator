@@ -32,15 +32,30 @@ FL, FR, RL, RR = 0, 1, 2, 3
 
 
 def engine_torque(rpm: float) -> float:
-    """Curva de par del motor en Nm (a gas pleno)."""
+    """Curva de par del motor en Nm (a gas pleno), generada desde la
+    configuración: sube desde ~47 % del par máximo en bajos hasta el
+    máximo en ENGINE_TORQUE_PEAK_RPM y cae un 25 % hacia el corte."""
+    t_max = cfg.ENGINE_MAX_TORQUE_NM
+    peak = cfg.ENGINE_TORQUE_PEAK_RPM
     if rpm < 1000.0:
-        return 150.0
-    if rpm < 4200.0:
-        return 150.0 + (320.0 - 150.0) * (rpm - 1000.0) / 3200.0
+        return 0.47 * t_max
+    if rpm < peak:
+        return t_max * (0.47 + 0.53 * (rpm - 1000.0) / (peak - 1000.0))
     if rpm < cfg.ENGINE_REDLINE_RPM:
-        t = (rpm - 4200.0) / (cfg.ENGINE_REDLINE_RPM - 4200.0)
-        return 320.0 - 80.0 * t
-    return 200.0
+        t = (rpm - peak) / (cfg.ENGINE_REDLINE_RPM - peak)
+        return t_max * (1.0 - 0.25 * t)
+    return 0.625 * t_max
+
+
+def engine_peak_power_cv() -> float:
+    """Potencia máxima resultante de la curva de par, en CV."""
+    best = 0.0
+    rpm = 1000.0
+    while rpm <= cfg.ENGINE_LIMITER_RPM:
+        p = engine_torque(rpm) * rpm * 2.0 * math.pi / 60.0
+        best = max(best, p)
+        rpm += 100.0
+    return best / 735.5
 
 
 def tire_force_magnitude(rho: float, mu: float, fz: float) -> float:
@@ -129,6 +144,7 @@ class Car:
         self._fx_tires = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
+        self._torque_lp = 0.0
         self._auto_dwell = 0.0
         a, b = cfg.CAR_CG_TO_FRONT, cfg.CAR_CG_TO_REAR
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
@@ -154,6 +170,7 @@ class Car:
         self._fx_tires = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
+        self._torque_lp = 0.0
         self._auto_dwell = 0.0
 
     # ------------------------------------------------------------------
@@ -569,11 +586,13 @@ class Car:
         # pulsación natural del ABS...)
         mz += (fx_w[FL] - fx_w[FR]) * cfg.STEER_SCRUB_RADIUS
         # amortiguación de columna: se opone a la velocidad de giro del
-        # volante para evitar oscilaciones autoexcitadas en recta
+        # volante para evitar oscilaciones autoexcitadas; crece con la
+        # velocidad porque el lazo de FFB se desestabiliza en recta rápida
         rate = (wheel_angle - self._steer_prev) / dt if dt > 0 else 0.0
         self._steer_prev = wheel_angle
         self._steer_rate_lp += (rate - self._steer_rate_lp) * min(1.0, 30.0 * dt)
-        damping = -cfg.FFB_COLUMN_DAMPING * self._steer_rate_lp
+        damp_coeff = cfg.FFB_COLUMN_DAMPING * (1.0 + vx_abs / 25.0)
+        damping = -damp_coeff * self._steer_rate_lp
         # sacudida por baches asimétricos en el eje delantero, filtrada
         # paso-alto: la transferencia de carga estacionaria de las curvas
         # no debe entrar, solo los transitorios (pianos, baches)
@@ -581,5 +600,12 @@ class Car:
         self._kick_lp += (kick_raw - self._kick_lp) * min(1.0, 2.0 * dt)
         kick_hp = kick_raw - self._kick_lp
         self._bump_kick += (kick_hp - self._bump_kick) * min(1.0, 25.0 * dt)
-        st.steer_column_torque = mz / cfg.STEER_RATIO * 2.0 \
-            + self._bump_kick + damping
+        raw_torque = mz / cfg.STEER_RATIO * 2.0 + self._bump_kick + damping
+        # suavizado final del par: corta la excitación de alta frecuencia
+        # que produce bandazos del volante en recta (FFB_SMOOTHING_S)
+        if cfg.FFB_SMOOTHING_S > 1e-4:
+            blend_t = min(1.0, dt / cfg.FFB_SMOOTHING_S)
+            self._torque_lp += (raw_torque - self._torque_lp) * blend_t
+            st.steer_column_torque = self._torque_lp
+        else:
+            st.steer_column_torque = raw_torque

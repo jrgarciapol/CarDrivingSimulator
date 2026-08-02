@@ -74,9 +74,9 @@ sintetizado que sigue a las RPM. Tres circuitos:
   activas en modo manual.
 - **Cuentavueltas grande** arriba centrado, con zonas verde/ámbar/roja,
   marca del corte y la marcha en grande — siempre a la vista.
-- **Vista de coche completo** (tecla `C` o botón 3): cámara elevada con el
-  coche entero a la vista — las 4 ruedas, las delanteras girando con el
-  volante, y la carrocería cabeceando y balanceándose sobre ellas.
+- **Tres vistas** (tecla `C` o botón 3, en ciclo): **sin coche** (cámara
+  interior, por defecto), trasera cercana con la carrocería viva, y coche
+  completo desde arriba. La inicial se elige con `VIEW_MODE`.
 - **Chirrido de neumáticos**: cuando una rueda supera el pico de agarre
   (bloqueo de frenada o deriva al límite en curva) se oye chirriar, con
   volumen proporcional al deslizamiento. La hierba no chirría (`SCREECH_VOLUME`).
@@ -126,7 +126,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `F2` | Telemetría: círculo de fricción de cada rueda en vivo |
 | `L` | Mostrar/ocultar la trazada ideal |
 | `G` | Alternar cambio automático / manual |
-| `C` | Alternar vista cercana / coche completo |
+| `C` | Cambiar vista: sin coche / trasera / coche completo |
 | `E` | Arrancar / parar el motor |
 | `ESC` | Salir |
 
@@ -150,6 +150,8 @@ Otros ajustes útiles en `config.py`:
 | `FFB_KERB_MAGNITUDE` | Fuerza de la vibración de los pianos |
 | `WHEEL_ROTATION_DEG` | Grados configurados en el panel Thrustmaster |
 | `WHEELBASE` / `WEIGHT_DIST_FRONT` | Batalla y reparto de pesos, como en la ficha técnica |
+| `ENGINE_MAX_TORQUE_NM` | Par máximo del motor (~232 CV con los 320 Nm por defecto; la potencia resultante se muestra al arrancar) |
+| `FFB_SMOOTHING_S` | Súbelo si el volante da bandazos en recta |
 | `AERO_DOWNFORCE` | Carga aerodinámica (súbelo para sentir un GT/fórmula) |
 | `DRIVE_TYPE` | `"RWD"` propulsión, `"FWD"` delantera, `"AWD"` total |
 | `DIFF_TYPE` | Diferencial: `"open"`, `"lsd"` o `"locked"` |

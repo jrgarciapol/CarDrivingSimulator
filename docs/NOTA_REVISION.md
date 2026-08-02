@@ -3,105 +3,125 @@
 Este documento orienta a cualquier revisor (humano o IA) que llegue al
 repositorio para auditar el código y proponer mejoras. Resume qué es el
 proyecto, cómo está diseñado, qué decisiones se tomaron y dónde el feedback
-aporta más valor.
+aporta más valor. La física está descrita en detalle, ecuación a ecuación,
+en `docs/FISICA.md` — este documento es el mapa; aquél, el territorio.
 
 ## Qué es
 
 Simulador de conducción para Windows en **Python + PySDL2** (SDL2 usa
 DirectInput en Windows), pensado para un volante **Thrustmaster** con
-pedales. El objetivo no es el apartado gráfico (pseudo-3D arcade deliberado)
-sino **las sensaciones físicas en el volante**: todo el force feedback se
-calcula desde el modelo dinámico en tiempo real, no hay efectos enlatados.
+pedales. El objetivo principal son **las sensaciones físicas en el
+volante**: todo el force feedback se calcula desde el modelo dinámico en
+tiempo real, no hay efectos enlatados. El apartado gráfico es un
+**renderizador 3D real** (proyección en perspectiva de la malla de la
+carretera por triángulos, `SDL_RenderGeometryRaw` + numpy) de estética
+deliberadamente retro.
 
 ## Arquitectura
 
 ```
-simulator/main.py     bucle: eventos → física (240 Hz, sub-pasos) → FFB → render
-simulator/config.py   única fuente de configuración (mapeo, FFB, física, coche)
+simulator/main.py     bucle: menú → eventos → física (480 Hz, sub-pasos) → FFB → render
+simulator/config.py   configuración base documentada parámetro a parámetro
+simulator/garage.py   coches .car (lista blanca), condiciones de asfalto, récords
+simulator/menu.py     menú de arranque: coche + circuito + estado del asfalto
 simulator/wheel.py    entrada del volante + efectos hápticos SDL/DirectInput
-simulator/physics.py  modelo del vehículo (núcleo del proyecto)
-simulator/track.py    circuito: curvatura, pendiente, superficies, baches
-simulator/render.py   carretera pseudo-3D por franjas + HUD
-simulator/audio.py    sonido de motor sintetizado (numpy, opcional)
+simulator/physics.py  modelo del vehículo (núcleo del proyecto; ver docs/FISICA.md)
+simulator/track.py    circuito: curvatura, rasante, peralte, superficies, baches,
+                      trazada ideal con envolvente de frenada
+simulator/render.py   renderizador 3D (malla adaptativa, peralte, recorte del
+                      plano cercano longitudinal Y lateral), coche, HUD, telemetría
+simulator/audio.py    sonido de motor + chirrido sintetizados (numpy)
 simulator/font.py     fuente bitmap 5x7 (sin dependencias)
-tests/test_physics.py 23 pruebas de comportamiento físico, sin SDL ni volante
+simulator/cars/*.car  8 vehículos (parámetros comentados uno a uno)
+simulator/tracks/     circuitos: silverstone, spa (TUM + relieve/peralte
+                      sintéticos), óvalo peraltado de diseño
+tools/import_track.py importador TUM → formato interno (+ modo --enriquecer)
+tools/make_oval.py    generador del óvalo peraltado
+tests/test_physics.py 39 pruebas de comportamiento físico, sin SDL ni volante
 ```
 
-## Modelo físico (physics.py)
+## Modelo físico (resumen; detalle en docs/FISICA.md)
 
 Convenios: x adelante, **y a la derecha**, guiñada positiva = giro a la
 derecha; ruedas `0=del.izda, 1=del.dcha, 2=tras.izda, 3=tras.dcha`; el coche
-vive en coordenadas locales de la carretera (s = distancia, n = offset
-lateral, psi = rumbo relativo).
+vive en coordenadas locales de la carretera (s, n, psi).
 
-- **Chasis**: 3 GDL planos (vx, vy, yaw) + 3 GDL verticales (altura, cabeceo,
-  balanceo) con muelle/amortiguador por esquina y estabilizadoras por eje.
-  Las cargas por rueda salen de la deflexión de suspensión; las
-  transferencias de carga son emergentes, no fórmulas cuasi-estáticas.
-- **Neumático**: curva combinada tipo Pacejka simplificada
-  `F = mu·Fz·sin(C·atan(B·rho))` sobre el deslizamiento combinado
-  normalizado `rho = |(s/s_pico, alfa/alfa_pico)|`, con sensibilidad a la
-  carga (mu cae al cargar) y *relaxation length* lateral.
-- **Ruedas**: velocidad angular propia. Integrador **híbrido**: en rodadura,
-  relajación exponencial exacta al deslizamiento de equilibrio
-  (incondicionalmente estable, transmite el par aplicado); en deslizamiento
-  profundo (bloqueo/patinaje), integración explícita. Motivo: la EDO de la
-  rueda es rígida a baja velocidad y la integración explícita pura exigiría
-  >1 kHz.
-- **Transmisión**: RWD/FWD/AWD configurable, diferencial viscoso por eje
-  (abierto/LSD/bloqueado, con tope de par de acoplamiento), freno motor,
-  limitador con histéresis e inercia de régimen, embrague automático
-  simplificado.
-- **Frenos**: par por rueda con reparto delantero configurable; el par máximo
-  supera el agarre a propósito (sin ABS se bloquea). ABS por rueda opcional.
-- **Carretera**: pendiente y curvatura vertical suavizadas por segmento
-  (gravedad en cuesta, descarga en crestas); superficie y microrrelieve
-  muestreados **bajo cada rueda**.
-- **FFB**: par de autoalineado por rueda delantera con avance neumático
-  decreciente + avance mecánico residual; sacudida por diferencia de fuerzas
-  de suspensión izquierda-derecha **filtrada paso-alto** (los transitorios
-  pasan, la transferencia estacionaria de las curvas no).
+- **Chasis**: 3 GDL planos + 3 verticales (heave/pitch/roll) con
+  muelle/amortiguador por esquina y estabilizadoras por eje. Cargas por
+  rueda emergentes de la deflexión de suspensión. Momentos de
+  cabeceo/balanceo desde las fuerzas de neumático **a nivel del suelo**
+  (funciona parado en pendiente y tumba el coche hacia el lado bajo de un
+  peralte). Geometría **anti-dive/anti-squat** con reinyección de la carga
+  desviada (la transferencia total se conserva).
+- **Neumático**: curva combinada tipo Pacejka `μFz·sin(C·atan(B·ρ))` sobre
+  el deslizamiento combinado normalizado, elipse de fricción, sensibilidad
+  a la carga, **camber thrust** por balanceo y *relaxation length* lateral.
+- **Ruedas**: velocidad angular propia; integrador **híbrido** (rodadura:
+  relajación exponencial exacta al equilibrio, incondicionalmente estable;
+  deslizamiento profundo: explícito con captura y bloqueo). **Inercia
+  efectiva** con el motor reflejado por el cuadrado de la desmultiplicación
+  cuando el embrague está acoplado.
+- **Transmisión**: RWD/FWD/AWD, diferencial viscoso por eje con tope
+  (abierto/LSD/bloqueado), freno motor, limitador con histéresis, inercia
+  de régimen, cambio automático conmutable con umbrales relativos al corte.
+- **Frenos**: reparto configurable, par que supera el agarre a propósito
+  (sin ABS bloquea), ABS por rueda opcional.
+- **Carretera**: pendiente y curvatura vertical (gravedad, descarga en
+  crestas), **peralte** con sus tres efectos (gravedad lateral, sobrecarga
+  contra el asfalto, balanceo), superficie y microrrelieve **bajo cada
+  rueda**, condiciones de asfalto multiplicativas.
+- **FFB**: autoalineado con avance neumático decreciente + residual
+  mecánico, scrub radius, sacudida de baches paso-alto, amortiguación de
+  columna escalada con la velocidad, suavizado final. Signo DirectInput
+  invertido (verificado en hardware T300RS), `FFB_INVERT` como conmutador.
 
 ## Decisiones y compromisos conocidos
 
-- Python puro + SDL: portabilidad y sencillez frente a rendimiento; la física
-  cuesta ~50 µs/paso (~1 % de CPU a 240 Hz). El render por franjas es el
-  coste dominante; en Windows va con renderer acelerado.
-- El render es deliberadamente arcade; la física no.
+- Python puro + SDL: portabilidad y sencillez frente a rendimiento. El
+  render 3D vectorizado con numpy cuesta ~8 ms/frame a 1280×720; la física,
+  ~50 µs/paso a 480 Hz.
+- La estética del render es retro a propósito; la geometría no (proyección
+  en perspectiva real, malla adaptativa 1/2/4 m, peralte inclinando cada
+  sección, cámara solidaria al plano local del asfalto y al chasis —
+  heave/pitch en las vistas interiores).
+- El relieve y peralte de Silverstone/Spa son **sintéticos** (la base TUM
+  solo trae la planta): plausibles y deterministas, no topografía real.
 - Simplificaciones asumidas (candidatas a futuro, por orden de valor):
-  temperatura/desgaste/presión de neumáticos, carga aerodinámica, peralte,
-  geometría de dirección completa (caída/caster/convergencia), masas no
-  suspendidas, embrague/calado real con pedal, colisiones.
-- El "coche" es un turismo deportivo genérico definido enteramente en
-  `config.py`; no hay sistema de varios coches.
-- El bloqueo de diferencial es viscoso con tope, no un modelo de Salisbury.
-- La marcha atrás y el comportamiento a <1 m/s usan un modelo cinemático
-  amortiguado (evitar singularidades de deslizamiento).
+  temperatura/desgaste/presión de neumáticos, geometría de dirección
+  completa (caster/convergencia/camber gain), masas no suspendidas,
+  embrague con pedal y calado real, colisiones, ghost/rivales.
+- El diferencial es viscoso con tope, no un Salisbury con precarga/rampas.
+- A <1 m/s la guiñada pasa a un modelo cinemático amortiguado (evitar la
+  singularidad de los deslizamientos).
 
 ## Cómo verificar sin volante ni Windows
 
 ```
 pip install -r requirements.txt
-python tests/test_physics.py                    # 23 pruebas de comportamiento
+python tests/test_physics.py                    # 39 pruebas de comportamiento
 SDL_VIDEODRIVER=dummy python -m simulator.main --frames 300   # humo headless
 ```
 
-Las pruebas cubren: 0-100 y frenada realistas, bloqueo sin ABS (frena peor y
-no dirige), cargas por rueda en curva/frenada/cresta, freno motor, subviraje
-estable, diferencias RWD/FWD/AWD y entre diferenciales, tirón al pisar hierba
-con un lado, par de FFB coherente y 60 s de conducción autónoma sin
-divergencias numéricas.
+Las pruebas cubren: 0–100 y frenadas realistas, bloqueo sin ABS (frena peor
+y no dirige), cargas por rueda en curva/frenada/cresta/pendiente, apoyo
+aerodinámico, freno motor, subviraje estable, RWD/FWD/AWD y diferenciales,
+tirón al pisar hierba con un lado, **peralte** (deriva hacia el lado bajo,
+sobrecarga y alivio del neumático en curva peraltada), **camber thrust**,
+par de FFB coherente, 60 s de conducción autónoma y una pasada de
+aceleración+frenada con los 8 coches del garaje.
 
 ## Dónde aporta más una revisión
 
-1. **Realismo del FFB**: fidelidad y tuning del par de autoalineado, efectos
-   que falten o sobren, rangos de `FFB_*` en config.
-2. **Modelo de neumático**: la curva combinada y la sensibilidad a la carga
-   son simplificadas; ¿errores conceptuales o mejoras de bajo coste?
+1. **Realismo del FFB**: fidelidad y tuning del par de autoalineado,
+   efectos que falten o sobren, rangos de `FFB_*`.
+2. **Modelo de neumático**: la curva combinada, la sensibilidad a la carga
+   y el camber thrust son simplificados; ¿errores conceptuales o mejoras de
+   bajo coste?
 3. **Estabilidad numérica**: casos límite del integrador híbrido de rueda,
-   marcha atrás, velocidad casi nula, dt variable.
-4. **Estructura del código**: acoplamientos, nombres, testabilidad.
-5. **Ideas de contenido**: circuitos, coches presets, HUD, telemetría.
+   marcha atrás, velocidad casi nula, transiciones de superficie.
+4. **Los coches del garaje**: ¿los 8 se sienten distintos por las razones
+   físicas correctas? ¿Parámetros poco creíbles en algún `.car`?
+5. **Ideas de contenido**: circuitos, telemetría, ghost lap, rivales.
 
 Se agradecen hallazgos concretos y accionables (con archivo/línea y
 escenario de reproducción) más que valoraciones generales.

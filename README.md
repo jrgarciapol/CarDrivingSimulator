@@ -38,25 +38,42 @@ feedback realista** calculado a partir de la física del vehículo.
 - **Carga aerodinámica**: el apoyo crece con el cuadrado de la velocidad y
   pasa por la sensibilidad a la carga del neumático (más aplomo en curvas
   rápidas y más peso en el volante).
+- **Geometría anti-dive/anti-squat** e **inercia del motor acoplada** a las
+  ruedas motrices (en 1ª cuesta mucho más hacer patinar; al reducir se
+  siente la retención del volante motor).
+- **Camber thrust**: al tumbarse la carrocería en el apoyo las ruedas se
+  inclinan y pierden agarre — los coches altos y blandos subviran más.
+- **Peralte** con física completa: la gravedad empuja hacia el vértice, la
+  fuerza centrípeta aprieta el coche contra el asfalto (más agarre y más
+  peso en el volante) y la carrocería se tumba hacia el lado bajo.
 - Superficie por rueda: con dos ruedas en la hierba el coche tira hacia ese
   lado, como en la realidad.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de 23 pruebas físicas (`python tests/test_physics.py`):
+- Verificado con una batería de **39 pruebas físicas** (`python tests/test_physics.py`):
   0-100 en ~7 s, frenada 100-0 en ~39 m con ABS (y peor sin él), subviraje
-  estable en el límite, AWD saliendo más rápido que RWD, etc.
+  estable en el límite, AWD saliendo más rápido que RWD, deriva por
+  peralte, etc. El modelo está explicado ecuación a ecuación en
+  [`docs/FISICA.md`](docs/FISICA.md).
 
-**Entorno:** gráficos pseudo-3D, cronómetro de vueltas y sonido de motor
-sintetizado que sigue a las RPM. Tres circuitos:
+**Entorno:** renderizador **3D real** (proyección en perspectiva de la malla
+de la carretera por triángulos, con malla adaptativa, peralte inclinando la
+calzada y cámara solidaria al chasis: cabecea al frenar y sube y baja con la
+suspensión), cronómetro de vueltas y sonido de motor y chirrido de
+neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
 
 - **Silverstone** (5,9 km) y **Spa-Francorchamps** (7,0 km) reales,
   importados del eje central escaneado del
-  [racetrack-database de la TU München](https://github.com/TUMFTM/racetrack-database)
-  (sin altimetría). Se elige con `TRACK_FILE` en `config.py`; por defecto
-  arranca Silverstone.
-- El circuito de pruebas integrado (2,8 km, con colinas y rasantes),
-  poniendo `TRACK_FILE = ""`.
+  [racetrack-database de la TU München](https://github.com/TUMFTM/racetrack-database).
+  La base solo trae la planta, así que el relieve (82 y 105 m de desnivel) y
+  el peralte (hasta 6°) son sintéticos: plausibles y deterministas.
+- **Óvalo peraltado** (2,1 km): curvas de 180° con 18° de peralte — se toman
+  a más de 170 km/h donde en llano el límite serían ~150.
+- El circuito de pruebas integrado (2,8 km, con colinas y dos curvas
+  peraltadas).
 - Puedes importar más circuitos del mismo repositorio con
-  `python tools/import_track.py <entrada.csv> simulator/tracks/<nombre>.csv`.
+  `python tools/import_track.py <entrada.csv> simulator/tracks/<nombre>.csv`
+  (genera también relieve y peralte; `--sin-peralte` / `--sin-rasante` los
+  desactivan).
 
 **Ayudas de pilotaje:**
 - **Trazada ideal** sobre el asfalto (tecla `L`): verde = margen de sobra,
@@ -134,8 +151,10 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | Pedal central | Freno |
 | Leva derecha / izquierda | Subir / bajar marcha |
 | Botón 2 | Alternar cambio automático / manual |
-| Botón 3 | Alternar vista cercana / coche completo |
+| Botón 3 | Cambiar vista: interior / trasera / coche completo |
+| Botón 8 | Recolocar el coche |
 | Botón 9 | Arrancar / parar el motor |
+| Botón 10 | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
 
 | Teclado | Acción |
 | --- | --- |
@@ -143,11 +162,13 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `A` / `Z` | Subir / bajar marcha |
 | `R` | Recolocar el coche |
 | `F1` | Diagnóstico de ejes y botones |
-| `F2` | Telemetría: círculo de fricción de cada rueda en vivo |
+| `F2` | Telemetría: círculo de fricción por rueda y deriva del chasis |
 | `L` | Mostrar/ocultar la trazada ideal |
 | `G` | Alternar cambio automático / manual |
-| `C` | Cambiar vista: sin coche / trasera / coche completo |
+| `C` | Cambiar vista: interior / trasera / coche completo |
 | `E` | Arrancar / parar el motor |
+| `T` | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
+| `M` | Mostrar/ocultar el plano del circuito |
 | `ESC` | Salir |
 
 ## Ajustar el mapeo del volante
@@ -200,17 +221,28 @@ Otros ajustes útiles en `config.py`:
 
 ```
 simulator/
-  main.py     bucle principal (eventos, física a 240 Hz, render, FFB)
-  config.py   toda la configuración: mapeo, FFB, física, circuito
+  main.py     bucle principal (menú, eventos, física a 480 Hz, render, FFB)
+  config.py   configuración base documentada parámetro a parámetro
+  garage.py   coches .car, condiciones del asfalto y récords
+  menu.py     menú de arranque (coche + circuito + asfalto)
   wheel.py    entrada DirectInput del volante y efectos de force feedback
   physics.py  modelo del vehículo de 4 ruedas (neumáticos, suspensión,
-              transmisión, diferenciales, ABS, motor)
-  track.py    circuito: curvas, pendientes, superficies y baches
-  render.py   carretera pseudo-3D, coche y HUD
-  audio.py    sonido de motor sintetizado
+              transmisión, diferenciales, ABS, motor, peralte)
+  track.py    circuito: curvas, rasantes, peralte, superficies, baches y
+              trazada ideal con envolvente de frenada
+  render.py   renderizador 3D de la carretera, coche, HUD y telemetría
+  audio.py    sonido de motor y chirrido sintetizados
   font.py     fuente bitmap del HUD
+  cars/       los 8 vehículos (.car, parámetros comentados)
+  tracks/     circuitos (silverstone, spa, ovalo)
+tools/
+  import_track.py  importa circuitos reales (TUM) y sintetiza relieve/peralte
+  make_oval.py     genera el óvalo peraltado
+docs/
+  FISICA.md        el modelo físico explicado para un ingeniero
+  NOTA_REVISION.md orientación para revisores del código
 tests/
-  test_physics.py  bateria de 23 pruebas del modelo fisico (sin volante)
+  test_physics.py  bateria de 39 pruebas del modelo fisico (sin volante)
 ```
 
 ## Solución de problemas

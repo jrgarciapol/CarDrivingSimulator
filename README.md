@@ -91,6 +91,19 @@ sintetizado que sigue a las RPM. Tres circuitos:
   `MOTOR PARADO` en pantalla; con el motor parado el coche no empuja, y en
   marcha lo frena la compresión.
 
+**Garaje, condiciones y récords:**
+- **Menú de arranque**: elige coche, circuito y estado del asfalto con las
+  flechas y ENTER.
+- **8 coches** definidos en `simulator/cars/*.car` (un archivo editable por
+  coche): utilitario, berlina de lujo, deportivo, GT italiano, fórmula
+  (sin ABS), rally AWD, todoterreno y autobús de 12 toneladas. Puedes crear
+  el tuyo copiando un archivo y cambiando los valores.
+- **Estado del asfalto**: seco (aglomerado), hormigón, arena o lluvia — con
+  su efecto en el agarre y en la paleta visual.
+- **Récords**: la mejor vuelta se guarda en `records.json` por combinación
+  de circuito + coche + asfalto; el HUD arranca mostrándola como referencia
+  y al batirla aparece `NUEVO RECORD` y se guarda automáticamente.
+
 ## Instalación (Windows)
 
 1. Instala los **drivers de Thrustmaster** ([soporte oficial](https://support.thrustmaster.com))

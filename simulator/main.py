@@ -29,7 +29,10 @@ import sys
 import sdl2
 
 from . import config as cfg
+from . import garage
+from . import render as render_mod
 from .audio import EngineSound
+from .menu import run_menu
 from .physics import Car
 from .render import Hud, Renderer
 from .track import Track
@@ -61,6 +64,23 @@ def main(argv=None):
         renderer = sdl2.SDL_CreateRenderer(window, -1, 0)
     sdl2.SDL_SetRenderDrawBlendMode(renderer, sdl2.SDL_BLENDMODE_BLEND)
 
+    # ------------------------------------------------ menú de arranque
+    car_name = "DEPORTIVO"
+    condition = "SECO"
+    if not args.frames:
+        sel = run_menu(renderer)
+        if sel is None:
+            sdl2.SDL_DestroyRenderer(renderer)
+            sdl2.SDL_DestroyWindow(window)
+            sdl2.SDL_Quit()
+            return 0
+        if sel["car"] is not None:
+            car_name = garage.load_car(sel["car"][1])
+        cfg.TRACK_FILE = sel["track"][1]
+        condition = sel["cond"]
+        garage.apply_condition(condition)
+        render_mod.set_condition(condition)
+
     wheel = WheelInput()
     ffb = ForceFeedback(wheel)
     sound = EngineSound()
@@ -70,6 +90,7 @@ def main(argv=None):
     hud = Hud(renderer)
 
     print(f"Car Driving Simulator {cfg.VERSION}")
+    print(f"Coche: {car_name} | Asfalto: {condition}")
     print(f"Circuito: {track.name} ({track.length:.0f} m)")
     from .physics import engine_peak_power_cv
     print(f"Motor: {cfg.ENGINE_MAX_TORQUE_NM:.0f} Nm de par maximo, "
@@ -87,8 +108,9 @@ def main(argv=None):
     accumulator = 0.0
 
     lap_time = 0.0
-    best_lap = None
+    best_lap = garage.record_get(track.name, car_name, condition)
     lap_count = 1
+    record_banner_until = -1.0
     show_debug = False
     show_telemetry = False
     show_line = cfg.RACING_LINE
@@ -182,6 +204,9 @@ def main(argv=None):
             if prev_s % track.length > st.s % track.length and st.vx > 1.0:
                 if best_lap is None or lap_time < best_lap:
                     best_lap = lap_time
+                    if garage.record_save(track.name, car_name, condition,
+                                          lap_time):
+                        record_banner_until = sim_time + 5.0
                 lap_time = 0.0
                 lap_count += 1
             accumulator -= physics_dt
@@ -228,6 +253,12 @@ def main(argv=None):
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
         if show_minimap:
             hud.draw_minimap(track, car.state)
+        if sim_time < record_banner_until:
+            from . import font as font_mod
+            txt = "NUEVO RECORD"
+            font_mod.draw_text(renderer, txt,
+                               cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 4) // 2,
+                               150, 4, (120, 255, 120, 255))
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
                  auto_gear, time_scale)
         if show_debug:

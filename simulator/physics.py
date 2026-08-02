@@ -211,18 +211,21 @@ class Car:
         st = self.state
         if st.gear < 1 or self._auto_dwell > 0.0:
             return False
-        if st.rpm > 6350 and st.gear < len(cfg.GEAR_RATIOS) \
+        # umbrales relativos al motor del coche (un autobús corta a
+        # 2500 rpm; un fórmula, a 12000)
+        lim = cfg.ENGINE_LIMITER_RPM
+        if st.rpm > lim * 0.93 and st.gear < len(cfg.GEAR_RATIOS) \
                 and max(st.slip_ratio) < 0.4:
             if self.shift_up():
                 self._auto_dwell = 1.2
                 return True
-        low_rpm = st.rpm < 2000.0
+        low_rpm = st.rpm < max(cfg.ENGINE_IDLE_RPM * 1.4, lim * 0.30)
         # el kick-down no baja a 1a: esa marcha es solo de salida
-        kick_down = throttle > 0.85 and st.rpm < 3600.0 and st.gear > 2
+        kick_down = throttle > 0.85 and st.rpm < lim * 0.52 and st.gear > 2
         if st.gear > 1 and (low_rpm or kick_down):
             # no reducir si dejaría el motor pasado de vueltas
             projected = st.rpm * cfg.GEAR_RATIOS[st.gear - 2] / cfg.GEAR_RATIOS[st.gear - 1]
-            if projected < 6200.0 and self.shift_down():
+            if projected < cfg.ENGINE_REDLINE_RPM * 0.92 and self.shift_down():
                 self._auto_dwell = 1.2
                 return True
         return False

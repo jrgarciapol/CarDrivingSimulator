@@ -37,7 +37,7 @@ simulator/tracks/     circuitos: silverstone, spa (TUM + relieve/peralte
                       sintéticos), óvalo peraltado de diseño
 tools/import_track.py importador TUM → formato interno (+ modo --enriquecer)
 tools/make_oval.py    generador del óvalo peraltado
-tests/test_physics.py 39 pruebas de comportamiento físico, sin SDL ni volante
+tests/test_physics.py 45 pruebas de comportamiento físico, sin SDL ni volante
 ```
 
 ## Modelo físico (resumen; detalle en docs/FISICA.md)
@@ -47,15 +47,19 @@ derecha; ruedas `0=del.izda, 1=del.dcha, 2=tras.izda, 3=tras.dcha`; el coche
 vive en coordenadas locales de la carretera (s, n, psi).
 
 - **Chasis**: 3 GDL planos + 3 verticales (heave/pitch/roll) con
-  muelle/amortiguador por esquina y estabilizadoras por eje. Cargas por
-  rueda emergentes de la deflexión de suspensión. Momentos de
-  cabeceo/balanceo desde las fuerzas de neumático **a nivel del suelo**
-  (funciona parado en pendiente y tumba el coche hacia el lado bajo de un
-  peralte). Geometría **anti-dive/anti-squat** con reinyección de la carga
-  desviada (la transferencia total se conserva).
+  muelle/amortiguador por esquina y estabilizadoras por eje, más 4 GDL de
+  **masa no suspendida** (el neumático es un muelle rígido contra el
+  asfalto: la rueda "vuela" sobre los pianos y la carga de Pacejka sale de
+  la compresión de la goma). Momentos de cabeceo/balanceo desde las
+  fuerzas de neumático **a nivel del suelo** (funciona parado en pendiente
+  y tumba el coche hacia el lado bajo de un peralte). Geometría
+  **anti-dive/anti-squat** con reinyección de la carga desviada (la
+  transferencia total se conserva).
 - **Neumático**: curva combinada tipo Pacejka `μFz·sin(C·atan(B·ρ))` sobre
   el deslizamiento combinado normalizado, elipse de fricción, sensibilidad
-  a la carga, **camber thrust** por balanceo y *relaxation length* lateral.
+  a la carga, **camber thrust** por balanceo con **camber gain**
+  geométrico por compresión, **temperatura** por rueda (fricción calienta,
+  el aire enfría, parábola de rendimiento) y *relaxation length* lateral.
 - **Ruedas**: velocidad angular propia; integrador **híbrido** (rodadura:
   relajación exponencial exacta al equilibrio, incondicionalmente estable;
   deslizamiento profundo: explícito con captura y bloqueo). **Inercia
@@ -88,8 +92,8 @@ vive en coordenadas locales de la carretera (s, n, psi).
   solo trae la planta): plausibles y deterministas, no topografía real.
 - Simplificaciones asumidas (candidatas a futuro, por orden de valor):
   temperatura/desgaste/presión de neumáticos, geometría de dirección
-  completa (caster/convergencia/camber gain), masas no suspendidas,
-  embrague con pedal y calado real, colisiones, ghost/rivales.
+  completa (caster/convergencia), presión de neumáticos, embrague con
+  pedal y calado real, colisiones, rivales con IA.
 - El diferencial es viscoso con tope, no un Salisbury con precarga/rampas.
 - A <1 m/s la guiñada pasa a un modelo cinemático amortiguado (evitar la
   singularidad de los deslizamientos).
@@ -98,7 +102,7 @@ vive en coordenadas locales de la carretera (s, n, psi).
 
 ```
 pip install -r requirements.txt
-python tests/test_physics.py                    # 39 pruebas de comportamiento
+python tests/test_physics.py                    # 45 pruebas de comportamiento
 SDL_VIDEODRIVER=dummy python -m simulator.main --frames 300   # humo headless
 ```
 
@@ -121,7 +125,7 @@ aceleración+frenada con los 8 coches del garaje.
    marcha atrás, velocidad casi nula, transiciones de superficie.
 4. **Los coches del garaje**: ¿los 8 se sienten distintos por las razones
    físicas correctas? ¿Parámetros poco creíbles en algún `.car`?
-5. **Ideas de contenido**: circuitos, telemetría, ghost lap, rivales.
+5. **Ideas de contenido**: circuitos, telemetría exportable, rivales.
 
 Se agradecen hallazgos concretos y accionables (con archivo/línea y
 escenario de reproducción) más que valoraciones generales.

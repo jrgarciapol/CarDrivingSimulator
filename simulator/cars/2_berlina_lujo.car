@@ -33,3 +33,5 @@ AERO_DOWNFORCE = 0.2              # N/(m/s)2, carga aerodinamica (aprieta al sue
 BRAKE_FORCE_MAX = 22000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.70           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.30              # m, ojo del conductor: berlina comoda
+UNSPRUNG_MASS = 45.0              # kg por rueda, llanta grande
+SUSP_CAMBER_GAIN = 0.6            # confort antes que apoyo

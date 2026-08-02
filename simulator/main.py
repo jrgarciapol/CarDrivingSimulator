@@ -39,6 +39,28 @@ from .track import Track
 from .wheel import ForceFeedback, WheelInput
 
 
+def ghost_sample(data, t, track_len):
+    """Interpola (s, n, psi) de la vuelta grabada en el tiempo t."""
+    if not data:
+        return None
+    if t <= data[0][0]:
+        return data[0][1:]
+    if t >= data[-1][0]:
+        return data[-1][1:]
+    i = min(int(t / 0.05), len(data) - 2)
+    while i > 0 and data[i][0] > t:
+        i -= 1
+    while i < len(data) - 2 and data[i + 1][0] < t:
+        i += 1
+    t0, s0, n0, p0 = data[i]
+    t1, s1, n1, p1 = data[i + 1]
+    u = (t - t0) / max(1e-6, t1 - t0)
+    if s1 - s0 < -track_len / 2.0:
+        s1 += track_len          # cruce de meta dentro del tramo
+    return ((s0 + (s1 - s0) * u) % track_len,
+            n0 + (n1 - n0) * u, p0 + (p1 - p0) * u)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Car Driving Simulator")
     parser.add_argument("--frames", type=int, default=0,
@@ -111,6 +133,12 @@ def main(argv=None):
     best_lap = garage.record_get(track.name, car_name, condition)
     lap_count = 1
     record_banner_until = -1.0
+    # fantasma de la mejor vuelta de la sesión + partículas
+    particles = render_mod.Particles()
+    ghost_rec = []        # vuelta en curso: (t, s, n, psi) cada 50 ms
+    ghost_best = None     # mejor vuelta grabada de la sesión
+    ghost_next = 0.0
+    lap_valid = False     # la primera vuelta (parcial) no se graba
     show_debug = False
     show_telemetry = False
     show_line = cfg.RACING_LINE
@@ -201,12 +229,26 @@ def main(argv=None):
             # cronometraje de vueltas
             lap_time += physics_dt
             sim_time += physics_dt
+            # grabación del fantasma: estado curvilíneo cada ~50 ms
+            if cfg.GHOST_ENABLED and lap_valid and lap_time >= ghost_next:
+                ghost_rec.append((lap_time, st.s % track.length, st.n,
+                                  st.psi))
+                ghost_next = lap_time + 0.05
             if prev_s % track.length > st.s % track.length and st.vx > 1.0:
-                if best_lap is None or lap_time < best_lap:
+                new_best = best_lap is None or lap_time < best_lap
+                if new_best:
                     best_lap = lap_time
                     if garage.record_save(track.name, car_name, condition,
                                           lap_time):
                         record_banner_until = sim_time + 5.0
+                # el fantasma pasa a reproducir la vuelta recién batida
+                if lap_valid and new_best and len(ghost_rec) > 4:
+                    ghost_rec.append((lap_time, st.s % track.length,
+                                      st.n, st.psi))
+                    ghost_best = ghost_rec
+                ghost_rec = []
+                ghost_next = 0.0
+                lap_valid = True
                 lap_time = 0.0
                 lap_count += 1
             accumulator -= physics_dt
@@ -252,10 +294,31 @@ def main(argv=None):
             cam_h = (cfg.CAMERA_HEIGHT, cfg.CAMERA_HEIGHT_REAR)[view_mode]
             cam_back, ygain = 0.0, None
         scene.draw_road(track, car.state, show_line, cam_h, cam_back, ygain)
+        # fantasma de la mejor vuelta de la sesión
+        if cfg.GHOST_ENABLED and ghost_best is not None:
+            g = ghost_sample(ghost_best, lap_time, track.length)
+            if g is not None:
+                scene.draw_ghost(track, g[0], g[1], g[2])
         if view_mode == 1:
             scene.draw_car(car.state, wheel.steering)
         elif view_mode == 2:
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
+        # partículas: humo (asfalto), chispas (piano), polvo (hierba)
+        if cfg.PARTICLES_ENABLED:
+            st = car.state
+            if abs(st.vx) > 3.0:
+                peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
+                for i in range(4):
+                    over_i = max(abs(st.slip_ratio[i]) / cfg.TIRE_PEAK_SLIP_RATIO,
+                                 abs(st.slip_angle[i]) / peak_a)
+                    if over_i > 0.9 and st.fz[i] > 100.0:
+                        kind = {"road": "smoke", "kerb": "spark",
+                                "grass": "dust"}[st.wheel_surface[i]]
+                        particles.emit(kind,
+                                       (st.s + car.X_POS[i]) % track.length,
+                                       st.n + car.Y_POS[i], abs(st.vx))
+            particles.update(frame_dt * time_scale)
+            particles.draw(renderer, scene, track)
         if show_minimap:
             hud.draw_minimap(track, car.state)
         if sim_time < record_banner_until:

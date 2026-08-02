@@ -456,6 +456,95 @@ def main():
                          f"yaw={yaw_camber:.3f} vs sin efecto {yaw_no_camber:.3f}"))
 
     # ------------------------------------------------------------------
+    print("--- masas no suspendidas y temperatura ---")
+
+    # sobre un piano corrugado a velocidad, la rueda (masa no suspendida)
+    # no puede seguir los dientes: "vuela" y la carga de contacto cae casi
+    # a cero aunque el chasis apenas se entere
+    class KerbTrack(FlatTrack):
+        def surface_at(self, n, s):
+            return "kerb", cfg.TIRE_MU * 0.92
+
+        def bump_at(self, s, n, surface):
+            return 0.028 * max(0.0, math.sin(s * (2 * math.pi / 0.4)))
+
+    car = Car()
+    settle(car, flat, 1.0)
+    set_speed(car, 20.0)
+    kerb = KerbTrack()
+    min_fz = 1e9
+    max_heave = 0.0
+    for k in range(int(1.0 / DT)):
+        car.step(DT, 0.0, 0.2, 0.0, kerb)
+        if k > int(0.3 / DT):
+            min_fz = min(min_fz, min(car.state.fz[0], car.state.fz[1]))
+            max_heave = max(max_heave, abs(car.state.heave))
+    static_f = cfg.CAR_MASS * 9.81 * cfg.WEIGHT_DIST_FRONT / 2.0
+    results.append(check("la rueda vuela sobre el piano corrugado",
+                         min_fz < static_f * 0.45,
+                         f"fz min={min_fz:.0f} N (estatica {static_f:.0f})"))
+    results.append(check("el chasis filtra el piano (no lo copia)",
+                         max_heave < 0.02, f"heave max={max_heave*1000:.1f} mm"))
+
+    # derrapar calienta la goma; rodar tranquilo la enfria
+    car = Car()
+    settle(car, flat, 1.0)
+    set_speed(car, 15.0)
+    for k in range(int(6.0 / DT)):
+        car.step(DT, 0.5, 1.0, 0.0, flat)
+    t_hot = max(car.state.tire_temp)
+    for k in range(int(20.0 / DT)):
+        car.step(DT, 0.0, 0.25, 0.0, flat)
+    t_cool = max(car.state.tire_temp)
+    results.append(check("derrapar calienta la goma", t_hot > 75.0,
+                         f"T={t_hot:.0f} C tras 6 s de derrape"))
+    results.append(check("el aire enfria la goma en marcha",
+                         t_cool < t_hot - 5.0,
+                         f"T={t_cool:.0f} C tras 20 s tranquilos"))
+
+    # la goma fria rinde menos que a temperatura optima
+    def yaw_at_temp(temp):
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 25.0)
+        acc, steps = 0.0, 0
+        for k in range(int(2.0 / DT)):
+            for i in range(4):
+                c.state.tire_temp[i] = temp   # forzada: aislar el efecto
+            c.step(DT, 0.35, 0.3, 0.0, flat)
+            if k > int(1.2 / DT):
+                acc += abs(c.state.yaw_rate)
+                steps += 1
+        return acc / steps
+
+    y_cold = yaw_at_temp(25.0)
+    y_opt = yaw_at_temp(cfg.TIRE_TEMP_OPT)
+    results.append(check("la goma fria agarra menos", y_cold < y_opt * 0.97,
+                         f"yaw={y_cold:.3f} vs {y_opt:.3f} en optimo"))
+
+    # el camber gain endereza la rueda exterior y recupera agarre
+    def yaw_camber_gain(gain):
+        old = cfg.SUSP_CAMBER_GAIN
+        cfg.SUSP_CAMBER_GAIN = gain
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 25.0)
+        acc, steps = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.35, 0.3, 0.0, flat)
+            if k > int(1.5 / DT):
+                acc += abs(c.state.yaw_rate)
+                steps += 1
+        cfg.SUSP_CAMBER_GAIN = old
+        return acc / steps
+
+    y_rigid = yaw_camber_gain(0.0)
+    y_geo = yaw_camber_gain(1.6)
+    results.append(check("el camber gain recupera agarre en el apoyo",
+                         y_geo > y_rigid * 1.003,
+                         f"yaw={y_geo:.3f} vs {y_rigid:.3f} sin geometria"))
+
+    # ------------------------------------------------------------------
     print("--- FFB y circuito real ---")
     car = Car()
     settle(car, flat, 1.0)

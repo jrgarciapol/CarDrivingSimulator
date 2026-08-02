@@ -54,10 +54,10 @@ relativas al plano local de la vía); `omega[4]` (velocidad angular de cada
 rueda); `rpm`, `gear`; y magnitudes derivadas expuestas para HUD/FFB
 (`fz[4]`, `slip_ratio[4]`, `slip_angle[4]`, `steer_column_torque`…).
 
-**Grados de libertad**: 3 planos + 3 verticales + 4 de rueda + 1 de régimen
-de motor = 11 GDL dinámicos. Las masas no suspendidas no se modelan por
-separado (la rueda no tiene GDL vertical propio: el microrrelieve entra
-como excitación directa del muelle, §3).
+**Grados de libertad**: 3 planos + 3 verticales del chasis + 4 verticales
+de masa no suspendida (`zu`, §3) + 4 de giro de rueda + 1 de régimen de
+motor = 15 GDL dinámicos, más 4 estados térmicos (temperatura de cada
+goma, §4).
 
 ## 2. Bucle de integración
 
@@ -89,19 +89,35 @@ despreciable frente a las constantes de tiempo del vehículo (>100 ms).
 
 ## 3. Suspensión y dinámica vertical del chasis
 
-El chasis tiene 3 GDL verticales relativos al plano local de la vía:
-`h` (heave, + arriba), `θ` (pitch, + morro arriba), `φ` (roll, + lado
-derecho elevado). Cada esquina `i` tiene una deflexión:
+Cada esquina es un sistema de **dos masas**: el chasis (masa suspendida) y
+la mangueta+rueda (masa no suspendida `m_u = UNSPRUNG_MASS`, con posición
+vertical propia `zu_i`). El muelle y el amortiguador de suspensión trabajan
+entre chasis y mangueta; el neumático es otro muelle mucho más rígido
+(`TIRE_VERT_STIFF`, con su amortiguación interna `TIRE_VERT_DAMP`) entre la
+mangueta y el asfalto:
 
 ```
-d_i = z_bache,i − (h + θ·X_i + φ·Y_i)          (+ = muelle comprimido)
-F_susp,i = k_i·d_i + c·ḋ_i                      k_i = SUSP_SPRING_FRONT/REAR
+d_i = zu_i − (h + θ·X_i + φ·Y_i)               (+ = muelle comprimido)
+F_susp,i = k_i·d_i + c·ḋ_i                      (± estabilizadoras)
+q_i = z_bache,i − zu_i                          (compresión de la goma)
+F_neum,i = K_t·q_i + C_t·q̇_i
+m_u·z̈u_i = F_neum,i − F_susp,i − a_rasante
 ```
 
 donde `z_bache,i` es el microrrelieve determinista muestreado bajo esa rueda
 (pianos corrugados de 40 cm, ondulación de la hierba, rugosidad leve del
-asfalto — `track.bump_at`). Las **barras estabilizadoras** añaden un término
-proporcional a la diferencia de deflexión izquierda–derecha de cada eje:
+asfalto — `track.bump_at`). La frecuencia propia de la masa no suspendida
+(*wheel hop*) queda en ~14 Hz con los valores por defecto: sobre un piano
+agresivo a velocidad (excitación de 40–60 Hz) la rueda **no puede seguir
+los dientes y vuela** — la carga de contacto oscila hasta anularse aunque
+el chasis apenas se mueva (verificado en la batería: Fz mínima 0 N sobre el
+piano con el chasis moviéndose ~11 mm). El chasis (`h`, `θ`, `φ`) siente
+solo `F_susp`, filtrada por la suspensión, como en un coche real. A 480 Hz
+el modo de wheel hop está sobradamente resuelto (ω·dt ≈ 0.2) y el
+amortiguamiento conjunto lo deja en ζ ≈ 0.6–0.7.
+
+Las **barras estabilizadoras** añaden un término proporcional a la
+diferencia de deflexión izquierda–derecha de cada eje:
 `±ARB·(d_izda − d_dcha)/2`.
 
 Ecuaciones del chasis (m = `CAR_MASS`, momentos de inercia de `config`):
@@ -131,10 +147,12 @@ Ecuaciones del chasis (m = `CAR_MASS`, momentos de inercia de `config`):
   (instantáneo).
 - `press` es el término de **peralte** (§7).
 
-La carga vertical de cada rueda es entonces:
+La carga vertical de cada rueda sale del **muelle del neumático** (no del
+de suspensión): si la goma se despega del asfalto la carga es cero aunque
+el muelle de suspensión siga empujando la mangueta:
 
 ```
-Fz_i = max(0, Fz_estática,i + F_susp,i + aero_i ± anti_fz)
+Fz_i = max(0, Fz_estática,i + F_neum,i + aero_i ± anti_fz)
 ```
 
 con la carga estática derivada del reparto de pesos, y la **carga
@@ -199,20 +217,42 @@ frenar en curva, el efecto de las estabilizadoras sobre el equilibrio
 (más barra delante ⇒ más transferencia delante ⇒ subvirador) y la
 sensibilidad al reparto de frenada.
 
-### Empuje por caída (camber thrust)
+### Empuje por caída (camber thrust) y camber gain
 
-Al balancear, la carrocería inclina las ruedas consigo (suspensión
-independiente idealizada, sin recuperación de caída). Una rueda inclinada
-genera empuje lateral hacia el lado al que se tumba (como una motocicleta):
+Al balancear, la carrocería inclina las ruedas consigo. Una rueda inclinada
+genera empuje lateral hacia el lado al que se tumba (como una motocicleta).
+La **geometría de suspensión** lo compensa en parte: al comprimirse, cada
+lado gana caída hacia el centro del coche (*camber gain*), enderezando la
+rueda exterior en el apoyo. El ángulo de inclinación efectivo de cada
+rueda (hacia +y) y su empuje son:
 
 ```
-fy ← fy − TIRE_CAMBER_THRUST · φ · Fz
+γ_i = −φ − lado_i · SUSP_CAMBER_GAIN · d_i        lado_i = signo(Y_i)
+fy ← fy + TIRE_CAMBER_THRUST · γ_i · Fz_i
 ```
 
-En curva la carrocería se tumba hacia **fuera**, así que el término se
-opone a la fuerza lateral del neumático: resta agarre. El efecto escala con
-el balanceo real: castiga a los coches altos y blandos (autobús,
-todoterreno) y apenas a los rígidos (fórmula).
+El signo por lado importa: la misma compresión tumba la rueda izquierda
+hacia la derecha y la derecha hacia la izquierda (en un apoyo simétrico
+por aero los dos empujes se cancelan exactamente). En curva la carrocería
+se tumba hacia **fuera** y el término neto resta agarre; el camber gain lo
+recupera en parte según la geometría del coche: el autobús (eje rígido,
+ganancia 0) lo sufre entero, la fórmula (1.5 rad/m) apenas.
+
+### Temperatura
+
+Cada goma integra un estado térmico de primer orden: la potencia de
+fricción calienta (con la tasa limitada por la masa térmica de la goma) y
+el aire refrigera con la velocidad:
+
+```
+Ṫ = min(6 C/s, H·|F_neum|·|v_deslizamiento|) − C·(2 + |vx|)·(T − T_amb)
+μ ← μ · max(0.72, 1 − TIRE_TEMP_SENS·(T − T_opt)²)
+```
+
+La parábola invertida centrada en `TIRE_TEMP_OPT` penaliza la goma fría
+(a 25 °C rinde ~77 %: hay que ponerla en temperatura) y la recalentada por
+abusar del derrape. Las gomas de competición (`.car` de la fórmula y el
+GT) tienen el óptimo más alto: más margen caliente, peor en frío.
 
 ### Retardo de respuesta lateral (relaxation length)
 
@@ -428,8 +468,8 @@ t(α) = TIRE_TRAIL · (0.15 + 0.85·max(0, 1 − |α|/α_sat))
 
 ## 11. Validación
 
-`python tests/test_physics.py` — **39 pruebas** sin SDL ni volante, en
-cuatro bloques:
+`python tests/test_physics.py` — **45 pruebas** sin SDL ni volante, en
+cinco bloques:
 
 - **Aceleración y frenada**: 0–100 en rango realista, distancia de frenada
   con ABS (33–60 m desde 100), sin ABS bloquea y frena más largo, con las
@@ -445,6 +485,10 @@ cuatro bloques:
 - **Peralte y caída**: el peralte empuja hacia el lado bajo, la curva
   peraltada carga más el coche y alivia el trabajo del neumático, el camber
   thrust resta guiñada en apoyo.
+- **Masas no suspendidas y temperatura**: la rueda vuela sobre el piano
+  corrugado (Fz llega a 0) mientras el chasis lo filtra, derrapar calienta
+  la goma y el aire la enfría, la goma fría agarra menos, el camber gain
+  recupera agarre en el apoyo.
 
 Más el par de FFB en rango, 60 s de conducción autónoma sin divergencias y
 una pasada de aceleración+frenada con los **8 coches** del garaje

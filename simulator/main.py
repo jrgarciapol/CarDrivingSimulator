@@ -16,6 +16,7 @@ Teclado (siempre activo):
   G              alternar cambio automatico/manual
   C              cambiar vista: sin coche / trasera / coche completo
   E              arrancar / parar el motor
+  T              camara lenta (1x / 0.5x / 0.25x / 0.1x)
   ESC            salir
 """
 
@@ -92,6 +93,7 @@ def main(argv=None):
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
     view_mode = cfg.VIEW_MODE   # 0 sin coche, 1 trasera, 2 coche completo
+    time_idx = 0                # indice en TIME_SCALES (camara lenta)
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -118,6 +120,8 @@ def main(argv=None):
                     view_mode = (view_mode + 1) % 3
                 elif sym == sdl2.SDLK_e:
                     car.toggle_engine()
+                elif sym == sdl2.SDLK_t:
+                    time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                 elif sym == sdl2.SDLK_a:
@@ -143,6 +147,8 @@ def main(argv=None):
             view_mode = (view_mode + 1) % 3
         if wheel.button_pressed_edge(cfg.BUTTON_ENGINE):
             car.toggle_engine()
+        if wheel.button_pressed_edge(cfg.BUTTON_SLOWMO):
+            time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
         if wheel.button_pressed_edge(cfg.BUTTON_RESET):
             car.reset(car.state.s)
 
@@ -155,7 +161,8 @@ def main(argv=None):
         frame_dt = (now - last) / perf_freq
         last = now
         frame_dt = min(frame_dt, 0.1)
-        accumulator += frame_dt
+        time_scale = cfg.TIME_SCALES[time_idx]
+        accumulator += frame_dt * time_scale
 
         # ------------------------------------------------ física
         while accumulator >= physics_dt:
@@ -210,7 +217,7 @@ def main(argv=None):
         elif view_mode == 2:
             scene.draw_car_chase(car.state, wheel.steering)
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
-                 auto_gear)
+                 auto_gear, time_scale)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:

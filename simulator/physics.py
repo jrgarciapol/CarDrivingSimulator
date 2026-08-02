@@ -104,6 +104,7 @@ class CarState:
         # ruedas
         self.omega = [0.0, 0.0, 0.0, 0.0]      # rad/s
         self.fz = [0.0, 0.0, 0.0, 0.0]         # carga vertical (N)
+        self.susp_def = [0.0, 0.0, 0.0, 0.0]   # deflexión muelle (m, + comprimido)
         self.slip_ratio = [0.0, 0.0, 0.0, 0.0]
         self.slip_angle = [0.0, 0.0, 0.0, 0.0]
         self.wheel_surface = ["road"] * 4
@@ -305,6 +306,7 @@ class Car:
             dv[i] = bump_v - corner_v
             k = cfg.SUSP_SPRING_FRONT if i < 2 else cfg.SUSP_SPRING_REAR
             f_susp[i] = k * d[i] + cfg.SUSP_DAMPER * dv[i]
+            st.susp_def[i] = d[i]
 
         # barras estabilizadoras: fuerza según diferencia izda/dcha por eje
         arb_f = cfg.ARB_FRONT * (d[FL] - d[FR]) / 2.0

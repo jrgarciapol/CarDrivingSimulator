@@ -91,9 +91,9 @@ vive en coordenadas locales de la carretera (s, n, psi).
 - El relieve y peralte de Silverstone/Spa son **sintéticos** (la base TUM
   solo trae la planta): plausibles y deterministas, no topografía real.
 - Simplificaciones asumidas (candidatas a futuro, por orden de valor):
-  temperatura/desgaste/presión de neumáticos, geometría de dirección
-  completa (caster/convergencia), presión de neumáticos, embrague con
-  pedal y calado real, colisiones, rivales con IA.
+  desgaste y presión de neumáticos, geometría de dirección completa
+  (caster/convergencia), embrague con pedal y calado real, colisiones,
+  rivales con IA.
 - El diferencial es viscoso con tope, no un Salisbury con precarga/rampas.
 - A <1 m/s la guiñada pasa a un modelo cinemático amortiguado (evitar la
   singularidad de los deslizamientos).

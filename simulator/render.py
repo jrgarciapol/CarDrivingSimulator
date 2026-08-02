@@ -6,8 +6,10 @@ Las curvas se acumulan como desplazamiento lateral creciente con la distancia
 y las colinas mueven el horizonte.
 """
 
+import ctypes
 import math
 
+import numpy as np
 import sdl2
 
 from . import config as cfg
@@ -74,144 +76,225 @@ class Renderer:
 
     # ------------------------------------------------------------------
     def draw_road(self, track, car_state, show_line=True, cam_height=None):
-        """Devuelve la altura del horizonte usada (para el fondo)."""
+        """Renderizador 3D real: proyección en perspectiva de la malla de
+        la carretera con la cámara anclada al coche (posición, rumbo y
+        altura reales). La geometría se construye por secciones
+        transversales y se dibuja por triángulos (SDL_RenderGeometryRaw)
+        ordenados de lejos a cerca (algoritmo del pintor)."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         speed = abs(car_state.vx)
         if cam_height is None:
             cam_height = cfg.CAMERA_HEIGHT
         segs = track.segments
         n_segs = len(segs)
-        seg_len = cfg.SEGMENT_LENGTH
-
-        base_i = int(car_state.s / seg_len)
-        frac = (car_state.s - base_i * seg_len) / seg_len
-        base_seg = segs[base_i % n_segs]
-        cam_y = base_seg.y + cam_height
-
-        # Proyección de cada segmento por delante de la cámara
-        cam_d = cfg.CAMERA_DEPTH
+        L = cfg.SEGMENT_LENGTH
+        f = cfg.CAMERA_DEPTH
         half_w = cfg.ROAD_HALF_WIDTH
         kerb_w = cfg.KERB_WIDTH
 
-        x_offset = 0.0      # desplazamiento lateral acumulado por la curva
-        dx = 0.0
-        rows = []           # (screen_y, center_x, half_width_px, seg_index)
-        min_y = H
+        base_i = int(car_state.s / L)
+        frac = (car_state.s - base_i * L) / L
+        cam_y = segs[base_i % n_segs].y + cam_height
+        psi_c = car_state.psi * cfg.CAMERA_YAW_GAIN
+        cp, sp = math.cos(psi_c), math.sin(psi_c)
 
-        for i in range(cfg.DRAW_DISTANCE):
-            seg = segs[(base_i + i) % n_segs]
-            # el primer punto queda casi bajo la cámara para que la
-            # carretera llegue al borde inferior de la pantalla
-            z = (i - frac) * seg_len + 0.5
-            if z < 0.3:
-                if i > 0:
+        # --- centro de la carretera en el plano local del coche ---------
+        N_BACK = 3
+        N = cfg.DRAW_DISTANCE
+        n_sec = N_BACK + N + 1
+        cx = np.empty(n_sec)
+        cz = np.empty(n_sec)
+        hx = np.empty(n_sec)   # componentes del vector "derecha"
+        hz = np.empty(n_sec)
+        elev = np.empty(n_sec)
+        seg_idx = np.empty(n_sec, dtype=np.int64)
+
+        # retroceder N_BACK secciones desde la sección base
+        x = 0.0
+        z = -frac * L
+        h = 0.0
+        for j in range(N_BACK):
+            k = (base_i - j - 1) % n_segs
+            h -= segs[k].kappa * L
+            x -= math.sin(h) * L
+            z -= math.cos(h) * L
+        # avanzar registrando secciones
+        for j in range(n_sec):
+            k = (base_i - N_BACK + j) % n_segs
+            seg = segs[k]
+            cx[j] = x
+            cz[j] = z
+            hx[j] = math.cos(h)      # "derecha" = (cos h, -sin h)
+            hz[j] = -math.sin(h)
+            elev[j] = seg.y
+            seg_idx[j] = base_i - N_BACK + j
+            x += math.sin(h) * L
+            z += math.cos(h) * L
+            h += seg.kappa * L
+
+        # desplazar al coche (está a +n del centro) y girar por el rumbo
+        cx = cx - car_state.n
+        xr = cx * cp - cz * sp
+        zr = cx * sp + cz * cp
+        rxr = hx * cp - hz * sp
+        rzr = hx * sp + hz * cp
+
+        # recorte del plano cercano: la sección que queda justo detrás de
+        # la cámara se interpola exactamente sobre el plano z=0.3 para que
+        # el asfalto llegue hasta el borde inferior de la pantalla
+        Z_NEAR = 0.3
+        for j in range(min(N_BACK + 3, n_sec - 1)):
+            if zr[j] <= Z_NEAR < zr[j + 1]:
+                t = (Z_NEAR - zr[j]) / (zr[j + 1] - zr[j])
+                xr[j] += (xr[j + 1] - xr[j]) * t
+                zr[j] = Z_NEAR + 1e-4
+                rxr[j] += (rxr[j + 1] - rxr[j]) * t
+                rzr[j] += (rzr[j + 1] - rzr[j]) * t
+                elev[j] += (elev[j + 1] - elev[j]) * t
+
+        # --- offsets transversales de la malla --------------------------
+        li = np.array([track.line_n[s % n_segs] for s in seg_idx])
+        GW = 38.0
+        offs = [
+            (-GW, -half_w - kerb_w),          # hierba izquierda
+            (-half_w - kerb_w, -half_w),      # piano izquierdo
+            (-half_w, half_w),                # asfalto
+            (-half_w + 0.06, -half_w + 0.42), # línea blanca izquierda
+            (half_w - 0.42, half_w - 0.06),   # línea blanca derecha
+            (-0.14, 0.14),                    # línea central discontinua
+            (half_w, half_w + kerb_w),        # piano derecho
+            (half_w + kerb_w, GW),            # hierba derecha
+        ]
+        if show_line and cfg.RACING_LINE:
+            offs.append(None)                 # trazada (offset por sección)
+
+        # --- proyección de todos los puntos ------------------------------
+        dy = elev - cam_y
+        z_ok = zr > 0.25
+        inv_z = np.where(z_ok, 1.0 / np.maximum(zr, 0.25), 0.0)
+
+        def project(o_left, o_right, per_section=None):
+            """Devuelve (P0x,P0y,P1x,P1y) proyectados por sección para un
+            par de offsets (o el offset de la trazada por sección)."""
+            if per_section is not None:
+                oL = per_section - 0.30
+                oR = per_section + 0.30
+            else:
+                oL = np.full(n_sec, o_left)
+                oR = np.full(n_sec, o_right)
+            xl = xr + rxr * oL
+            zl = zr + rzr * oL
+            xrg = xr + rxr * oR
+            zrg = zr + rzr * oR
+            izl = np.where(zl > 0.25, 1.0 / np.maximum(zl, 0.25), 0.0)
+            izr = np.where(zrg > 0.25, 1.0 / np.maximum(zrg, 0.25), 0.0)
+            sxl = W / 2 + f * xl * izl * (W / 2)
+            syl = H / 2 - f * dy * izl * (H / 2)
+            sxr = W / 2 + f * xrg * izr * (W / 2)
+            syr = H / 2 - f * dy * izr * (H / 2)
+            valid = (zl > 0.25) & (zrg > 0.25)
+            return sxl, syl, sxr, syr, valid
+
+        # --- colores por segmento ----------------------------------------
+        par3 = (seg_idx // 3) % 2
+        par2 = (seg_idx // 2) % 2
+        par4 = (seg_idx // 4) % 2
+        kerb_flag = np.array([segs[s % n_segs].kerb for s in seg_idx])
+        grass_c = np.where(par3[:, None].astype(bool),
+                           np.array(GRASS[0]), np.array(GRASS[1]))
+        road_c = np.where(par3[:, None].astype(bool),
+                          np.array(ROAD[0]), np.array(ROAD[1]))
+        kerb_c = np.where(par2[:, None].astype(bool),
+                          np.array(KERB[0]), np.array(KERB[1]))
+        kerb_c = np.where(kerb_flag[:, None], kerb_c, grass_c)
+        line_white = np.tile(np.array(LINE), (n_sec, 1))
+        cline_c = np.where(par4[:, None].astype(bool), line_white, road_c)
+        if show_line and cfg.RACING_LINE:
+            v_allow = np.array([track.line_v_allowed[s % n_segs] for s in seg_idx])
+            rl_c = np.empty((n_sec, 3))
+            rl_c[:] = (140, 235, 140)
+            rl_c[speed > v_allow * 0.88] = (250, 205, 60)
+            rl_c[speed > v_allow * 1.02] = (235, 45, 35)
+
+        band_colors = [grass_c, kerb_c, road_c, line_white, line_white,
+                       cline_c, kerb_c, grass_c]
+        if show_line and cfg.RACING_LINE:
+            band_colors.append(rl_c)
+
+        # --- construir vértices e índices (lejos -> cerca) ---------------
+        n_quads = n_sec - 1
+        all_xy = []
+        all_col = []
+        index_blocks = []
+        v_base = 0
+        for b, spec in enumerate(offs):
+            if spec is None:
+                sxl, syl, sxr, syr, valid = project(0, 0, per_section=li)
+            else:
+                sxl, syl, sxr, syr, valid = project(spec[0], spec[1])
+            # cuatro esquinas por quad: (j izq, j der, j+1 izq, j+1 der)
+            xy = np.empty((n_quads, 4, 2), dtype=np.float32)
+            xy[:, 0, 0] = sxl[:-1]; xy[:, 0, 1] = syl[:-1]
+            xy[:, 1, 0] = sxr[:-1]; xy[:, 1, 1] = syr[:-1]
+            xy[:, 2, 0] = sxl[1:];  xy[:, 2, 1] = syl[1:]
+            xy[:, 3, 0] = sxr[1:];  xy[:, 3, 1] = syr[1:]
+            col = np.empty((n_quads, 4, 4), dtype=np.uint8)
+            col[:, :, :3] = band_colors[b][:-1][:, None, :]
+            col[:, :, 3] = 255
+            qv = valid[:-1] & valid[1:]
+            base = v_base + np.arange(n_quads, dtype=np.int32) * 4
+            idx = np.empty((n_quads, 6), dtype=np.int32)
+            idx[:, 0] = base;     idx[:, 1] = base + 1; idx[:, 2] = base + 2
+            idx[:, 3] = base + 1; idx[:, 4] = base + 3; idx[:, 5] = base + 2
+            idx[~qv] = -1
+            all_xy.append(xy.reshape(-1, 2))
+            all_col.append(col.reshape(-1, 4))
+            index_blocks.append(idx)
+            v_base += n_quads * 4
+
+        xy_v = np.concatenate(all_xy)
+        col_v = np.concatenate(all_col)
+        # orden del pintor: quads de la sección más lejana primero,
+        # intercalando todas las bandas de cada sección
+        idx_stack = np.stack(index_blocks, axis=1)      # (n_quads, bandas, 6)
+        idx_sorted = idx_stack[::-1].reshape(-1, 6)
+        idx_flat = idx_sorted[idx_sorted[:, 0] >= 0].reshape(-1).astype(np.int32)
+        uv_v = np.zeros_like(xy_v)
+
+        if len(idx_flat) > 0:
+            sdl2.SDL_RenderGeometryRaw(
+                self.r, None,
+                xy_v.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), 8,
+                col_v.ctypes.data_as(ctypes.POINTER(sdl2.SDL_Color)), 4,
+                uv_v.ctypes.data_as(ctypes.POINTER(ctypes.c_float)), 8,
+                len(xy_v),
+                idx_flat.ctypes.data_as(ctypes.c_void_p), len(idx_flat), 4)
+
+        # --- balizas (billboards) de lejos a cerca -----------------------
+        if cfg.TRACK_POLES:
+            for j in range(n_sec - 1, N_BACK, -1):
+                if seg_idx[j] % (6 if inv_z[j] * f * (W / 2) > 3.0 else 12):
                     continue
-                z = 0.3
-            # curva: doble integración de la curvatura
-            dx += seg.kappa * seg_len * seg_len
-            x_offset += dx
-            # la cámara gira con el RUMBO del coche (psi), amplificado por
-            # CAMERA_YAW_GAIN para que el giro de vista sea perceptible
-            world_x = x_offset - car_state.n \
-                - car_state.psi * cfg.CAMERA_YAW_GAIN * z
-            world_y = seg.y - cam_y
+                if not z_ok[j] or zr[j] > 700.0:
+                    continue
+                ppm = f * inv_z[j] * (W / 2)
+                if ppm < 0.8:
+                    continue
+                h_px = max(9.0, ppm * 2.2)
+                pw = max(3.0, ppm * 0.22)
+                cap = max(2.0, h_px * 0.25)
+                for side, color in ((-1, (255, 215, 30)), (1, (60, 145, 255))):
+                    o = side * (half_w + kerb_w + 0.5)
+                    px_w = xr[j] + rxr[j] * o
+                    pz_w = zr[j] + rzr[j] * o
+                    if pz_w < 0.3:
+                        continue
+                    sx = W / 2 + f * px_w / pz_w * (W / 2)
+                    sy = H / 2 - f * dy[j] / pz_w * (H / 2)
+                    self._fill(sx - pw / 2, sy - h_px, pw, h_px, color)
+                    self._fill(sx - pw / 2, sy - h_px, pw, cap, (245, 245, 245))
+        return H // 2
 
-            scale = cam_d / z
-            sx = W / 2 + scale * world_x * (W / 2)
-            sy = H / 2 - scale * world_y * (H / 2)
-            sw = scale * half_w * (W / 2)
-            rows.append((sy, sx, sw, (base_i + i)))
-
-        # Dibujar de lejos a cerca no: de cerca a lejos con recorte por
-        # elevación (solo se dibuja lo que asoma por encima de lo anterior)
-        n_track = len(track.segments)
-        clip_y = H
-        poles = []
-        for idx in range(len(rows) - 1):
-            y1, x1, w1, si = rows[idx]
-            y2, x2, w2, _ = rows[idx + 1]
-            # las balizas se registran aunque su tramo de asfalto quede
-            # oculto tras una cresta (la parte alta puede asomar); se
-            # guarda el recorte del terreno vigente a su distancia. En la
-            # lejanía se espacian al doble para no formar una "valla"
-            if cfg.TRACK_POLES and w2 > 4.0 \
-                    and si % (6 if w2 > 14.0 else 12) == 0:
-                poles.append((y2, x2, w2, clip_y))
-            if y2 >= clip_y:
-                continue
-            top = max(0, int(y2))
-            bottom = min(int(clip_y), int(y1) + 1)
-            if bottom <= top:
-                clip_y = min(clip_y, y2)
-                min_y = min(min_y, top)
-                continue
-            seg = segs[si % n_segs]
-            grass_c = GRASS[(si // 3) % 2]
-            road_c = ROAD[(si // 3) % 2]
-            kerb_c = KERB[(si // 2) % 2] if seg.kerb else grass_c
-            lane_mark = (si // 4) % 2 == 0
-
-            # trazada ideal: color según la velocidad admisible en ese
-            # punto (incluye la distancia de frenada a la curva siguiente)
-            if show_line and cfg.RACING_LINE:
-                line_n = track.line_n[si % n_track]
-                line_v = track.line_v_allowed[si % n_track]
-                if speed > line_v * 1.02:
-                    line_c = (235, 45, 35)      # no llegas a frenar: FRENA
-                elif speed > line_v * 0.88:
-                    line_c = (250, 205, 60)     # al límite
-                else:
-                    line_c = (140, 235, 140)    # margen de sobra
-            span = max(1, int(y1) - int(y2))
-            for y in range(top, bottom):
-                t = (y - y2) / span if span else 0.0
-                cxx = x1 * t + x2 * (1 - t)
-                ww = w1 * t + w2 * (1 - t)
-                kw = ww * (kerb_w / cfg.ROAD_HALF_WIDTH)
-                # hierba a todo lo ancho
-                self._fill(0, y, W, 1, grass_c)
-                # pianos
-                self._fill(cxx - ww - kw, y, kw, 1, kerb_c)
-                self._fill(cxx + ww, y, kw, 1, kerb_c)
-                # asfalto
-                self._fill(cxx - ww, y, ww * 2, 1, road_c)
-                # línea central discontinua
-                if lane_mark and ww > 8:
-                    lw = max(1, ww * 0.03)
-                    self._fill(cxx - lw / 2, y, lw, 1, LINE)
-                # bordes blancos
-                ew = max(1, ww * 0.04)
-                self._fill(cxx - ww, y, ew, 1, LINE)
-                self._fill(cxx + ww - ew, y, ew, 1, LINE)
-                # trazada ideal
-                if show_line and cfg.RACING_LINE and ww > 10:
-                    lx = cxx + line_n * ww / cfg.ROAD_HALF_WIDTH
-                    lw2 = max(2, ww * 0.05)
-                    self._fill(lx - lw2 / 2, y, lw2, 1, line_c)
-            clip_y = min(clip_y, y2)
-            min_y = min(min_y, top)
-
-        # postes de lejos a cerca para que los cercanos tapen a los lejanos.
-        # Tienen tamaño mínimo en pantalla para verse desde lejos, y se
-        # recortan contra el terreno (en una cresta asoma solo la punta)
-        for y2, x2, w2, clip_at in reversed(poles):
-            px_m = w2 / cfg.ROAD_HALF_WIDTH
-            kerb_px = w2 * (cfg.KERB_WIDTH / cfg.ROAD_HALF_WIDTH)
-            h = max(9.0, px_m * 2.2)
-            pw = max(3, px_m * 0.22)
-            top = y2 - h
-            bottom = min(y2, clip_at)
-            if bottom <= top:
-                continue
-            cap_h = max(2, h * 0.25)
-            for side, color in ((-1, (255, 215, 30)), (1, (60, 145, 255))):
-                px = x2 + side * (w2 + kerb_px + px_m * 0.5)
-                self._fill(px - pw / 2, top, pw, bottom - top, color)
-                self._fill(px - pw / 2, top, pw,
-                           min(cap_h, bottom - top), (245, 245, 245))
-        return min_y
-
-    # ------------------------------------------------------------------
     def draw_car(self, car_state, steering):
         """Coche visto desde atrás con la carrocería VIVA: cabecea al
         acelerar/frenar, se balancea en las curvas y flota en las crestas

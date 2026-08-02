@@ -169,6 +169,38 @@ class Track:
     def kappa_at(self, s: float) -> float:
         return self.segment_at(s).kappa
 
+    def map_points(self):
+        """Polilínea del circuito en planta, normalizada a [0..1]x[0..1]
+        (manteniendo la proporción), para el minimapa. Se integra la
+        curvatura y se reparte el error de cierre para que el plano
+        quede perfectamente cerrado."""
+        if hasattr(self, "_map_pts"):
+            return self._map_pts
+        n = len(self.segments)
+        L = cfg.SEGMENT_LENGTH
+        xs, ys = [0.0], [0.0]
+        h = 0.0
+        for seg in self.segments:
+            xs.append(xs[-1] + math.sin(h) * L)
+            ys.append(ys[-1] + math.cos(h) * L)
+            h += seg.kappa * L
+        # repartir el error de cierre linealmente
+        ex, ey = xs[-1], ys[-1]
+        pts = []
+        for i in range(n):
+            t = i / n
+            pts.append((xs[i] - ex * t, ys[i] - ey * t))
+        # normalizar manteniendo la proporción
+        min_x = min(p[0] for p in pts)
+        max_x = max(p[0] for p in pts)
+        min_y = min(p[1] for p in pts)
+        max_y = max(p[1] for p in pts)
+        span = max(max_x - min_x, max_y - min_y, 1e-6)
+        self._map_pts = [((p[0] - min_x) / span, (p[1] - min_y) / span)
+                         for p in pts]
+        self._map_aspect = ((max_x - min_x) / span, (max_y - min_y) / span)
+        return self._map_pts
+
     def heading_at(self, s: float) -> float:
         """Rumbo absoluto de la carretera (rad) integrado desde la meta;
         para el parallax del fondo."""

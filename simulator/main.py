@@ -17,6 +17,7 @@ Teclado (siempre activo):
   C              cambiar vista: sin coche / trasera / coche completo
   E              arrancar / parar el motor
   T              camara lenta (1x / 0.5x / 0.25x / 0.1x)
+  M              mostrar/ocultar el plano del circuito
   ESC            salir
 """
 
@@ -94,6 +95,7 @@ def main(argv=None):
     auto_gear = cfg.AUTO_GEAR
     view_mode = cfg.VIEW_MODE   # 0 sin coche, 1 trasera, 2 coche completo
     time_idx = 0                # indice en TIME_SCALES (camara lenta)
+    show_minimap = cfg.MINIMAP
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -122,6 +124,8 @@ def main(argv=None):
                     car.toggle_engine()
                 elif sym == sdl2.SDLK_t:
                     time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
+                elif sym == sdl2.SDLK_m:
+                    show_minimap = not show_minimap
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                 elif sym == sdl2.SDLK_a:
@@ -197,7 +201,7 @@ def main(argv=None):
                            abs(st.slip_angle[i]) / peak_a)
         # el chirrido arranca justo en el pico de agarre: también suena
         # el empuje de subviraje, no solo los derrapes grandes
-        screech = max(0.0, min(1.0, (over - 0.98) * 1.4))
+        screech = max(0.0, min(1.0, (over - 0.96) * 1.6))
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
                      abs(st.vx))
 
@@ -209,13 +213,19 @@ def main(argv=None):
                               car.state.psi * cfg.CAMERA_YAW_GAIN
                               + base_seg.kappa * 40.0)
         # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,
-        # 2 = coche completo desde arriba
-        cam_h = (1.30, cfg.CAMERA_HEIGHT, 3.0)[view_mode]
-        scene.draw_road(track, car.state, show_line, cam_h)
+        # 2 = coche completo 3D con camara de persecucion
+        if view_mode == 2:
+            cam_h, cam_back, ygain = 2.5, 6.5, 0.35
+        else:
+            cam_h = (1.30, cfg.CAMERA_HEIGHT)[view_mode]
+            cam_back, ygain = 0.0, None
+        scene.draw_road(track, car.state, show_line, cam_h, cam_back, ygain)
         if view_mode == 1:
             scene.draw_car(car.state, wheel.steering)
         elif view_mode == 2:
-            scene.draw_car_chase(car.state, wheel.steering)
+            scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
+        if show_minimap:
+            hud.draw_minimap(track, car.state)
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
                  auto_gear, time_scale)
         if show_debug:

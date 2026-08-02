@@ -75,8 +75,15 @@ sintetizado que sigue a las RPM. Tres circuitos:
 - **Cuentavueltas grande** arriba centrado, con zonas verde/ámbar/roja,
   marca del corte y la marcha en grande — siempre a la vista.
 - **Tres vistas** (tecla `C` o botón 3, en ciclo): **sin coche** (cámara
-  interior, por defecto), trasera cercana con la carrocería viva, y coche
-  completo desde arriba. La inicial se elige con `VIEW_MODE`.
+  interior, por defecto), trasera cercana con la carrocería viva, y **coche
+  completo en 3D** con cámara de persecución: el coche gira visiblemente
+  hacia donde se dirige, con las ruedas delanteras siguiendo la dirección.
+  La inicial se elige con `VIEW_MODE`.
+- **Plano del circuito** (tecla `M`): minimapa arriba a la izquierda con el
+  trazado completo, los próximos 600 m resaltados en ámbar, la meta y el
+  coche como punto rojo — para leer la siguiente curva con antelación.
+- **Cámara lenta** (tecla `T` o botón 10): 1×/0,5×/0,25×/0,1× para estudiar
+  el comportamiento del coche con calma.
 - **Chirrido de neumáticos**: cuando una rueda supera el pico de agarre
   (bloqueo de frenada o deriva al límite en curva) se oye chirriar, con
   volumen proporcional al deslizamiento. La hierba no chirría (`SCREECH_VOLUME`).

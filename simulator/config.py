@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.7"
+VERSION = "v2.9"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -253,11 +253,18 @@ ROAD_HALF_WIDTH = 5.4        # m, semiancho del asfalto [3.5 .. 8]
 KERB_WIDTH = 1.1             # m de piano a cada lado [0.5 .. 2]
 SEGMENT_LENGTH = 4.0         # m por segmento (no cambiar si se usan
                              # circuitos importados)
-DRAW_DISTANCE = 400          # segmentos dibujados; bajar si va lento
-                             # [100 .. 400] 220
-CAMERA_HEIGHT = 2.5        # m, altura de la cámara en las vistas bajas
-                             # [1.1 .. 2.5] 1.55
-CAMERA_DEPTH = 0.9          # proyección (1/tan(fov/2)); subir = teleobjetivo 0.84
+DRAW_DISTANCE = 220          # segmentos dibujados; bajar si va lento
+                             # [100 .. 400]
+CAMERA_HEIGHT = 1.35         # m, altura del OJO del conductor en la vista
+                             # interior; cada coche la redefine en su .car
+                             # (formula a ras de suelo, autobus en lo alto)
+                             # [0.8 .. 2.5]
+CAMERA_HEIGHT_REAR = 2.5     # m, altura de la cámara de la vista trasera
+                             # cercana (con el coche visto desde atrás)
+                             # [1.5 .. 3.5]
+CAMERA_DEPTH = 1.2           # proyección (1/tan(fov/2)); subir acerca el
+                             # coche a la parte baja de la pantalla, como
+                             # los juegos comerciales [0.7 .. 1.6]
 CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
                              # respecto a la carretera: 1.0 = geométrico
                              # exacto, más alto = giro de vista más

@@ -34,3 +34,4 @@ AERO_DRAG = 0.55                  # N/(m/s)2, resistencia al aire
 AERO_DOWNFORCE = 0.0              # N/(m/s)2, carga aerodinamica (aprieta al suelo)
 BRAKE_FORCE_MAX = 24000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
+CAMERA_HEIGHT = 1.80              # m, ojo del conductor: dominando el trafico

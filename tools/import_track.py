@@ -3,7 +3,7 @@
 Convierte un CSV con el eje central de un circuito en coordenadas métricas
 (formato TUMFTM/racetrack-database: ``x_m,y_m,w_tr_right_m,w_tr_left_m``,
 válido también con solo ``x,y``) al formato interno del simulador: un CSV
-con curvatura, elevación y piano por segmento de 4 m.
+con curvatura, elevación, piano y peralte por segmento de 4 m.
 
 Pipeline:
   1. Suavizado ligero del eje (media móvil circular) para quitar el ruido
@@ -14,9 +14,19 @@ Pipeline:
      consecutivos (equivalente al circunscrito de 3 puntos, pero estable),
      suavizada de nuevo.
   4. Marcado de pianos donde el radio baja de ~250 m.
+  5. PERALTE y RASANTE sintéticos (la base de datos TUM no los trae):
+     - peralte proporcional a la curvatura suavizada (hacia el interior,
+       como los circuitos reales), limitado a BANK_MAX_DEG;
+     - rasante como suma de ondas senoidales sobre la vuelta completa
+       (cerradas por construcción: la vuelta empieza y acaba a la misma
+       cota), con pendientes máximas de ~5 %. Deterministas: importar el
+       mismo circuito da siempre el mismo perfil.
 
 Uso:
   python tools/import_track.py entrada.csv simulator/tracks/nombre.csv
+  python tools/import_track.py --enriquecer simulator/tracks/nombre.csv
+      (añade peralte y rasante a un circuito YA importado, sin el eje
+       original; --sin-peralte / --sin-rasante desactivan cada cosa)
 """
 
 import math
@@ -24,6 +34,11 @@ import sys
 
 SEGMENT_LENGTH = 4.0
 KERB_KAPPA = 0.004      # |kappa| > 1/250 m -> tramo con pianos
+BANK_SCALE = 7.0        # rad de peralte por (1/m) de curvatura: R=100 m
+                        # -> 4 grados hacia el interior
+BANK_MAX_DEG = 6.0      # tope de peralte sintetizado (los circuitos de
+                        # curvas reales rara vez pasan de 5-6 grados)
+GRADES = ((1, 0.020), (2, 0.018), (3, 0.015))   # (ciclos/vuelta, pendiente)
 
 
 def load_points(path):
@@ -106,28 +121,98 @@ def curvatures(pts, step):
     return out
 
 
+def synth_bank(ks, step):
+    """Peralte sintético: hacia el interior de la curva, proporcional a
+    la curvatura suavizada (~30 m, para que no invada la recta previa)
+    y limitado a BANK_MAX_DEG."""
+    n = len(ks)
+    win = max(1, int(15.0 / step))
+    cap = math.radians(BANK_MAX_DEG)
+    out = []
+    for i in range(n):
+        k = sum(ks[(i + j) % n] for j in range(-win, win + 1)) / (2 * win + 1)
+        bank = max(-cap, min(cap, k * BANK_SCALE))
+        if abs(bank) < 0.004:      # <0.25 grados: dejarlo plano
+            bank = 0.0
+        out.append(bank)
+    return out
+
+
+def synth_elev(n_seg, step, total):
+    """Rasante sintética: ondas senoidales sobre la vuelta (cerradas por
+    construcción). Fases deterministas derivadas de la longitud."""
+    out = []
+    for i in range(n_seg):
+        s = i * step
+        e = 0.0
+        for cycles, grade in GRADES:
+            amp = grade * total / (2.0 * math.pi * cycles)
+            phase = cycles * 2.399963 + (total % 100.0) * 0.0628
+            e += amp * math.sin(2.0 * math.pi * cycles * s / total + phase)
+        out.append(e)
+    return out
+
+
+def write_track(dst, ks, elevs, banks, total):
+    n_kerb = 0
+    with open(dst, "w") as f:
+        f.write("# kappa_1pm,elev_m,kerb,peralte_rad  "
+                "(segmentos de %.1f m, longitud %.0f m)\n"
+                % (SEGMENT_LENGTH, total))
+        for i, k in enumerate(ks):
+            kerb = 1 if abs(k) > KERB_KAPPA else 0
+            n_kerb += kerb
+            f.write("%.6f,%.2f,%d,%.4f\n" % (k, elevs[i], kerb, banks[i]))
+    r_min = 1.0 / max(abs(k) for k in ks)
+    b_max = math.degrees(max(abs(b) for b in banks)) if banks else 0.0
+    e_span = max(elevs) - min(elevs) if elevs else 0.0
+    print(f"{dst}: {len(ks)} segmentos, {total:.0f} m, radio minimo "
+          f"{r_min:.0f} m, {n_kerb} con piano, peralte max {b_max:.1f} deg, "
+          f"desnivel {e_span:.0f} m")
+
+
+def load_internal(path):
+    """Lee un circuito en formato interno (3 o 4 columnas)."""
+    ks = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split(",")
+            ks.append(float(cols[0]))
+    return ks
+
+
 def main():
-    if len(sys.argv) != 3:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    do_bank = "--sin-peralte" not in flags
+    do_elev = "--sin-rasante" not in flags
+
+    if "--enriquecer" in flags and len(args) == 1:
+        # añadir peralte/rasante a un circuito ya importado
+        path = args[0]
+        ks = load_internal(path)
+        total = len(ks) * SEGMENT_LENGTH
+        banks = synth_bank(ks, SEGMENT_LENGTH) if do_bank else [0.0] * len(ks)
+        elevs = synth_elev(len(ks), SEGMENT_LENGTH, total) if do_elev \
+            else [0.0] * len(ks)
+        write_track(path, ks, elevs, banks, total)
+        return
+
+    if len(args) != 2:
         print(__doc__)
         raise SystemExit(1)
-    src, dst = sys.argv[1], sys.argv[2]
+    src, dst = args
     pts = load_points(src)
     pts = smooth_closed(pts, win=1)
     pts, total = resample_closed(pts, SEGMENT_LENGTH)
     ks = curvatures(pts, SEGMENT_LENGTH)
-
-    n_kerb = 0
-    with open(dst, "w") as f:
-        f.write("# kappa_1pm,elev_m,kerb  (segmentos de %.1f m, longitud %.0f m)\n"
-                % (SEGMENT_LENGTH, total))
-        for k in ks:
-            kerb = 1 if abs(k) > KERB_KAPPA else 0
-            n_kerb += kerb
-            f.write("%.6f,%.2f,%d\n" % (k, 0.0, kerb))
-
-    r_min = 1.0 / max(abs(k) for k in ks)
-    print(f"{dst}: {len(ks)} segmentos, {total:.0f} m, "
-          f"radio minimo {r_min:.0f} m, {n_kerb} segmentos con piano")
+    banks = synth_bank(ks, SEGMENT_LENGTH) if do_bank else [0.0] * len(ks)
+    elevs = synth_elev(len(ks), SEGMENT_LENGTH, total) if do_elev \
+        else [0.0] * len(ks)
+    write_track(dst, ks, elevs, banks, total)
 
 
 if __name__ == "__main__":

@@ -96,6 +96,7 @@ def main(argv=None):
     view_mode = cfg.VIEW_MODE   # 0 sin coche, 1 trasera, 2 coche completo
     time_idx = 0                # indice en TIME_SCALES (camara lenta)
     show_minimap = cfg.MINIMAP
+    sim_time = 0.0              # tiempo de simulacion (para la telemetria)
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -177,6 +178,7 @@ def main(argv=None):
                      track)
             # cronometraje de vueltas
             lap_time += physics_dt
+            sim_time += physics_dt
             if prev_s % track.length > st.s % track.length and st.vx > 1.0:
                 if best_lap is None or lap_time < best_lap:
                     best_lap = lap_time
@@ -231,7 +233,7 @@ def main(argv=None):
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:
-            hud.draw_telemetry(car.state)
+            hud.draw_telemetry(car.state, wheel.steering, sim_time)
         sdl2.SDL_RenderPresent(renderer)
 
         frame += 1

@@ -127,6 +127,13 @@ class Renderer:
         for idx in range(len(rows) - 1):
             y1, x1, w1, si = rows[idx]
             y2, x2, w2, _ = rows[idx + 1]
+            # las balizas se registran aunque su tramo de asfalto quede
+            # oculto tras una cresta (la parte alta puede asomar); se
+            # guarda el recorte del terreno vigente a su distancia. En la
+            # lejanía se espacian al doble para no formar una "valla"
+            if cfg.TRACK_POLES and w2 > 4.0 \
+                    and si % (6 if w2 > 14.0 else 12) == 0:
+                poles.append((y2, x2, w2, clip_y))
             if y2 >= clip_y:
                 continue
             top = max(0, int(y2))
@@ -178,24 +185,27 @@ class Renderer:
                     lx = cxx + line_n * ww / cfg.ROAD_HALF_WIDTH
                     lw2 = max(2, ww * 0.05)
                     self._fill(lx - lw2 / 2, y, lw2, 1, line_c)
-            # balizas laterales cada pocos segmentos (amarilla izda,
-            # azul dcha) para leer el trazado de la siguiente curva
-            if cfg.TRACK_POLES and si % 6 == 0 and w2 > 7:
-                poles.append((y2, x2, w2))
             clip_y = min(clip_y, y2)
             min_y = min(min_y, top)
 
-        # postes de lejos a cerca para que los cercanos tapen a los lejanos
-        for y2, x2, w2 in reversed(poles):
+        # postes de lejos a cerca para que los cercanos tapen a los lejanos.
+        # Tienen tamaño mínimo en pantalla para verse desde lejos, y se
+        # recortan contra el terreno (en una cresta asoma solo la punta)
+        for y2, x2, w2, clip_at in reversed(poles):
             px_m = w2 / cfg.ROAD_HALF_WIDTH
             kerb_px = w2 * (cfg.KERB_WIDTH / cfg.ROAD_HALF_WIDTH)
-            h = px_m * 1.5
-            pw = max(2, px_m * 0.20)
-            for side, color in ((-1, (250, 210, 40)), (1, (70, 150, 255))):
+            h = max(9.0, px_m * 2.2)
+            pw = max(3, px_m * 0.22)
+            top = y2 - h
+            bottom = min(y2, clip_at)
+            if bottom <= top:
+                continue
+            cap_h = max(2, h * 0.25)
+            for side, color in ((-1, (255, 215, 30)), (1, (60, 145, 255))):
                 px = x2 + side * (w2 + kerb_px + px_m * 0.5)
-                self._fill(px - pw / 2, y2 - h, pw, h, color)
-                self._fill(px - pw / 2, y2 - h, pw, max(1, h * 0.22),
-                           (240, 240, 240))
+                self._fill(px - pw / 2, top, pw, bottom - top, color)
+                self._fill(px - pw / 2, top, pw,
+                           min(cap_h, bottom - top), (245, 245, 245))
         return min_y
 
     # ------------------------------------------------------------------
@@ -203,55 +213,68 @@ class Renderer:
         """Coche visto desde atrás con la carrocería VIVA: cabecea al
         acelerar/frenar, se balancea en las curvas y flota en las crestas
         (ángulos reales de la suspensión, exagerados para percibirlos).
-        Las ruedas quedan fijas al suelo: el hueco que se abre y se cierra
-        entre rueda y carrocería es el recorrido de suspensión."""
+        Las ruedas quedan fijas al suelo y están dibujadas A ESCALA: la vía
+        real (CAR_TRACK_WIDTH) proyectada a la distancia del coche, de modo
+        que cuando una rueda pisa el piano en la física, se ve pisándolo."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         ex = cfg.CAR_BODY_MOTION_EXAG
+        # escala real: píxeles por metro a la distancia visual del coche
+        z_car = 4.0
+        ppm = cfg.CAMERA_DEPTH / z_car * (W / 2.0)
+        track_px = cfg.CAR_TRACK_WIDTH * ppm
+        car_w = int(1.78 * ppm)
+        car_h = 116
         cx = W / 2 + steering * 18 - car_state.psi * 120
-        cy = H - 88
-        car_w, car_h = 190, 96
+        cy = H - 108
         x = cx - car_w / 2
 
         # movimiento de la carrocería: + abajo. Frenar (pitch<0, morro
-        # abajo) LEVANTA la cola que vemos; acelerar la hunde (squat);
-        # las crestas la hacen flotar
-        body_dy = int((car_state.pitch * 250.0 - car_state.heave * 120.0) * ex)
-        body_dy = max(-22, min(22, body_dy))
+        # abajo) LEVANTA la cola que vemos; acelerar la hunde (squat,
+        # amplificado porque la aceleración genera menos cabeceo que la
+        # frenada y de serie apenas se percibía); las crestas la hacen flotar
+        pitch_term = car_state.pitch * 250.0
+        if pitch_term > 0.0:
+            pitch_term *= 2.2
+        body_dy = int((pitch_term - car_state.heave * 120.0) * ex) - 4
+        body_dy = max(-26, min(26, body_dy))
         # balanceo: pendiente vertical por columna (roll + = derecha
         # elevada -> en pantalla el lado izquierdo baja)
         tilt = -car_state.roll * ex
         braking = car_state.ax < -2.0
 
-        # sombra y ruedas, fijas al suelo
-        self._fill(x + 6, cy + car_h - 14, car_w - 12, 16, (20, 20, 20))
-        wheel_w, wheel_h = 34, 26
-        self._fill(x - 8, cy + car_h - wheel_h - 6, wheel_w, wheel_h, (25, 25, 25))
-        self._fill(x + car_w - wheel_w + 8, cy + car_h - wheel_h - 6,
-                   wheel_w, wheel_h, (25, 25, 25))
+        # sombra y ruedas, fijas al suelo y a escala con la vía real
+        self._fill(x + 8, cy + car_h - 16, car_w - 16, 18, (20, 20, 20))
+        wheel_w, wheel_h = int(0.31 * ppm), 32
+        for side in (-1, 1):
+            wx = cx + side * track_px / 2.0 - wheel_w / 2.0
+            self._fill(wx, cy + car_h - wheel_h - 6, wheel_w, wheel_h,
+                       (22, 22, 22))
+            self._fill(wx + wheel_w * 0.3, cy + car_h - wheel_h + 4,
+                       wheel_w * 0.4, 12, (75, 75, 75))
 
         # carrocería por columnas verticales inclinadas por el balanceo
-        n_cols = 16
+        n_cols = 18
         col_w = car_w / n_cols
-        light_zone = 34  # px desde cada extremo con piloto trasero
+        light_zone = int(car_w * 0.21)
         for i in range(n_cols):
             dx = (i + 0.5) * col_w - car_w / 2
             dyc = body_dy + int(tilt * dx)
             colx = x + i * col_w
             cw = int(col_w) + 1
             # techo
-            self._fill(colx, cy + 14 + dyc, cw, 6, (150, 18, 24))
+            self._fill(colx, cy + 17 + dyc, cw, 7, (150, 18, 24))
             # luneta trasera (con margen a los lados)
-            if abs(dx) < car_w / 2 - 28:
-                self._fill(colx, cy + 20 + dyc, cw, 14, (35, 40, 60))
+            if abs(dx) < car_w / 2 - 34:
+                self._fill(colx, cy + 24 + dyc, cw, 17, (35, 40, 60))
             else:
-                self._fill(colx, cy + 20 + dyc, cw, 14, (150, 18, 24))
+                self._fill(colx, cy + 24 + dyc, cw, 17, (150, 18, 24))
             # cuerpo principal
-            self._fill(colx, cy + 34 + dyc, cw, 48, (178, 24, 30))
+            self._fill(colx, cy + 41 + dyc, cw, 57, (178, 24, 30))
             # pilotos traseros (más brillantes al frenar)
             edge = car_w / 2 - abs(dx)
-            if 8 < edge < light_zone:
+            if 10 < edge < light_zone:
                 lc = (255, 170, 130) if braking else (225, 55, 40)
-                self._fill(colx, cy + 44 + dyc, cw, 10, lc)
+                self._fill(colx, cy + 53 + dyc, cw, 12, lc)
 
     def draw_car_chase(self, car_state, steering):
         """Vista de coche completo desde atrás y arriba: se ven las 4
@@ -263,7 +286,10 @@ class Renderer:
         cx = W / 2 + steering * 14 - car_state.psi * 110
         y0 = H - 46
         tilt = -car_state.roll * ex
-        pitch_off = max(-16.0, min(16.0, car_state.pitch * 250.0 * ex))
+        pitch_raw = car_state.pitch * 250.0
+        if pitch_raw > 0.0:
+            pitch_raw *= 2.2   # squat al acelerar, amplificado
+        pitch_off = max(-16.0, min(16.0, pitch_raw * ex))
         dy_h = int(max(-14.0, min(14.0, -car_state.heave * 120.0 * ex)))
         braking = car_state.ax < -2.0
         delta = steering * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0) / cfg.STEER_RATIO

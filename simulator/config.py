@@ -55,7 +55,7 @@ FFB_ENABLED = True
 FFB_GAIN = 0.9           # ganancia global 0..1 del par de autoalineado
 FFB_INVERT = False       # invierte el sentido de la fuerza si "empuja" hacia
                          # fuera de la curva en lugar de centrar el volante
-FFB_MAX_TORQUE_NM = 28.0 # par de columna que equivale al 100 % de fuerza:
+FFB_MAX_TORQUE_NM = 40.0 # par de columna que equivale al 100 % de fuerza:
                          # bajarlo hace el volante más duro en apoyo y más
                          # evidente el aligeramiento al subvirar
 
@@ -116,10 +116,10 @@ TIRE_REAR_GRIP_FACTOR = 1.04 # agarre extra del eje trasero (subviraje base;
 TIRE_TRAIL = 0.045           # avance neumático+mecánico (m) para el par
 TIRE_TRAIL_SAT_DEG = 7.0     # ángulo de deriva al que el avance cae
 
-# --- Suspensión (por rueda) ---
-SUSP_SPRING_FRONT = 27000.0  # N/m por rueda delantera
-SUSP_SPRING_REAR = 22000.0   # N/m por rueda trasera
-SUSP_DAMPER = 3800.0         # N·s/m por rueda
+# --- Suspensión (por rueda), tarado deportivo (~1.6 Hz) ---
+SUSP_SPRING_FRONT = 32000.0  # N/m por rueda delantera
+SUSP_SPRING_REAR = 26000.0   # N/m por rueda trasera
+SUSP_DAMPER = 4300.0         # N·s/m por rueda
 ARB_FRONT = 26000.0          # estabilizadora delantera (N/m de diferencia)
 ARB_REAR = 14000.0           # estabilizadora trasera (más rígida delante
                              # -> más transferencia delante -> subviraje)
@@ -132,9 +132,14 @@ AERO_DF_FRONT_SHARE = 0.42   # fracción de la carga aero al eje delantero
 ROLLING_RESIST = 210.0       # N constantes
 
 # --- Frenos ---
-BRAKE_FORCE_MAX = 18500.0    # N equivalentes con el pedal a fondo (supera
-                             # el agarre: sin ABS las ruedas se bloquean)
-BRAKE_BIAS_FRONT = 0.62
+BRAKE_FORCE_MAX = 15000.0    # N equivalentes con el pedal a fondo: da
+                             # recorrido útil de pedal y aún permite
+                             # bloquear en un pisotón de emergencia
+                             # (por encima del agarre efectivo, que con
+                             # la elipse de fricción es ~14100 N)
+BRAKE_BIAS_FRONT = 0.72      # reparto acorde a la carga dinámica en
+                             # frenada fuerte (~75/25): coche plano y
+                             # estable, sin trompos al frenar
 ABS_ENABLED = True           # antibloqueo de frenos
 ABS_SLIP_TARGET = 0.14       # deslizamiento a partir del cual actúa
 

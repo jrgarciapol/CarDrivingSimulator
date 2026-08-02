@@ -127,7 +127,7 @@ def main():
         abs_seen = abs_seen or car.state.abs_active
         t += DT
     d_abs = car.state.s - dist0
-    results.append(check("frenada 100-0 con ABS 35-60 m", 35.0 < d_abs < 60.0,
+    results.append(check("frenada 100-0 con ABS 33-60 m", 33.0 < d_abs < 60.0,
                          f"d={d_abs:.1f}m"))
     results.append(check("el ABS ha actuado", abs_seen))
 

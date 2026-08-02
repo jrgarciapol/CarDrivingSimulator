@@ -216,7 +216,12 @@ class ForceFeedback:
             return
 
         # --- par principal --------------------------------------------
-        torque_norm = car_state.steer_column_torque / cfg.FFB_MAX_TORQUE_NM
+        # Signo: probado en el T300RS, un nivel DirectInput positivo
+        # empuja el volante en el sentido que ayuda a girar; el par de
+        # autoalineado debe RESISTIRSE al giro (como en un coche real:
+        # el volante pesa hacia el centro), así que se invierte aquí.
+        # Si en otro volante saliera al revés, FFB_INVERT lo deshace.
+        torque_norm = -car_state.steer_column_torque / cfg.FFB_MAX_TORQUE_NM
         level = torque_norm * cfg.FFB_GAIN
         # sacudida breve al cambiar de marcha
         if self._jolt_timer > 0.0:

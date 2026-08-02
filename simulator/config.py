@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v2.6"
+VERSION = "v2.7"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -185,6 +185,12 @@ TIRE_TRAIL = 0.045           # m, avance neumático+mecánico: escala del par
                              # de autoalineado del volante [0.02 .. 0.08]
 TIRE_TRAIL_SAT_DEG = 7.0     # deriva a la que el avance cae (el volante se
                              # aligera al saturar) [5 .. 10]
+TIRE_CAMBER_THRUST = 0.6     # empuje por caída: fuerza lateral por radián
+                             # de inclinación de la rueda (fracción de la
+                             # carga). Al tumbarse la carrocería en curva
+                             # las ruedas se inclinan hacia FUERA y restan
+                             # agarre: castiga a los coches altos y blandos
+                             # (autobús) y apenas a los rígidos [0 .. 1.2]
 
 # ===========================================================================
 # SUSPENSIÓN (por rueda)

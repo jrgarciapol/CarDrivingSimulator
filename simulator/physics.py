@@ -147,6 +147,7 @@ class Car:
         self._steer_rate_lp = 0.0
         self._torque_lp = 0.0
         self._auto_dwell = 0.0
+        self._fy_tires = 0.0
         a, b = cfg.CAR_CG_TO_FRONT, cfg.CAR_CG_TO_REAR
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
@@ -169,6 +170,7 @@ class Car:
         self._kick_lp = 0.0
         self._limiter_cut = False
         self._fx_tires = 0.0
+        self._fy_tires = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
         self._torque_lp = 0.0
@@ -280,6 +282,13 @@ class Car:
         delta = wheel_angle / cfg.STEER_RATIO
         cos_d, sin_d = math.cos(delta), math.sin(delta)
 
+        # --- peralte del tramo (inclinación transversal del asfalto) ----
+        # bank > 0 = borde izquierdo elevado (peralte de curva a derechas).
+        # Los circuitos sin peralte devuelven 0 y todo queda como antes.
+        bank_fn = getattr(track, "bank_at", None)
+        bank = bank_fn(st.s) if bank_fn is not None else 0.0
+        sin_b = math.sin(bank)
+
         # --- superficie y baches bajo cada rueda ------------------------
         mu_wheel = [0.0] * 4
         bump = [0.0] * 4
@@ -344,7 +353,12 @@ class Car:
         sum_f = sum(f_susp)
         sum_mx = sum(f_susp[i] * self.X_POS[i] for i in range(4))
         sum_my = sum(f_susp[i] * self.Y_POS[i] for i in range(4))
-        heave_acc = sum_f / m - a_road
+        # peralte: la aceleración lateral tiene una componente que aprieta
+        # el coche CONTRA el asfalto inclinado (multiplica las cargas y el
+        # agarre en un óvalo peraltado); la gravedad normal se reduce un
+        # poco con la inclinación (cos). En llano press = 0 exacto.
+        press = m * (st.ay * sin_b + G * (math.cos(bank) - 1.0))
+        heave_acc = sum_f / m - a_road - press / m
         # el momento de cabeceo lo generan las fuerzas longitudinales de los
         # neumáticos (aplicadas al nivel del suelo, a CG_HEIGHT por debajo
         # del centro de masas), NO la aceleración neta: así, parado en
@@ -358,7 +372,11 @@ class Car:
         anti = cfg.SUSP_ANTI_PITCH
         pitch_acc = (sum_mx + self._fx_tires * cfg.CAR_CG_HEIGHT
                      * (1.0 - anti)) / cfg.CAR_INERTIA_PITCH
-        roll_acc = (sum_my + m * st.ay * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_ROLL
+        # el momento de balanceo lo generan las fuerzas laterales de los
+        # neumáticos a nivel del suelo (no la aceleración neta): así, en un
+        # peralte la carrocería se tumba hacia el lado bajo aunque el coche
+        # vaya recto, igual que el cabeceo funciona parado en pendiente
+        roll_acc = (sum_my + self._fy_tires * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_ROLL
         st.heave_v += heave_acc * dt
         st.pitch_v += pitch_acc * dt
         st.roll_v += roll_acc * dt
@@ -469,6 +487,13 @@ class Car:
                 fx = f_total * (s_e / rho) * ratio_l
                 fy_ss = -f_total * (a_n / rho)
                 grip_used[i] = min(1.0, rho)
+            # empuje por caída (camber thrust): con el balanceo las ruedas
+            # se inclinan con la carrocería y empujan hacia el lado al que
+            # se tumban, como una moto. En curva la carrocería se tumba
+            # hacia FUERA, así que este empuje RESTA agarre lateral: los
+            # coches altos y blandos (autobús, todoterreno) subviran mucho
+            # más apoyados que los rígidos (fórmula), que apenas se tumban.
+            fy_ss -= cfg.TIRE_CAMBER_THRUST * st.roll * st.fz[i]
             # retardo de respuesta lateral (relaxation length)
             blend = min(1.0, (vx_abs + 0.5) * dt / cfg.TIRE_RELAX_LENGTH)
             self._fy_state[i] += (fy_ss - self._fy_state[i]) * blend
@@ -498,13 +523,19 @@ class Car:
             fy_total += fy_b
             yaw_moment += self.X_POS[i] * fy_b - self.Y_POS[i] * fx_b
 
-        # guardar la suma de fuerzas de neumático para el cabeceo del
-        # siguiente paso (se aplican a nivel del suelo)
+        # guardar las sumas de fuerzas de neumático para el cabeceo y el
+        # balanceo del siguiente paso (se aplican a nivel del suelo)
         self._fx_tires = fx_total
+        self._fy_tires = fy_total
+
+        # peralte: la gravedad empuja el coche hacia el lado bajo del
+        # asfalto (hacia el vértice si el peralte está bien construido:
+        # se puede curvar más rápido con el mismo neumático)
+        gravity_y = m * G * sin_b
 
         st.ax = (fx_total - drag - rolling + gravity_x) / m
-        st.ay = fy_total / m
-        vy_dot = fy_total / m - st.vx * st.yaw_rate
+        st.ay = (fy_total + gravity_y) / m
+        vy_dot = (fy_total + gravity_y) / m - st.vx * st.yaw_rate
         r_dot = yaw_moment / cfg.CAR_INERTIA_Z
 
         st.vx += st.ax * dt

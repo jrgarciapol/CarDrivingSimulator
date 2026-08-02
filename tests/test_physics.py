@@ -55,6 +55,20 @@ class GrassRightTrack(FlatTrack):
         return "road", cfg.TIRE_MU
 
 
+class BankTrack(FlatTrack):
+    """Pista con peralte (y opcionalmente curvatura) constantes."""
+
+    def __init__(self, bank=0.0, kappa=0.0):
+        self.bank = bank
+        self.kappa = kappa
+
+    def bank_at(self, s):
+        return self.bank
+
+    def kappa_at(self, s):
+        return self.kappa
+
+
 def settle(car, track, seconds=1.0):
     for _ in range(int(seconds / DT)):
         car.step(DT, 0.0, 0.0, 0.0, track)
@@ -375,6 +389,71 @@ def main():
     results.append(check("frenar con hierba a la derecha desvia el coche",
                          abs(car.state.yaw_rate) > 0.03 or abs(car.state.psi) > 0.01,
                          f"yaw={car.state.yaw_rate:.3f} psi={car.state.psi:.3f}"))
+
+    # ------------------------------------------------------------------
+    print("--- peralte y caida (camber) ---")
+
+    # peralte sin girar: la gravedad empuja el coche hacia el lado bajo
+    # (bank > 0 = borde izquierdo elevado -> resbala hacia la derecha, +n)
+    car = Car()
+    banked = BankTrack(bank=math.radians(10.0))
+    settle(car, flat, 1.0)
+    set_speed(car, 30.0)
+    run(car, banked, 2.5, steer=0.0, throttle=0.25)
+    results.append(check("el peralte empuja hacia el lado bajo",
+                         car.state.n > 0.4,
+                         f"n={car.state.n:.2f} m"))
+
+    # curva peraltada vs llana al mismo paso: el peralte aprieta el coche
+    # contra el suelo (mas carga) y el neumatico trabaja menos
+    def corner(track_obj):
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 30.0)
+        grip_acc, fz_acc, steps = 0.0, 0.0, 0
+        for k in range(int(3.0 / DT)):
+            st = c.state
+            steer = max(-0.6, min(0.6, 0.11 - st.psi * 0.5 - st.n * 0.03))
+            c.step(DT, steer, 0.35, 0.0, track_obj)
+            if k > int(1.5 / DT):
+                grip_acc += st.front_grip_used
+                fz_acc += sum(st.fz)
+                steps += 1
+        return grip_acc / steps, fz_acc / steps, c.state.n
+
+    kappa_c = 1.0 / 110.0
+    g_flat, fz_flat, n_flat = corner(BankTrack(bank=0.0, kappa=kappa_c))
+    g_bank, fz_bank, n_bank = corner(BankTrack(bank=math.radians(14.0),
+                                               kappa=kappa_c))
+    results.append(check("curva peraltada carga mas el coche",
+                         fz_bank > fz_flat * 1.03,
+                         f"fz={fz_bank:.0f} vs llano {fz_flat:.0f} N"))
+    results.append(check("el peralte alivia el trabajo del neumatico",
+                         g_bank < g_flat - 0.05,
+                         f"uso agarre={g_bank:.2f} vs llano {g_flat:.2f}"))
+
+    # camber thrust: al tumbarse la carroceria en el apoyo pierde agarre
+    # lateral -> con el mismo volante, gira menos que sin el efecto
+    def steady_yaw(camber):
+        old = cfg.TIRE_CAMBER_THRUST
+        cfg.TIRE_CAMBER_THRUST = camber
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 25.0)
+        acc, steps = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.35, 0.3, 0.0, flat)
+            if k > int(1.5 / DT):
+                acc += abs(c.state.yaw_rate)
+                steps += 1
+        cfg.TIRE_CAMBER_THRUST = old
+        return acc / steps
+
+    yaw_no_camber = steady_yaw(0.0)
+    yaw_camber = steady_yaw(0.9)
+    results.append(check("la caida por balanceo resta giro (subvira)",
+                         yaw_camber < yaw_no_camber * 0.99,
+                         f"yaw={yaw_camber:.3f} vs sin efecto {yaw_no_camber:.3f}"))
 
     # ------------------------------------------------------------------
     print("--- FFB y circuito real ---")

@@ -1,34 +1,34 @@
 # Berlina de lujo: grande, pesada, suave y potente; propulsion
-NAME = "BERLINA DE LUJO"
-DESC = "1950 KG - 340 CV - RWD - COMODA Y RAPIDA"
-CAR_COLOR = (40, 40, 48)
-CAR_MASS = 1950.0
-CAR_INERTIA_Z = 3200.0
-CAR_INERTIA_PITCH = 3600.0
-CAR_INERTIA_ROLL = 850.0
-WHEELBASE = 3.05
-WEIGHT_DIST_FRONT = 0.52
-CAR_CG_HEIGHT = 0.54
-CAR_TRACK_WIDTH = 1.62
-CAR_WHEEL_RADIUS = 0.34
-CAR_WHEEL_INERTIA = 1.7
-STEER_RATIO = 15.0
-DRIVE_TYPE = "RWD"
-DIFF_TYPE = "open"
-ENGINE_MAX_TORQUE_NM = 480.0
-ENGINE_TORQUE_PEAK_RPM = 3600.0
-ENGINE_REDLINE_RPM = 6200.0
-ENGINE_LIMITER_RPM = 6400.0
-ENGINE_BRAKE_COEFF = 55.0
-GEAR_RATIOS = [4.1, 2.5, 1.7, 1.3, 1.0, 0.82]
-FINAL_DRIVE = 3.2
-TIRE_MU = 1.0
-SUSP_SPRING_FRONT = 34000.0
-SUSP_SPRING_REAR = 30000.0
-SUSP_DAMPER = 4600.0
-ARB_FRONT = 26000.0
-ARB_REAR = 12000.0
-AERO_DRAG = 0.40
-AERO_DOWNFORCE = 0.2
-BRAKE_FORCE_MAX = 22000.0
-BRAKE_BIAS_FRONT = 0.70
+NAME = "BERLINA DE LUJO"          # nombre que aparece en el menu
+DESC = "1950 KG - 340 CV - RWD - COMODA Y RAPIDA" # descripcion en el menu
+CAR_COLOR = (40, 40, 48)          # color RGB de la carroceria
+CAR_MASS = 1950.0                 # kg, masa total del vehiculo
+CAR_INERTIA_Z = 3200.0            # kg*m2, inercia de giro: mas = reacciones lentas
+CAR_INERTIA_PITCH = 3600.0        # kg*m2, inercia de cabeceo (frenar/acelerar)
+CAR_INERTIA_ROLL = 850.0          # kg*m2, inercia de balanceo (curvas)
+WHEELBASE = 3.05                  # m, distancia entre ejes
+WEIGHT_DIST_FRONT = 0.52          # fraccion del peso sobre el eje delantero
+CAR_CG_HEIGHT = 0.54              # m, altura del c. de gravedad: mas = mas vuelco
+CAR_TRACK_WIDTH = 1.62            # m, ancho de via entre ruedas
+CAR_WHEEL_RADIUS = 0.34           # m, radio de la rueda
+CAR_WHEEL_INERTIA = 1.7           # kg*m2, inercia de cada rueda
+STEER_RATIO = 15.0                # desmultiplicacion volante->rueda: mas = suave
+DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
+DIFF_TYPE = "open"                # diferencial: open, lsd (autoblocante) o locked
+ENGINE_MAX_TORQUE_NM = 480.0      # Nm, par maximo del motor
+ENGINE_TORQUE_PEAK_RPM = 3600.0   # rpm a las que se da el par maximo
+ENGINE_REDLINE_RPM = 6200.0       # rpm de zona roja
+ENGINE_LIMITER_RPM = 6400.0       # rpm del corte de inyeccion
+ENGINE_BRAKE_COEFF = 55.0         # Nm, freno motor al levantar el pie
+GEAR_RATIOS = [4.1, 2.5, 1.7, 1.3, 1.0, 0.82] # desarrollos de cada marcha (cortos = acelera mas)
+FINAL_DRIVE = 3.2                 # desmultiplicacion del grupo final
+TIRE_MU = 1.0                     # agarre en asfalto seco (calle ~0.9, slick >1.2)
+SUSP_SPRING_FRONT = 34000.0       # N/m, muelle delantero por rueda
+SUSP_SPRING_REAR = 30000.0        # N/m, muelle trasero por rueda
+SUSP_DAMPER = 4600.0              # N*s/m, amortiguadores
+ARB_FRONT = 26000.0               # N/m, barra estabilizadora delantera
+ARB_REAR = 12000.0                # N/m, barra estabilizadora trasera
+AERO_DRAG = 0.40                  # N/(m/s)2, resistencia al aire
+AERO_DOWNFORCE = 0.2              # N/(m/s)2, carga aerodinamica (aprieta al suelo)
+BRAKE_FORCE_MAX = 22000.0         # N, fuerza maxima de frenada total
+BRAKE_BIAS_FRONT = 0.70           # fraccion de frenada al eje delantero

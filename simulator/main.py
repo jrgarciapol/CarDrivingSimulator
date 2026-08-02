@@ -67,6 +67,7 @@ def main(argv=None):
     scene = Renderer(renderer)
     hud = Hud(renderer)
 
+    print(f"Car Driving Simulator {cfg.VERSION}")
     print(f"Circuito: {track.name} ({track.length:.0f} m)")
     from .physics import engine_peak_power_cv
     print(f"Motor: {cfg.ENGINE_MAX_TORQUE_NM:.0f} Nm de par maximo, "

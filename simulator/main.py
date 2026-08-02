@@ -190,7 +190,8 @@ def main(argv=None):
         # el chirrido arranca justo en el pico de agarre: también suena
         # el empuje de subviraje, no solo los derrapes grandes
         screech = max(0.0, min(1.0, (over - 0.98) * 1.4))
-        sound.update(st.rpm, wheel.throttle, screech, st.engine_on)
+        sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
+                     abs(st.vx))
 
         # ------------------------------------------------ render
         sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)

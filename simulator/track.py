@@ -169,6 +169,17 @@ class Track:
     def kappa_at(self, s: float) -> float:
         return self.segment_at(s).kappa
 
+    def heading_at(self, s: float) -> float:
+        """Rumbo absoluto de la carretera (rad) integrado desde la meta;
+        para el parallax del fondo."""
+        if not hasattr(self, "_heading"):
+            acc = 0.0
+            self._heading = []
+            for seg in self.segments:
+                self._heading.append(acc)
+                acc += seg.kappa * cfg.SEGMENT_LENGTH
+        return self._heading[self._index_at(s)]
+
     def grade_at(self, s: float) -> float:
         return self._grade[self._index_at(s)]
 

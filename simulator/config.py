@@ -5,6 +5,10 @@ Cada parámetro indica sus unidades, su efecto y el rango razonable entre
 paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 """
 
+# Versión del simulador: se muestra en pantalla (esquina inferior) y en la
+# consola al arrancar, para comprobar qué copia estás ejecutando.
+VERSION = "v2.0 (render 3D)"
+
 # ===========================================================================
 # VENTANA Y BUCLE
 # ===========================================================================

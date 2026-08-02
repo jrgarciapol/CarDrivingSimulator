@@ -501,11 +501,13 @@ class Hud:
         best_txt = _fmt_time(best_lap) if best_lap else "--:--.-"
         font.draw_text(self.r, f"MEJOR  {best_txt}", W - 300, 80, 2, (255, 200, 60, 255))
 
-        # estado del dispositivo (abajo, junto al velocímetro)
+        # estado del dispositivo (abajo, junto al velocímetro) y versión
         dev = wheel_name if wheel_name else "TECLADO - FLECHAS"
         ffb = "FFB OK" if ffb_ok else "SIN FFB"
         font.draw_text(self.r, f"{dev[:30]}  {ffb}  {cfg.DRIVE_TYPE}", 20, H - 140, 2,
                        (180, 255, 180, 255) if ffb_ok else (255, 180, 140, 255))
+        font.draw_text(self.r, cfg.VERSION, W - font.text_width(cfg.VERSION, 2) - 14,
+                       H - 24, 2, (150, 150, 150, 255))
 
         # motor parado: aviso grande en el centro
         if not st.engine_on:

@@ -127,11 +127,12 @@ class Renderer:
 
         base_i = int(car_state.s / L)
         frac = (car_state.s - base_i * L) / L
-        # con peralte, el suelo bajo el coche depende de su posición
-        # lateral: la cámara sube/baja al moverse por el asfalto inclinado
+        # la cámara es solidaria al plano local del asfalto: el peralte se
+        # dibuja RELATIVO al del punto donde está el coche (como la cabeza
+        # del piloto, que rueda con el coche). En plena curva peraltada la
+        # calzada se ve normal; al entrar y salir se ve la rampa formarse.
         bank_cam = segs[base_i % n_segs].bank
-        cam_y = segs[base_i % n_segs].y \
-            - car_state.n * math.sin(bank_cam) + cam_height
+        cam_y = segs[base_i % n_segs].y + cam_height
         # en las vistas a bordo, la cámara es solidaria al chasis: sube y
         # baja con la suspensión y cabecea con el coche
         if cam_back == 0.0:
@@ -272,7 +273,8 @@ class Renderer:
             offs.append(None)                 # trazada (offset por sección)
 
         # --- proyección de todos los puntos ------------------------------
-        sinb = np.sin(bk)
+        # peralte relativo al de la sección de la cámara (ver cam_y)
+        sinb = np.sin(bk) - math.sin(bank_cam)
         dy = elev - cam_y
         z_ok = zr > 0.25
         inv_z = np.where(z_ok, 1.0 / np.maximum(zr, 0.25), 0.0)
@@ -327,11 +329,9 @@ class Renderer:
             # el peralte inclina la sección: cada borde tiene su altura
             dyl = dy - oL * sinb
             dyr = dy - oR * sinb
-            # z acotada por debajo: los puntos que quedan justo detrás del
-            # plano cercano se proyectan "hacia fuera" de la pantalla en
-            # vez de colapsar al centro, para poder rescatar los quads que
-            # cruzan el plano (el hueco verde de un frame en horquillas
-            # con mucho volante salía de descartarlos enteros)
+            # tras los dos recortes (longitudinal y lateral), todo punto
+            # de un quad parcialmente visible está YA sobre el plano
+            # cercano: la proyección es siempre finita y correcta
             izl = 1.0 / np.maximum(zl, 0.14)
             izr = 1.0 / np.maximum(zrg, 0.14)
             sxl = W / 2 + f * xl * izl * (W / 2)
@@ -339,8 +339,7 @@ class Renderer:
             sxr = W / 2 + f * xrg * izr * (W / 2)
             syr = H / 2 - f * dyr * izr * (H / 2) + pitch_px
             valid = (zl > 0.25) & (zrg > 0.25)
-            semi = (zl > -1.5) & (zrg > -1.5)
-            return sxl, syl, sxr, syr, valid, semi
+            return sxl, syl, sxr, syr, valid
 
         # --- colores por segmento ----------------------------------------
         par3 = (seg_idx // 3) % 2
@@ -387,9 +386,9 @@ class Renderer:
         v_base = 0
         for b, spec in enumerate(offs):
             if spec is None:
-                sxl, syl, sxr, syr, valid, semi = project(0, 0, per_section=li)
+                sxl, syl, sxr, syr, valid = project(0, 0, per_section=li)
             else:
-                sxl, syl, sxr, syr, valid, semi = project(spec[0], spec[1])
+                sxl, syl, sxr, syr, valid = project(spec[0], spec[1])
             # cuatro esquinas por quad: (j izq, j der, j+1 izq, j+1 der)
             xy = np.empty((n_quads, 4, 2), dtype=np.float32)
             xy[:, 0, 0] = sxl[:-1]; xy[:, 0, 1] = syl[:-1]
@@ -399,12 +398,7 @@ class Renderer:
             col = np.empty((n_quads, 4, 4), dtype=np.uint8)
             col[:, :, :3] = band_colors[b][:-1][:, None, :]
             col[:, :, 3] = 255
-            # un quad se dibuja si al menos una de sus dos secciones es
-            # visible y la otra no está muy por detrás de la cámara: los
-            # que cruzan el plano cercano se RESCATAN (proyectados hacia
-            # fuera) en vez de descartarse, que dejaba huecos de hierba
-            # de un frame en horquillas con mucho ángulo de cámara
-            qv = (valid[:-1] & semi[1:]) | (semi[:-1] & valid[1:])
+            qv = valid[:-1] & valid[1:]
             base = v_base + np.arange(n_quads, dtype=np.int32) * 4
             idx = np.empty((n_quads, 6), dtype=np.int32)
             idx[:, 0] = base;     idx[:, 1] = base + 1; idx[:, 2] = base + 2
@@ -1009,51 +1003,68 @@ class Hud:
             d0[2] += (load - d0[2]) * k_dot
             rho = math.hypot(d0[0], d0[1])
             color = (255, 70, 50) if rho > 1.0 else (90, 230, 90)
-            r_px = max(2, min(11, int(2 + 4.5 * d0[2])))
+            r_px = max(2, min(16, int(1 + cfg.TELEM_DOT_LOAD_GAIN * d0[2])))
             self._fill(cx + d0[0] * radius - r_px, cy - d0[1] * radius - r_px,
                        r_px * 2, r_px * 2, color)
         font.draw_text(self.r, "PUNTO GRANDE = MAS CARGA",
                        box_x + 12, box_y + 322, 2, (170, 170, 170, 255))
 
-        # ---- brújula de trayectoria ------------------------------------
+        # ---- coche cenital: deriva del chasis frente a la trayectoria --
+        # la línea gris vertical es la trayectoria real del centro de
+        # gravedad; el coche dibujado encima muestra hacia dónde apunta el
+        # chasis (derrapando, el coche "cruza" sobre la línea) y las
+        # ruedas delanteras giran con el volante
         comp_y = box_y + 348
-        font.draw_text(self.r, "TRAYECTORIA / EJE / RUEDAS",
+        font.draw_text(self.r, "CHASIS Y TRAYECTORIA",
                        box_x + 12, comp_y, 2)
-        ccx, ccy = box_x + 84, comp_y + 92
-        arrow_len = 62
+        ccx, ccy = box_x + 84, comp_y + 96
         st = car_state
         if abs(st.vx) > 2.0:
             beta = math.atan2(st.vy, abs(st.vx))
         else:
             beta = 0.0
-        alpha_f = (st.slip_angle[0] + st.slip_angle[1]) / 2.0
-        self._tel_ang[0] += (alpha_f - self._tel_ang[0]) * k_ang
         self._tel_ang[1] += (beta - self._tel_ang[1]) * k_ang
         beta_s = self._tel_ang[1]
         delta = steering * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0) / cfg.STEER_RATIO
 
-        def arrow(ang, color, ln):
-            # ang 0 = trayectoria (vertical); positivo = inclinado a la dcha
-            dx, dyy = math.sin(ang), -math.cos(ang)
-            steps = int(ln / 3)
-            for k in range(steps):
-                px = ccx + dx * k * 3
-                py = ccy + dyy * k * 3
-                self._fill(px - 1, py - 1, 3, 3, color)
-            # punta
-            self._fill(ccx + dx * ln - 3, ccy + dyy * ln - 3, 6, 6, color)
-
         # amplificar x3 para que se aprecien ángulos pequeños
         AMP = 3.0
-        arrow(0.0, (170, 170, 170), arrow_len)               # trayectoria CG
-        arrow(-beta_s * AMP, (235, 60, 50), arrow_len - 6)    # eje del coche
-        arrow((-beta_s + delta) * AMP, (250, 205, 60), arrow_len - 14)  # ruedas
-        font.draw_text(self.r, f"RUEDAS {math.degrees(self._tel_ang[0]):+5.1f}",
-                       box_x + 150, comp_y + 42, 2, (250, 205, 60, 255))
+        theta = -beta_s * AMP
+        dxb, dyb = math.sin(theta), -math.cos(theta)   # eje del coche
+        pxb, pyb = math.cos(theta), math.sin(theta)    # su perpendicular
+
+        # trayectoria del CG: línea vertical que atraviesa el coche
+        for k in range(-56, 57, 3):
+            self._fill(ccx - 1, ccy + k, 2, 2, (170, 170, 170))
+        self._fill(ccx - 3, ccy - 62, 6, 6, (170, 170, 170))
+
+        # ruedas (debajo de la carrocería): las delanteras giran con el
+        # volante, también amplificadas x3
+        half_len, half_w = 38, 14
+        for kk, front in ((26, True), (-26, False)):
+            wang = theta + (delta * AMP if front else 0.0)
+            wdx, wdy = math.sin(wang), -math.cos(wang)
+            for side in (-1, 1):
+                wx = ccx + dxb * kk + pxb * side * (half_w + 4)
+                wy = ccy + dyb * kk + pyb * side * (half_w + 4)
+                for k in range(-7, 8, 2):
+                    self._fill(wx + wdx * k - 2, wy + wdy * k - 2, 4, 4,
+                               (15, 15, 15))
+
+        # carrocería a lo largo del eje del coche, con cabina oscura
+        body_c = getattr(cfg, "CAR_COLOR", (178, 24, 30))
+        dark_c = _shade(body_c, 0.70)
+        for k in range(-half_len, half_len + 1, 2):
+            for w in range(-half_w, half_w + 1, 2):
+                px = ccx + dxb * k + pxb * w
+                py = ccy + dyb * k + pyb * w
+                c = dark_c if 2 < k < 22 and abs(w) < half_w - 3 else body_c
+                self._fill(px - 1, py - 1, 3, 3, c)
+
         font.draw_text(self.r, f"CHASIS {math.degrees(beta_s):+5.1f}",
-                       box_x + 150, comp_y + 66, 2, (235, 60, 50, 255))
+                       box_x + 158, comp_y + 60, 2, (255, 255, 255, 255))
         font.draw_text(self.r, "GRADOS (X3)",
-                       box_x + 150, comp_y + 90, 2, (150, 150, 150, 255))
+                       box_x + 158, comp_y + 84, 2, (150, 150, 150, 255))
 
 
 def _fmt_time(t):

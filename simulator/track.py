@@ -129,7 +129,8 @@ class Track:
             return out
 
         k_offset = smooth(ks, 25)   # ~100 m: aproximación gradual al vértice
-        k_speed = smooth(ks, 8)     # ~32 m: velocidad de paso de la curva
+        k_speed = smooth(ks, 5)     # ~20 m: velocidad de paso de la curva
+                                    # (ventana corta: no diluye horquillas)
 
         max_off = cfg.ROAD_HALF_WIDTH - 1.3
         ay_max = cfg.TIRE_MU * 9.81 * 0.92   # apurar al 92 % del agarre
@@ -140,12 +141,13 @@ class Track:
             self.line_n.append(off)
             k = abs(k_speed[i])
             # el peralte bien orientado permite pasar más rápido: la
-            # gravedad aporta parte de la aceleración centrípeta
+            # gravedad aporta parte de la aceleración centrípeta (con un
+            # margen del 30 %, porque la ayuda real depende del coche)
             bank = self.segments[i].bank
             ay_i = ay_max
             if k > 1e-5 and abs(bank) > 1e-4:
                 ay_i = max(ay_max * 0.3,
-                           ay_max + 9.81 * math.tan(bank)
+                           ay_max + 0.7 * 9.81 * math.tan(bank)
                            * (1.0 if k_speed[i] > 0 else -1.0))
             v = math.sqrt(ay_i / k) if k > 1e-5 else 70.0
             self.line_v.append(min(70.0, v))
@@ -159,7 +161,10 @@ class Track:
         for _ in range(2):  # dos pasadas para cerrar el circuito circular
             for i in range(n - 1, -1, -1):
                 nxt = self.line_v_allowed[(i + 1) % n]
-                limit = math.sqrt(nxt * nxt + 2.0 * a_brake * L)
+                # la pendiente cambia la frenada: cuesta abajo la gravedad
+                # resta capacidad de deceleración, cuesta arriba la suma
+                a_eff = max(3.0, a_brake + 9.81 * self._grade[i])
+                limit = math.sqrt(nxt * nxt + 2.0 * a_eff * L)
                 self.line_v_allowed[i] = min(self.line_v_allowed[i], limit)
 
     def _precompute_vertical(self):

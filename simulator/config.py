@@ -74,18 +74,21 @@ FFB_MAX_TORQUE_NM = 25.0 # Nm de columna que saturan el volante; BAJARLO
 FFB_COLUMN_DAMPING = 1.3 # Nm por rad/s de giro del volante; amortigua las
                          # oscilaciones autoexcitadas en recta (se escala
                          # además con la velocidad) [0 .. 4]
-FFB_SMOOTHING_S = 0.04   # s, suavizado del par enviado al volante; sube a
-                         # 0.06-0.08 si el volante da bandazos en recta,
-                         # baja a 0.02 si lo notas "gomoso" [0 .. 0.1]
+FFB_SMOOTHING_S = 0.02   # s, suavizado del par enviado al volante; sube a
+                         # 0.04-0.08 si el volante da bandazos en recta,
+                         # baja a 0.01 si lo notas "gomoso" [0 .. 0.1]
+                         # (con el sentido del FFB corregido en v2.7 basta
+                         # muy poco suavizado: mas detalle del asfalto)
 FFB_KICK_GAIN = 0.0015   # sacudida por baches asimétricos delanteros, en
                          # Nm por N de diferencia de carga; 0 la elimina
                          # [0 .. 0.005]
 FFB_SPRING_LOWSPEED = 0.35   # muelle de centrado al aparcar [0 .. 1]
 FFB_DAMPER_LOWSPEED = 0.55   # pesadez del volante parado [0 .. 1]
-FFB_DAMPER_HIGHSPEED = 0.30  # amortiguación residual en marcha (efecto
+FFB_DAMPER_HIGHSPEED = 0.15  # amortiguación residual en marcha (efecto
                              # damper del firmware del volante): evita que
-                             # el volante oscile con violencia al soltarlo
-                             # en recta; sube si aún se agita [0 .. 0.5]
+                             # el volante oscile al soltarlo en recta; con
+                             # el FFB corregido basta la mitad que antes:
+                             # volante mas vivo. Sube si se agita [0 .. 0.5]
 FFB_ROAD_TEXTURE = 0.05      # vibración fina del asfalto [0 .. 0.3]
 FFB_KERB_MAGNITUDE = 0.45    # vibración al pisar pianos [0 .. 1]
 FFB_GRASS_MAGNITUDE = 0.35   # vibración sobre hierba [0 .. 1]
@@ -268,6 +271,11 @@ TRACK_POLES = False           # balizas de colores en los bordes (amarillo =
                              # izquierda, azul = derecha)
 CAR_BODY_MOTION_EXAG = 5.0   # exageración visual del cabeceo/balanceo de la
                              # carrocería en pantalla; 1 = real [1 .. 5] 3
+TELEM_DOT_LOAD_GAIN = 8.0    # F2: cuánto crece el diámetro del punto del
+                             # círculo de fricción con la carga de la rueda
+                             # (radio px = 1 + ganancia x carga/estática);
+                             # sube para hacer más patentes las
+                             # transferencias de peso [3 .. 14]
 
 # ===========================================================================
 # SONIDO

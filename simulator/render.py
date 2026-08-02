@@ -445,7 +445,7 @@ class Hud:
         if st.wheelspin:
             font.draw_text(self.r, "TRACCION", W / 2 - 48, y_warn, 2, (255, 120, 60, 255))
             y_warn -= 24
-        if st.front_grip_used > 0.95 and st.speed_kmh > 30:
+        if st.front_grip_used > 0.88 and st.speed_kmh > 25:
             font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, y_warn, 2, (255, 220, 80, 255))
 
     def draw_debug(self, wheel, car_state, surface):

@@ -577,7 +577,7 @@ class Car:
         # sacudida por baches asimétricos en el eje delantero, filtrada
         # paso-alto: la transferencia de carga estacionaria de las curvas
         # no debe entrar, solo los transitorios (pianos, baches)
-        kick_raw = (f_susp[FL] - f_susp[FR]) * 0.004
+        kick_raw = (f_susp[FL] - f_susp[FR]) * cfg.FFB_KICK_GAIN
         self._kick_lp += (kick_raw - self._kick_lp) * min(1.0, 2.0 * dt)
         kick_hp = kick_raw - self._kick_lp
         self._bump_kick += (kick_hp - self._bump_kick) * min(1.0, 25.0 * dt)

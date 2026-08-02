@@ -67,6 +67,7 @@ def main(argv=None):
     scene = Renderer(renderer)
     hud = Hud(renderer)
 
+    print(f"Circuito: {track.name} ({track.length:.0f} m)")
     if wheel.connected:
         print(f"Volante detectado: {wheel.name} "
               f"({wheel.num_axes} ejes, {wheel.num_buttons} botones)")
@@ -183,7 +184,9 @@ def main(argv=None):
                 over = max(over,
                            abs(st.slip_ratio[i]) / cfg.TIRE_PEAK_SLIP_RATIO,
                            abs(st.slip_angle[i]) / peak_a)
-        screech = max(0.0, min(1.0, (over - 1.05) * 1.2))
+        # el chirrido arranca justo en el pico de agarre: también suena
+        # el empuje de subviraje, no solo los derrapes grandes
+        screech = max(0.0, min(1.0, (over - 0.98) * 1.4))
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on)
 
         # ------------------------------------------------ render

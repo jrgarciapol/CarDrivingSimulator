@@ -43,7 +43,7 @@ BUTTON_TOGGLE_VIEW = 3   # alternar vista cercana / coche completo (tecla C)
 BUTTON_ENGINE = 9        # arrancar / parar el motor (tecla E también)
 BUTTON_RESET = 8         # recolocar el coche en pista
 
-AUTO_GEAR = False        # arrancar con cambio automático (True) o manual
+AUTO_GEAR = True         # arrancar con cambio automático (True) o manual
 CHASE_VIEW = False       # arrancar con la vista de coche completo
 
 STEERING_DEADZONE = 0.005
@@ -59,9 +59,12 @@ FFB_MAX_TORQUE_NM = 40.0 # par de columna que equivale al 100 % de fuerza:
                          # bajarlo hace el volante más duro en apoyo y más
                          # evidente el aligeramiento al subvirar
 
-FFB_COLUMN_DAMPING = 0.9     # Nm por rad/s de giro del volante: amortigua
+FFB_COLUMN_DAMPING = 1.3     # Nm por rad/s de giro del volante: amortigua
                              # el par calculado para evitar oscilaciones
                              # del volante en recta a alta velocidad
+FFB_KICK_GAIN = 0.0015       # sacudida por baches asimétricos (Nm por N de
+                             # diferencia de carga entre ruedas delanteras);
+                             # bajarlo aquieta el volante en recta
 FFB_SPRING_LOWSPEED = 0.35   # muelle de centrado al aparcar (0..1)
 FFB_DAMPER_LOWSPEED = 0.55   # amortiguación a baja velocidad (0..1)
 FFB_DAMPER_HIGHSPEED = 0.08  # amortiguación residual en marcha (0..1)
@@ -102,7 +105,7 @@ DIFF_LSD_COEFF = 18.0        # Nm·s/rad de acoplamiento viscoso del LSD
 
 # --- Neumáticos ---
 TIRE_MU = 1.05               # coeficiente de fricción en asfalto
-TIRE_MU_GRASS = 0.45         # en hierba
+TIRE_MU_GRASS = 0.80         # en hierba (alto = más controlable al pisarla)
 TIRE_B = 2.07                # rigidez de la curva combinada (pico en rho=1)
 TIRE_C = 1.4                 # forma (caída a ~81 % del pico al deslizar)
 TIRE_PEAK_SLIP_ANGLE_DEG = 7.0   # deriva del pico de agarre lateral
@@ -120,7 +123,7 @@ TIRE_TRAIL_SAT_DEG = 7.0     # ángulo de deriva al que el avance cae
 SUSP_SPRING_FRONT = 32000.0  # N/m por rueda delantera
 SUSP_SPRING_REAR = 26000.0   # N/m por rueda trasera
 SUSP_DAMPER = 4300.0         # N·s/m por rueda
-ARB_FRONT = 26000.0          # estabilizadora delantera (N/m de diferencia)
+ARB_FRONT = 23000.0          # estabilizadora delantera (N/m de diferencia)
 ARB_REAR = 14000.0           # estabilizadora trasera (más rígida delante
                              # -> más transferencia delante -> subviraje)
 
@@ -156,7 +159,11 @@ DRIVELINE_EFF = 0.90
 # ---------------------------------------------------------------------------
 # Circuito / carretera
 # ---------------------------------------------------------------------------
-ROAD_HALF_WIDTH = 4.6        # m (ancho total ~9.2 m)
+# Circuito a cargar: "" = circuito de pruebas integrado (con colinas), o un
+# circuito real importado: "tracks/silverstone.csv" | "tracks/spa.csv"
+# (eje central real del racetrack-database de la TU München; sin altimetría)
+TRACK_FILE = "tracks/silverstone.csv"
+ROAD_HALF_WIDTH = 5.4        # m (ancho total ~10.8 m)
 KERB_WIDTH = 1.1             # m de piano a cada lado
 SEGMENT_LENGTH = 4.0         # m por segmento de render
 DRAW_DISTANCE = 220          # segmentos dibujados

@@ -1,11 +1,15 @@
 """Definición del circuito.
 
-El circuito se define por tramos (longitud, radio, colina) y se discretiza en
-segmentos cortos para el renderizado pseudo-3D y para consultar la curvatura
-y el peralte en la posición del coche.
+Dos fuentes posibles:
+  - El circuito de pruebas integrado, definido por tramos (longitud,
+    radio, colina) en _sections().
+  - Un circuito real importado con tools/import_track.py (CSV con
+    curvatura/elevación/piano por segmento de 4 m), seleccionado con
+    TRACK_FILE en config.py.
 """
 
 import math
+import os
 
 from . import config as cfg
 
@@ -66,9 +70,33 @@ def build():
     return segments
 
 
+def build_from_file(path):
+    """Carga un circuito importado: kappa, elevación y piano por segmento."""
+    segments = []
+    idx = 0
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            kappa_s, elev_s, kerb_s = line.split(",")
+            segments.append(Segment(idx, float(kappa_s), float(elev_s),
+                                    kerb_s.strip() == "1"))
+            idx += 1
+    if len(segments) < 10:
+        raise ValueError(f"circuito invalido: {path}")
+    return segments
+
+
 class Track:
     def __init__(self):
-        self.segments = build()
+        self.name = "CIRCUITO DE PRUEBAS"
+        if cfg.TRACK_FILE:
+            path = os.path.join(os.path.dirname(__file__), cfg.TRACK_FILE)
+            self.segments = build_from_file(path)
+            self.name = os.path.splitext(os.path.basename(path))[0].upper()
+        else:
+            self.segments = build()
         self.length = len(self.segments) * cfg.SEGMENT_LENGTH
         self._precompute_vertical()
         self._precompute_racing_line()

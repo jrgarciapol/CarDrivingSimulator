@@ -325,9 +325,16 @@ class Car:
         df = cfg.AERO_DOWNFORCE * st.vx * st.vx
         df_front = df * cfg.AERO_DF_FRONT_SHARE / 2.0
         df_rear = df * (1.0 - cfg.AERO_DF_FRONT_SHARE) / 2.0
+        # transferencia directa por la geometría anti-dive/anti-squat:
+        # frenando (fx<0) carga las delanteras al instante sin pasar por
+        # los muelles; acelerando, las traseras
+        wb = cfg.CAR_CG_TO_FRONT + cfg.CAR_CG_TO_REAR
+        anti_fz = -cfg.SUSP_ANTI_PITCH * self._fx_tires \
+            * cfg.CAR_CG_HEIGHT / (wb * 2.0)
         for i in range(4):
             aero = df_front if i < 2 else df_rear
-            st.fz[i] = max(0.0, self._static_fz[i] + f_susp[i] + aero)
+            geo = anti_fz if i < 2 else -anti_fz
+            st.fz[i] = max(0.0, self._static_fz[i] + f_susp[i] + aero + geo)
 
         # --- dinámica vertical del chasis -------------------------------
         grade = track.grade_at(st.s)
@@ -342,8 +349,15 @@ class Car:
         # neumáticos (aplicadas al nivel del suelo, a CG_HEIGHT por debajo
         # del centro de masas), NO la aceleración neta: así, parado en
         # pendiente con freno, los neumáticos sostienen el coche y el morro
-        # se hunde aunque ax sea cero
-        pitch_acc = (sum_mx + self._fx_tires * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_PITCH
+        # se hunde aunque ax sea cero.
+        # Geometría anti-dive/anti-squat: los brazos de suspensión desvían
+        # una fracción de esa fuerza directamente al chasis, así que solo
+        # (1 - anti) pasa por los muelles (menos cabeceo). La fracción
+        # desviada NO desaparece: se reinyecta como transferencia de carga
+        # directa e instantánea en las cargas por rueda (más abajo).
+        anti = cfg.SUSP_ANTI_PITCH
+        pitch_acc = (sum_mx + self._fx_tires * cfg.CAR_CG_HEIGHT
+                     * (1.0 - anti)) / cfg.CAR_INERTIA_PITCH
         roll_acc = (sum_my + m * st.ay * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_ROLL
         st.heave_v += heave_acc * dt
         st.pitch_v += pitch_acc * dt
@@ -536,6 +550,15 @@ class Car:
             if abs(st.vx) < 0.15 and t_brake_max[i] > abs(t_drive[i]) + 5.0:
                 st.omega[i] = 0.0
                 continue
+            # inercia efectiva: con el embrague acoplado, la rueda arrastra
+            # la masa rotacional del motor multiplicada por el desarrollo
+            # al cuadrado (acelerar/retener en 1a cuesta mucho más que en 6a)
+            if i in driven and st.engine_on and not clutch_slipping \
+                    and ratio != 0.0:
+                i_eff = cfg.CAR_WHEEL_INERTIA \
+                    + cfg.ENGINE_INERTIA * ratio * ratio / len(driven)
+            else:
+                i_eff = cfg.CAR_WHEEL_INERTIA
             mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
             grip_force = mu_i * st.fz[i] * cfg.TIRE_LONG_GRIP_RATIO
             slip_now = (st.omega[i] * R - v_along) / denom
@@ -547,7 +570,7 @@ class Car:
                 # transmite el par aplicado al suelo. Incondicionalmente
                 # estable a cualquier dt.
                 k_v = grip_force * cfg.TIRE_C * cfg.TIRE_B / (peak_s * denom)
-                tau = cfg.CAR_WHEEL_INERTIA / (k_v * R * R)
+                tau = i_eff / (k_v * R * R)
                 omega_eq = (v_along + (t_app / R) / k_v) / R
                 blend = math.exp(-dt / tau) if tau > 1e-6 else 0.0
                 new_omega = omega_eq + (st.omega[i] - omega_eq) * blend
@@ -555,7 +578,7 @@ class Car:
                 # deslizamiento profundo (bloqueo o patinaje): integración
                 # explícita con la fuerza de la curva del neumático
                 t_net = t_app - fx_w[i] * R
-                new_omega = st.omega[i] + t_net / cfg.CAR_WHEEL_INERTIA * dt
+                new_omega = st.omega[i] + t_net / i_eff * dt
                 # si cruza la rodadura libre sin par para seguir deslizando,
                 # vuelve al régimen de rodadura
                 if (st.omega[i] - omega_free) * (new_omega - omega_free) < 0.0 \

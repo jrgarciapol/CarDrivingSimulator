@@ -110,7 +110,10 @@ class Renderer:
             # curva: doble integración de la curvatura
             dx += seg.kappa * seg_len * seg_len
             x_offset += dx
-            world_x = x_offset - car_state.n - car_state.psi * z
+            # la cámara gira con el RUMBO del coche (psi), amplificado por
+            # CAMERA_YAW_GAIN para que el giro de vista sea perceptible
+            world_x = x_offset - car_state.n \
+                - car_state.psi * cfg.CAMERA_YAW_GAIN * z
             world_y = seg.y - cam_y
 
             scale = cam_d / z
@@ -224,7 +227,9 @@ class Renderer:
         track_px = cfg.CAR_TRACK_WIDTH * ppm
         car_w = int(1.78 * ppm)
         car_h = 116
-        cx = W / 2 + steering * 18 - car_state.psi * 120
+        # la cámara va anclada al coche: el coche queda fijo en pantalla
+        # (solo un matiz con el volante) y es el mundo el que gira
+        cx = W / 2 + steering * 18
         cy = H - 108
         x = cx - car_w / 2
 
@@ -283,7 +288,8 @@ class Renderer:
         suspensión, como en las vistas chase de los simuladores."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         ex = cfg.CAR_BODY_MOTION_EXAG
-        cx = W / 2 + steering * 14 - car_state.psi * 110
+        # cámara anclada al coche: el coche no se desplaza con psi
+        cx = W / 2 + steering * 14
         y0 = H - 46
         tilt = -car_state.roll * ex
         pitch_raw = car_state.pitch * 250.0

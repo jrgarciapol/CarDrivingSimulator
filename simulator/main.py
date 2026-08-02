@@ -14,7 +14,7 @@ Teclado (siempre activo):
   F2             telemetria: circulo de friccion por rueda
   L              mostrar/ocultar la trazada ideal
   G              alternar cambio automatico/manual
-  C              alternar vista cercana / coche completo
+  C              cambiar vista: sin coche / trasera / coche completo
   E              arrancar / parar el motor
   ESC            salir
 """
@@ -68,6 +68,9 @@ def main(argv=None):
     hud = Hud(renderer)
 
     print(f"Circuito: {track.name} ({track.length:.0f} m)")
+    from .physics import engine_peak_power_cv
+    print(f"Motor: {cfg.ENGINE_MAX_TORQUE_NM:.0f} Nm de par maximo, "
+          f"~{engine_peak_power_cv():.0f} CV")
     if wheel.connected:
         print(f"Volante detectado: {wheel.name} "
               f"({wheel.num_axes} ejes, {wheel.num_buttons} botones)")
@@ -87,7 +90,7 @@ def main(argv=None):
     show_telemetry = False
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
-    chase_view = cfg.CHASE_VIEW
+    view_mode = cfg.VIEW_MODE   # 0 sin coche, 1 trasera, 2 coche completo
     surface = "road"
     frame = 0
     event = sdl2.SDL_Event()
@@ -111,7 +114,7 @@ def main(argv=None):
                 elif sym == sdl2.SDLK_g:
                     auto_gear = not auto_gear
                 elif sym == sdl2.SDLK_c:
-                    chase_view = not chase_view
+                    view_mode = (view_mode + 1) % 3
                 elif sym == sdl2.SDLK_e:
                     car.toggle_engine()
                 elif sym == sdl2.SDLK_r:
@@ -136,7 +139,7 @@ def main(argv=None):
         if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_AUTO):
             auto_gear = not auto_gear
         if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_VIEW):
-            chase_view = not chase_view
+            view_mode = (view_mode + 1) % 3
         if wheel.button_pressed_edge(cfg.BUTTON_ENGINE):
             car.toggle_engine()
         if wheel.button_pressed_edge(cfg.BUTTON_RESET):
@@ -195,12 +198,14 @@ def main(argv=None):
         base_seg = track.segment_at(car.state.s)
         scene.draw_background(cfg.WINDOW_HEIGHT // 2,
                               car.state.psi + base_seg.kappa * 40.0)
-        cam_h = 3.0 if chase_view else cfg.CAMERA_HEIGHT
+        # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,
+        # 2 = coche completo desde arriba
+        cam_h = (1.30, cfg.CAMERA_HEIGHT, 3.0)[view_mode]
         scene.draw_road(track, car.state, show_line, cam_h)
-        if chase_view:
-            scene.draw_car_chase(car.state, wheel.steering)
-        else:
+        if view_mode == 1:
             scene.draw_car(car.state, wheel.steering)
+        elif view_mode == 2:
+            scene.draw_car_chase(car.state, wheel.steering)
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
                  auto_gear)
         if show_debug:

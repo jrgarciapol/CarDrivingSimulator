@@ -15,24 +15,28 @@ from . import config as cfg
 
 
 class Segment:
-    __slots__ = ("index", "kappa", "y", "kerb")
+    __slots__ = ("index", "kappa", "y", "kerb", "bank")
 
-    def __init__(self, index, kappa, y, kerb):
+    def __init__(self, index, kappa, y, kerb, bank=0.0):
         self.index = index
         self.kappa = kappa    # curvatura 1/m (positiva = curva a la derecha)
         self.y = y            # altura del terreno (m)
         self.kerb = kerb      # True si el tramo tiene pianos
+        self.bank = bank      # peralte (rad): >0 = borde izquierdo elevado
+                              # (peralte correcto de una curva a la derecha)
 
 
 def _sections():
-    """Tramos del circuito: (longitud_m, radio_m, desnivel_m).
+    """Tramos del circuito: (longitud_m, radio_m, desnivel_m[, peralte_deg]).
 
     radio > 0 curva a la derecha, < 0 a la izquierda, 0 recta.
     El desnivel se aplica como rampa suave a lo largo del tramo.
+    peralte_deg (opcional) es la inclinación transversal hacia el
+    interior de la curva, siempre positivo: el signo se toma del radio.
     """
     return [
         (400, 0, 0),        # recta de meta
-        (250, 220, 0),      # curva rápida derecha
+        (250, 220, 0, 8),   # curva rápida derecha PERALTADA
         (150, 0, 4),        # subida corta
         (200, -140, 6),     # izquierda media en subida
         (180, 0, 0),        # recta corta
@@ -41,7 +45,7 @@ def _sections():
         (300, 0, -2),       # recta trasera
         (90, -35, 0),       # horquilla izquierda
         (260, 0, 8),        # recta en subida con rasante
-        (220, 180, -8),     # derecha rápida bajando
+        (220, 180, -8, 10), # derecha rápida bajando, PERALTADA
         (160, 0, 0),        # recta
         (110, 85, 0),       # derecha media
         (150, -120, 0),     # izquierda media que enlaza con meta
@@ -53,25 +57,31 @@ def build():
     segments = []
     y = 0.0
     idx = 0
-    for length, radius, climb in _sections():
+    for sec in _sections():
+        length, radius, climb = sec[0], sec[1], sec[2]
+        bank_deg = sec[3] if len(sec) > 3 else 0.0
         n_segs = max(1, int(length / cfg.SEGMENT_LENGTH))
         kappa = (1.0 / radius) if radius else 0.0
         kerb = radius != 0
+        bank_full = math.radians(bank_deg) * (1.0 if radius > 0 else -1.0) \
+            if radius else 0.0
         for i in range(n_segs):
-            # entrada/salida de curva suavizadas
+            # entrada/salida de curva suavizadas (curvatura Y peralte)
             t = i / n_segs
             ease = min(1.0, min(t, 1.0 - t) * 6.0 + 0.15) if kerb else 0.0
             k = kappa * (ease if kerb else 0.0)
             y += climb / n_segs
             # ondulación ligera del terreno para dar vida a la carretera
             wave = 0.35 * math.sin(idx * 0.05)
-            segments.append(Segment(idx, k, y + wave, kerb))
+            segments.append(Segment(idx, k, y + wave, kerb,
+                                    bank_full * ease))
             idx += 1
     return segments
 
 
 def build_from_file(path):
-    """Carga un circuito importado: kappa, elevación y piano por segmento."""
+    """Carga un circuito importado. Columnas por segmento de 4 m:
+    kappa, elevación, piano[, peralte_rad con signo]."""
     segments = []
     idx = 0
     with open(path) as f:
@@ -79,9 +89,10 @@ def build_from_file(path):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            kappa_s, elev_s, kerb_s = line.split(",")
-            segments.append(Segment(idx, float(kappa_s), float(elev_s),
-                                    kerb_s.strip() == "1"))
+            cols = line.split(",")
+            bank = float(cols[3]) if len(cols) > 3 else 0.0
+            segments.append(Segment(idx, float(cols[0]), float(cols[1]),
+                                    cols[2].strip() == "1", bank))
             idx += 1
     if len(segments) < 10:
         raise ValueError(f"circuito invalido: {path}")
@@ -128,7 +139,15 @@ class Track:
             off = max(-max_off, min(max_off, k_offset[i] * 150.0))
             self.line_n.append(off)
             k = abs(k_speed[i])
-            v = math.sqrt(ay_max / k) if k > 1e-5 else 70.0
+            # el peralte bien orientado permite pasar más rápido: la
+            # gravedad aporta parte de la aceleración centrípeta
+            bank = self.segments[i].bank
+            ay_i = ay_max
+            if k > 1e-5 and abs(bank) > 1e-4:
+                ay_i = max(ay_max * 0.3,
+                           ay_max + 9.81 * math.tan(bank)
+                           * (1.0 if k_speed[i] > 0 else -1.0))
+            v = math.sqrt(ay_i / k) if k > 1e-5 else 70.0
             self.line_v.append(min(70.0, v))
 
         # velocidad ADMISIBLE en cada punto teniendo en cuenta la distancia
@@ -168,6 +187,10 @@ class Track:
 
     def kappa_at(self, s: float) -> float:
         return self.segment_at(s).kappa
+
+    def bank_at(self, s: float) -> float:
+        """Peralte (rad) del tramo: >0 = borde izquierdo elevado."""
+        return self.segment_at(s).bank
 
     def map_points(self):
         """Polilínea del circuito en planta, normalizada a [0..1]x[0..1]

@@ -127,7 +127,11 @@ class Renderer:
 
         base_i = int(car_state.s / L)
         frac = (car_state.s - base_i * L) / L
-        cam_y = segs[base_i % n_segs].y + cam_height
+        # con peralte, el suelo bajo el coche depende de su posición
+        # lateral: la cámara sube/baja al moverse por el asfalto inclinado
+        bank_cam = segs[base_i % n_segs].bank
+        cam_y = segs[base_i % n_segs].y \
+            - car_state.n * math.sin(bank_cam) + cam_height
         # en las vistas a bordo, la cámara es solidaria al chasis: sube y
         # baja con la suspensión y cabecea con el coche
         if cam_back == 0.0:
@@ -146,12 +150,17 @@ class Renderer:
         # linealmente entre segmentos: los bordes cercanos son curvas
         # suaves en vez de tramos rectos de 4 m, y las transiciones de
         # curva no "saltan".
+        # la malla llega 40 m por DETRAS de la camara: con mucho volante la
+        # camara gira casi 110 grados y el borde inferior de la pantalla
+        # mira hacia atras; sin esa geometria asomaba el verde de relleno
         s0 = car_state.s
         rels = []
-        d = -4.0
+        d = -40.0
         while d < cfg.DRAW_DISTANCE * L:
             rels.append(d)
-            if d < 24.0:
+            if d < -24.0:
+                d += 2.0
+            elif d < 24.0:
                 d += 1.0
             elif d < 80.0:
                 d += 2.0
@@ -163,6 +172,7 @@ class Renderer:
         hx = np.empty(n_sec)   # componentes del vector "derecha"
         hz = np.empty(n_sec)
         elev = np.empty(n_sec)
+        bk = np.empty(n_sec)   # peralte por sección
         li = np.empty(n_sec)
         seg_idx = np.empty(n_sec, dtype=np.int64)
 
@@ -188,6 +198,13 @@ class Renderer:
             return track.line_n[int(i0) % n_segs] * (1.0 - t) \
                 + track.line_n[int(i0 + 1) % n_segs] * t
 
+        def bank_interp(sa):
+            pos = sa / L - 0.5
+            i0 = math.floor(pos)
+            t = pos - i0
+            return segs[int(i0) % n_segs].bank * (1.0 - t) \
+                + segs[int(i0 + 1) % n_segs].bank * t
+
         # integrar hacia atrás desde el coche hasta la primera sección
         x = z = h = 0.0
         d = 0.0
@@ -205,6 +222,7 @@ class Renderer:
             hx[j] = math.cos(h)      # "derecha" = (cos h, -sin h)
             hz[j] = -math.sin(h)
             elev[j] = y_interp(s0 + rels[j])
+            bk[j] = bank_interp(s0 + rels[j])
             li[j] = line_interp(s0 + rels[j])
             seg_idx[j] = int(math.floor((s0 + rels[j]) / L))
             if j < n_sec - 1:
@@ -226,7 +244,7 @@ class Renderer:
         # la cámara se interpola exactamente sobre el plano z=0.3 para que
         # el asfalto llegue hasta el borde inferior de la pantalla
         Z_NEAR = 0.3
-        for j in range(min(14, n_sec - 1)):
+        for j in range(min(52, n_sec - 1)):
             if zr[j] <= Z_NEAR < zr[j + 1]:
                 t = (Z_NEAR - zr[j]) / (zr[j + 1] - zr[j])
                 xr[j] += (xr[j + 1] - xr[j]) * t
@@ -234,8 +252,12 @@ class Renderer:
                 rxr[j] += (rxr[j + 1] - rxr[j]) * t
                 rzr[j] += (rzr[j + 1] - rzr[j]) * t
                 elev[j] += (elev[j + 1] - elev[j]) * t
+                bk[j] += (bk[j + 1] - bk[j]) * t
 
         # --- offsets transversales de la malla --------------------------
+        # (sin línea central: como en los circuitos reales, solo líneas
+        # de borde; discontinuas donde no hay piano para dar sensación
+        # de velocidad)
         GW = 38.0
         offs = [
             (-GW, -half_w - kerb_w),          # hierba izquierda
@@ -243,7 +265,6 @@ class Renderer:
             (-half_w, half_w),                # asfalto
             (-half_w + 0.06, -half_w + 0.42), # línea blanca izquierda
             (half_w - 0.42, half_w - 0.06),   # línea blanca derecha
-            (-0.14, 0.14),                    # línea central discontinua
             (half_w, half_w + kerb_w),        # piano derecho
             (half_w + kerb_w, GW),            # hierba derecha
         ]
@@ -251,6 +272,7 @@ class Renderer:
             offs.append(None)                 # trazada (offset por sección)
 
         # --- proyección de todos los puntos ------------------------------
+        sinb = np.sin(bk)
         dy = elev - cam_y
         z_ok = zr > 0.25
         inv_z = np.where(z_ok, 1.0 / np.maximum(zr, 0.25), 0.0)
@@ -289,38 +311,71 @@ class Renderer:
             zrg = zr + rzr * oR
             clip_col(xl, zl)
             clip_col(xrg, zrg)
-            izl = np.where(zl > 0.25, 1.0 / np.maximum(zl, 0.25), 0.0)
-            izr = np.where(zrg > 0.25, 1.0 / np.maximum(zrg, 0.25), 0.0)
+            # recorte LATERAL: mirando casi de lado (mucho volante), un
+            # borde de la sección queda delante del plano cercano y el
+            # otro a la espalda de la cámara; sin recortar ese cruce el
+            # quad entero se descartaba y asomaba el verde de relleno
+            zn = 0.28
+            for j in np.nonzero((zl > zn) & (zrg <= zn))[0]:
+                t = (zn - zl[j]) / (zrg[j] - zl[j])
+                xrg[j] = xl[j] + (xrg[j] - xl[j]) * t
+                zrg[j] = zn + 1e-4
+            for j in np.nonzero((zrg > zn) & (zl <= zn))[0]:
+                t = (zn - zrg[j]) / (zl[j] - zrg[j])
+                xl[j] = xrg[j] + (xl[j] - xrg[j]) * t
+                zl[j] = zn + 1e-4
+            # el peralte inclina la sección: cada borde tiene su altura
+            dyl = dy - oL * sinb
+            dyr = dy - oR * sinb
+            # z acotada por debajo: los puntos que quedan justo detrás del
+            # plano cercano se proyectan "hacia fuera" de la pantalla en
+            # vez de colapsar al centro, para poder rescatar los quads que
+            # cruzan el plano (el hueco verde de un frame en horquillas
+            # con mucho volante salía de descartarlos enteros)
+            izl = 1.0 / np.maximum(zl, 0.14)
+            izr = 1.0 / np.maximum(zrg, 0.14)
             sxl = W / 2 + f * xl * izl * (W / 2)
-            syl = H / 2 - f * dy * izl * (H / 2) + pitch_px
+            syl = H / 2 - f * dyl * izl * (H / 2) + pitch_px
             sxr = W / 2 + f * xrg * izr * (W / 2)
-            syr = H / 2 - f * dy * izr * (H / 2) + pitch_px
+            syr = H / 2 - f * dyr * izr * (H / 2) + pitch_px
             valid = (zl > 0.25) & (zrg > 0.25)
-            return sxl, syl, sxr, syr, valid
+            semi = (zl > -1.5) & (zrg > -1.5)
+            return sxl, syl, sxr, syr, valid, semi
 
         # --- colores por segmento ----------------------------------------
         par3 = (seg_idx // 3) % 2
         par2 = (seg_idx // 2) % 2
-        par4 = (seg_idx // 4) % 2
         kerb_flag = np.array([segs[s % n_segs].kerb for s in seg_idx])
         grass_c = np.where(par3[:, None].astype(bool),
                            np.array(GRASS[0]), np.array(GRASS[1]))
         road_c = np.where(par3[:, None].astype(bool),
                           np.array(ROAD[0]), np.array(ROAD[1]))
+        # textura del asfalto: variación sutil de brillo por segmento,
+        # pseudoaleatoria pero fija al circuito: al avanzar, el moteado
+        # fluye hacia el coche y da sensación de movimiento
+        tex = 0.94 + 0.12 * (((seg_idx * 2654435761) % 977) / 977.0)
+        road_c = np.clip(road_c * tex[:, None], 0, 255)
         kerb_c = np.where(par2[:, None].astype(bool),
                           np.array(KERB[0]), np.array(KERB[1]))
         kerb_c = np.where(kerb_flag[:, None], kerb_c, grass_c)
         line_white = np.tile(np.array(LINE), (n_sec, 1))
-        cline_c = np.where(par4[:, None].astype(bool), line_white, road_c)
+        # líneas de borde discontinuas donde no hay piano (trazos de 4 m):
+        # la separación entre trazos crece al acercarse y da sensación de
+        # distancia y velocidad; junto a los pianos son continuas
+        dash = (seg_idx % 2) == 0
+        edge_c = np.where((kerb_flag | dash)[:, None], line_white, road_c)
         if show_line and cfg.RACING_LINE:
             v_allow = np.array([track.line_v_allowed[s % n_segs] for s in seg_idx])
             rl_c = np.empty((n_sec, 3))
             rl_c[:] = (140, 235, 140)
             rl_c[speed > v_allow * 0.88] = (250, 205, 60)
             rl_c[speed > v_allow * 1.02] = (235, 45, 35)
+            # trazada discontinua, como la ayuda de los simuladores: los
+            # huecos toman el color del asfalto que tienen debajo
+            rl_c = np.where(dash[:, None], rl_c, road_c)
 
-        band_colors = [grass_c, kerb_c, road_c, line_white, line_white,
-                       cline_c, kerb_c, grass_c]
+        band_colors = [grass_c, kerb_c, road_c, edge_c, edge_c,
+                       kerb_c, grass_c]
         if show_line and cfg.RACING_LINE:
             band_colors.append(rl_c)
 
@@ -332,9 +387,9 @@ class Renderer:
         v_base = 0
         for b, spec in enumerate(offs):
             if spec is None:
-                sxl, syl, sxr, syr, valid = project(0, 0, per_section=li)
+                sxl, syl, sxr, syr, valid, semi = project(0, 0, per_section=li)
             else:
-                sxl, syl, sxr, syr, valid = project(spec[0], spec[1])
+                sxl, syl, sxr, syr, valid, semi = project(spec[0], spec[1])
             # cuatro esquinas por quad: (j izq, j der, j+1 izq, j+1 der)
             xy = np.empty((n_quads, 4, 2), dtype=np.float32)
             xy[:, 0, 0] = sxl[:-1]; xy[:, 0, 1] = syl[:-1]
@@ -344,7 +399,12 @@ class Renderer:
             col = np.empty((n_quads, 4, 4), dtype=np.uint8)
             col[:, :, :3] = band_colors[b][:-1][:, None, :]
             col[:, :, 3] = 255
-            qv = valid[:-1] & valid[1:]
+            # un quad se dibuja si al menos una de sus dos secciones es
+            # visible y la otra no está muy por detrás de la cámara: los
+            # que cruzan el plano cercano se RESCATAN (proyectados hacia
+            # fuera) en vez de descartarse, que dejaba huecos de hierba
+            # de un frame en horquillas con mucho ángulo de cámara
+            qv = (valid[:-1] & semi[1:]) | (semi[:-1] & valid[1:])
             base = v_base + np.arange(n_quads, dtype=np.int32) * 4
             idx = np.empty((n_quads, 6), dtype=np.int32)
             idx[:, 0] = base;     idx[:, 1] = base + 1; idx[:, 2] = base + 2
@@ -396,7 +456,8 @@ class Renderer:
                     if pz_w < 0.3:
                         continue
                     sx = W / 2 + f * px_w / pz_w * (W / 2)
-                    sy = H / 2 - f * dy[j] / pz_w * (H / 2) + pitch_px
+                    sy = H / 2 - f * (dy[j] - o * sinb[j]) / pz_w * (H / 2) \
+                        + pitch_px
                     self._fill(sx - pw / 2, sy - h_px, pw, h_px, color)
                     self._fill(sx - pw / 2, sy - h_px, pw, cap, (245, 245, 245))
         return H // 2

@@ -1,34 +1,34 @@
 # Utilitario urbano: pequeño, ligero, tracción delantera, ~75 CV
-NAME = "UTILITARIO"
-DESC = "900 KG - 75 CV - FWD - FACIL Y LENTO"
-CAR_COLOR = (70, 130, 200)
-CAR_MASS = 900.0
-CAR_INERTIA_Z = 1150.0
-CAR_INERTIA_PITCH = 1300.0
-CAR_INERTIA_ROLL = 380.0
-WHEELBASE = 2.45
-WEIGHT_DIST_FRONT = 0.62
-CAR_CG_HEIGHT = 0.55
-CAR_TRACK_WIDTH = 1.45
-CAR_WHEEL_RADIUS = 0.28
-CAR_WHEEL_INERTIA = 0.9
-STEER_RATIO = 15.0
-DRIVE_TYPE = "FWD"
-DIFF_TYPE = "open"
-ENGINE_MAX_TORQUE_NM = 118.0
-ENGINE_TORQUE_PEAK_RPM = 3800.0
-ENGINE_REDLINE_RPM = 6200.0
-ENGINE_LIMITER_RPM = 6400.0
-ENGINE_BRAKE_COEFF = 28.0
-GEAR_RATIOS = [3.9, 2.1, 1.4, 1.05, 0.85]
-FINAL_DRIVE = 4.1
-TIRE_MU = 0.95
-SUSP_SPRING_FRONT = 21000.0
-SUSP_SPRING_REAR = 17000.0
-SUSP_DAMPER = 2600.0
-ARB_FRONT = 12000.0
-ARB_REAR = 5000.0
-AERO_DRAG = 0.42
-AERO_DOWNFORCE = 0.0
-BRAKE_FORCE_MAX = 9500.0
-BRAKE_BIAS_FRONT = 0.74
+NAME = "UTILITARIO"               # nombre que aparece en el menu
+DESC = "900 KG - 75 CV - FWD - FACIL Y LENTO" # descripcion en el menu
+CAR_COLOR = (70, 130, 200)        # color RGB de la carroceria
+CAR_MASS = 900.0                  # kg, masa total del vehiculo
+CAR_INERTIA_Z = 1150.0            # kg*m2, inercia de giro: mas = reacciones lentas
+CAR_INERTIA_PITCH = 1300.0        # kg*m2, inercia de cabeceo (frenar/acelerar)
+CAR_INERTIA_ROLL = 380.0          # kg*m2, inercia de balanceo (curvas)
+WHEELBASE = 2.45                  # m, distancia entre ejes
+WEIGHT_DIST_FRONT = 0.62          # fraccion del peso sobre el eje delantero
+CAR_CG_HEIGHT = 0.55              # m, altura del c. de gravedad: mas = mas vuelco
+CAR_TRACK_WIDTH = 1.45            # m, ancho de via entre ruedas
+CAR_WHEEL_RADIUS = 0.28           # m, radio de la rueda
+CAR_WHEEL_INERTIA = 0.9           # kg*m2, inercia de cada rueda
+STEER_RATIO = 15.0                # desmultiplicacion volante->rueda: mas = suave
+DRIVE_TYPE = "FWD"                # traccion: FWD delantera, RWD trasera, AWD total
+DIFF_TYPE = "open"                # diferencial: open, lsd (autoblocante) o locked
+ENGINE_MAX_TORQUE_NM = 118.0      # Nm, par maximo del motor
+ENGINE_TORQUE_PEAK_RPM = 3800.0   # rpm a las que se da el par maximo
+ENGINE_REDLINE_RPM = 6200.0       # rpm de zona roja
+ENGINE_LIMITER_RPM = 6400.0       # rpm del corte de inyeccion
+ENGINE_BRAKE_COEFF = 28.0         # Nm, freno motor al levantar el pie
+GEAR_RATIOS = [3.9, 2.1, 1.4, 1.05, 0.85] # desarrollos de cada marcha (cortos = acelera mas)
+FINAL_DRIVE = 4.1                 # desmultiplicacion del grupo final
+TIRE_MU = 0.95                    # agarre en asfalto seco (calle ~0.9, slick >1.2)
+SUSP_SPRING_FRONT = 21000.0       # N/m, muelle delantero por rueda
+SUSP_SPRING_REAR = 17000.0        # N/m, muelle trasero por rueda
+SUSP_DAMPER = 2600.0              # N*s/m, amortiguadores
+ARB_FRONT = 12000.0               # N/m, barra estabilizadora delantera
+ARB_REAR = 5000.0                 # N/m, barra estabilizadora trasera
+AERO_DRAG = 0.42                  # N/(m/s)2, resistencia al aire
+AERO_DOWNFORCE = 0.0              # N/(m/s)2, carga aerodinamica (aprieta al suelo)
+BRAKE_FORCE_MAX = 9500.0          # N, fuerza maxima de frenada total
+BRAKE_BIAS_FRONT = 0.74           # fraccion de frenada al eje delantero

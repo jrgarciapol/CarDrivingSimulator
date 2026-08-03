@@ -115,23 +115,24 @@ def arc_signed_kappa(center, R, pts, xy, stations):
 def build_element(kind, pts, xy, stations):
     """Crea un elemento {kind, kappa, s0, s1, ...} a partir de los puntos
     pinchados y la traza (para situarlo por estación)."""
+    pts = [(float(p[0]), float(p[1])) for p in pts]
     ss = sorted(project_station(p, xy, stations) for p in pts)
     s0, s1 = ss[0], ss[-1]
     if kind == "line":
         pt, d = fit_line(pts)
         return {"kind": "line", "kappa": 0.0, "s0": s0, "s1": s1,
-                "point": pt, "dir": d}
+                "point": pt, "dir": d, "pts": pts}
     if kind == "arc":
         center, R = fit_circle(pts)
         k = arc_signed_kappa(center, R, pts, xy, stations)
         return {"kind": "arc", "kappa": k, "s0": s0, "s1": s1,
-                "center": center, "R": R}
+                "center": center, "R": R, "pts": pts}
     if kind == "point":
         center, R = fit_circle(pts)
         k = arc_signed_kappa(center, R, pts, xy, stations)
         smid = 0.5 * (s0 + s1)
         return {"kind": "point", "kappa": k, "s0": smid, "s1": smid,
-                "R": R}
+                "R": R, "pts": pts}
     raise ValueError(kind)
 
 

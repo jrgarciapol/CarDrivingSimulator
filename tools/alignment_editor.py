@@ -16,10 +16,15 @@ por matplotlib). Flujo, como en restitución de trazado:
      CLOTOIDES (rampa lineal de curvatura). Como la rampa es lineal, una
      recta↔círculo da una clotoide, y un círculo-derecha↔círculo-izquierda
      cruza κ=0 solo (el caso clotoide↔clotoide, curva de reversa).
+     Los puntos en curso son círculos ARRASTRABLES: pincha encima y muévelos
+     para afinar el ajuste (se reajusta en vivo, naranja).
   3. Las primitivas ajustadas se dibujan ancladas a la traza (recta verde,
      círculo rojo, punto morado; clotoides discontinuas azules). SELECCIONAR
-     + pinchar elige una alineación (queda resaltada); BORRAR la elimina.
-  4. ZOOM / MOVER / VISTA COMPLETA para navegar; GUARDAR exporta el CSV.
+     + pinchar elige una alineación (resaltada); EDITAR la reabre para mover
+     sus puntos; BORRAR la elimina.
+  4. ZOOM / MOVER / VISTA COMPLETA para navegar (al elegir una herramienta de
+     dibujo se apagan solos); GUARDAR exporta el CSV para el simulador Y las
+     alineaciones (.aln.json) para poder reabrir y corregir el trabajo.
 
 Uso:
   python tools/alignment_editor.py entrada.kml [--linea=1] [--salida=ruta.csv]
@@ -88,10 +93,13 @@ class PlanEditor:
         self.step = step
         self.out_path = out_path
         self.elev_csv = elev_csv
+        self.aln_path = os.path.splitext(out_path)[0] + ".aln.json"
         self.elements = []
         self.tool = None
         self.pending = []
         self.selected = None          # índice de alineación seleccionada
+        self._drag = None             # índice del punto que se arrastra
+        self._editing = False         # True mientras se edita una alineación
 
         self.fig = plt.figure(figsize=(14.0, 8.5))
         self.ax = self.fig.add_axes([0.24, 0.06, 0.74, 0.90])
@@ -102,7 +110,10 @@ class PlanEditor:
         self._art = []
         self._buttons = []
         self._build_buttons()
-        self.fig.canvas.mpl_connect("button_press_event", self.on_click)
+        self.fig.canvas.mpl_connect("button_press_event", self.on_press)
+        self.fig.canvas.mpl_connect("motion_notify_event", self.on_motion)
+        self.fig.canvas.mpl_connect("button_release_event", self.on_release)
+        self.load_alignments()        # reanuda trabajo previo si existe
         self.set_tool(None)
         self.redraw()
 
@@ -119,17 +130,18 @@ class PlanEditor:
             ("CANCELAR", lambda e: self.cancel(), None),
             (None, None, None),
             ("SELECCIONAR", lambda e: self.set_tool("select"), "select"),
+            ("EDITAR", lambda e: self.edit_selected(), None),
             ("BORRAR", lambda e: self.delete_selected(), None),
             (None, None, None),
-            ("ZOOM", lambda e: self._toolbar("zoom"), None),
-            ("MOVER", lambda e: self._toolbar("pan"), None),
+            ("ZOOM", lambda e: self._toolbar("zoom"), "zoom"),
+            ("MOVER", lambda e: self._toolbar("pan"), "pan"),
             ("VISTA COMPLETA", lambda e: self._toolbar("home"), None),
             (None, None, None),
             ("GUARDAR", lambda e: self.export(), None),
         ]
         self._tool_buttons = {}
-        y = 0.94
-        h = 0.045
+        y = 0.955
+        h = 0.043
         for label, cb, tool in specs:
             if label is None:
                 y -= h * 0.5            # separador
@@ -140,63 +152,119 @@ class PlanEditor:
             self._buttons.append(b)
             if tool:
                 self._tool_buttons[tool] = b
-            y -= h + 0.006
+            y -= h + 0.005
+
+    def _get_toolbar(self):
+        tb = getattr(getattr(self.fig.canvas, "manager", None),
+                     "toolbar", None)
+        return tb or getattr(self.fig.canvas, "toolbar", None)
+
+    def _nav_active(self):
+        tb = self._get_toolbar()
+        return tb.mode if (tb and getattr(tb, "mode", "")) else ""
+
+    def _deactivate_nav(self):
+        """Apaga zoom/mover del backend (para no dejarlos 'pegados')."""
+        tb = self._get_toolbar()
+        if tb and getattr(tb, "mode", ""):
+            if "zoom" in tb.mode:
+                tb.zoom()
+            elif "pan" in tb.mode:
+                tb.pan()
 
     def _toolbar(self, action):
-        tb = getattr(self.fig.canvas, "manager", None)
-        tb = getattr(tb, "toolbar", None) or \
-            getattr(self.fig.canvas, "toolbar", None)
+        tb = self._get_toolbar()
         if tb is None:
             return
-        # al usar zoom/mover se desactiva la herramienta de dibujo
         if action in ("zoom", "pan"):
+            # activar zoom/mover DESACTIVA la herramienta de dibujo
             self.set_tool(None)
             getattr(tb, action)()
         elif action == "home":
             tb.home()
+        self._refresh_button_marks()
+
+    def _refresh_button_marks(self):
+        """Resalta el botón de la herramienta/navegación activa."""
+        nav = self._nav_active()
+        for name, b in self._tool_buttons.items():
+            on = (name == self.tool) or \
+                 (name == "zoom" and "zoom" in nav) or \
+                 (name == "pan" and "pan" in nav)
+            b.ax.set_facecolor("#ffd27f" if on else "0.85")
+        self.fig.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     def set_tool(self, t):
+        # activar una herramienta de dibujo/selección apaga zoom/mover, para
+        # no tener que despincharlos desde la barra inferior de matplotlib
+        if t in ("line", "arc", "point", "select"):
+            self._deactivate_nav()
+        if not self._editing:
+            self.pending = []
         self.tool = t
-        self.pending = []
-        for name, b in self._tool_buttons.items():
-            b.ax.set_facecolor("#ffd27f" if name == t else "0.85")
         title = {None: "ninguna", "line": "RECTA", "arc": "CIRCULO",
                  "point": "PUNTO", "select": "SELECCIONAR"}.get(t, "-")
-        self.ax.set_title(f"Herramienta activa: {title}    |    "
-                          f"{len(self.elements)} alineaciones")
-        self.fig.canvas.draw_idle()
+        if self._editing:
+            title += " (EDITANDO: arrastra los puntos, CONFIRMAR al acabar)"
+        self.ax.set_title(f"Herramienta: {title}    |    "
+                          f"{len(self.elements)} alineaciones", color="black")
+        self._refresh_button_marks()
+        self.redraw()
 
-    def on_click(self, e):
-        # ignorar clics en el panel de botones o con zoom/mover activos
+    # ---- ratón: pinchar añade punto, arrastrar mueve un punto ---------
+    def _pick_pending(self, e):
+        """Índice del punto en curso más cercano al cursor (en píxeles),
+        o None si no hay ninguno lo bastante cerca (umbral ~12 px)."""
+        best_d, best_i = 12.0 ** 2, None
+        for i, p in enumerate(self.pending):
+            px, py = self.ax.transData.transform(p)
+            d = (px - e.x) ** 2 + (py - e.y) ** 2
+            if d < best_d:
+                best_d, best_i = d, i
+        return best_i
+
+    def on_press(self, e):
         if e.inaxes != self.ax or e.button != 1 or e.xdata is None:
             return
-        tb = getattr(self.fig.canvas, "toolbar", None)
-        if tb is not None and getattr(tb, "mode", ""):
+        if self._nav_active():           # zoom/mover manda: no dibujar
             return
         if self.tool in ("line", "arc", "point"):
-            self.pending.append((e.xdata, e.ydata))
-            self.redraw()
+            hit = self._pick_pending(e)
+            if hit is not None:          # empezar a arrastrar ese punto
+                self._drag = hit
+            else:                        # o añadir un punto nuevo
+                self.pending.append((e.xdata, e.ydata))
+                self.redraw()
         elif self.tool == "select":
             self.selected = self._nearest_element((e.xdata, e.ydata))
             self.redraw()
+
+    def on_motion(self, e):
+        if self._drag is None or e.inaxes != self.ax or e.xdata is None:
+            return
+        self.pending[self._drag] = (e.xdata, e.ydata)
+        self.redraw()
+
+    def on_release(self, e):
+        self._drag = None
 
     def commit(self):
         if self.tool not in ("line", "arc", "point"):
             return
         if len(self.pending) < (2 if self.tool == "line" else 3):
-            print("faltan puntos para ajustar la alineación")
+            self._flash("faltan puntos (2 recta, 3 circulo/punto)", "#c33")
             return
         try:
             el = ag.build_element(self.tool, self.pending, self.xy,
                                   self.stations)
         except Exception as ex:               # ajuste degenerado
-            print("no se pudo ajustar:", ex)
+            self._flash(f"no se pudo ajustar: {ex}", "#c33")
             return
         self.elements.append(el)
         self.pending = []
+        self._editing = False
         self.set_tool(self.tool)
-        self.redraw()
 
     def undo_point(self):
         if self.pending:
@@ -205,7 +273,20 @@ class PlanEditor:
 
     def cancel(self):
         self.pending = []
+        self._editing = False
         self.redraw()
+
+    def edit_selected(self):
+        """Edita la alineación seleccionada: la saca de la lista y pone sus
+        puntos como 'en curso' para poder arrastrarlos y reajustar."""
+        if self.selected is None or self.selected >= len(self.elements):
+            self._flash("selecciona antes una alineacion", "#c33")
+            return
+        el = self.elements.pop(self.selected)
+        self.selected = None
+        self.pending = [tuple(p) for p in el.get("pts", [])]
+        self._editing = True
+        self.set_tool(el["kind"])
 
     def delete_selected(self):
         if self.selected is not None and self.selected < len(self.elements):
@@ -214,7 +295,6 @@ class PlanEditor:
             self.elements.pop()
         self.selected = None
         self.set_tool(self.tool)
-        self.redraw()
 
     def _nearest_element(self, pt):
         best_d, best_i = 1e30, None
@@ -224,6 +304,11 @@ class PlanEditor:
                 if d < best_d:
                     best_d, best_i = d, i
         return best_i
+
+    def _flash(self, msg, color="#1a7"):
+        print(msg)
+        self.ax.set_title(msg, color=color)
+        self.fig.canvas.draw_idle()
 
     # ------------------------------------------------------------------
     def redraw(self):
@@ -253,11 +338,25 @@ class PlanEditor:
                                      self.stations)[0]
             self._art += self.ax.plot([p0[0], p1[0]], [p0[1], p1[1]], "--",
                                       color="#2c7fb8", lw=1.3)
-        # puntos en curso
+        # ajuste PROVISIONAL en vivo de la alineación en curso (si hay
+        # puntos suficientes): se ve cómo encaja mientras colocas/arrastras
+        if self.tool in ("line", "arc", "point") and \
+                len(self.pending) >= (2 if self.tool == "line" else 3):
+            try:
+                prov = ag.build_element(self.tool, self.pending, self.xy,
+                                        self.stations)
+                poly = ag.element_polyline(prov, self.xy, self.stations)
+                self._art += self.ax.plot([p[0] for p in poly],
+                                          [p[1] for p in poly], "-",
+                                          color="#ff8c00", lw=2.0, alpha=0.9)
+            except Exception:
+                pass
+        # puntos en curso: círculos ARRASTRABLES (pincha encima y mueve)
         if self.pending:
             self._art += self.ax.plot([p[0] for p in self.pending],
-                                      [p[1] for p in self.pending], "x",
-                                      color="orange", ms=9, mew=2)
+                                      [p[1] for p in self.pending], "o",
+                                      color="orange", ms=8, mew=1.5,
+                                      mec="black")
         self.fig.canvas.draw_idle()
 
     def _trace_point(self, s):
@@ -303,12 +402,39 @@ class PlanEditor:
             for i, k in enumerate(ks):
                 kerb = 1 if abs(k) > KERB_KAPPA else 0
                 f.write("%.6f,%.2f,%d,%.4f\n" % (k, elev[i], kerb, banks[i]))
+        # guardar TAMBIÉN las alineaciones (tipo + puntos) para poder
+        # reabrir y corregir el trabajo, no solo el κ resultante
+        aln = os.path.splitext(path)[0] + ".aln.json"
+        try:
+            import json
+            json.dump([{"kind": e["kind"], "pts": e["pts"]}
+                       for e in self.elements], open(aln, "w"))
+        except OSError:
+            aln = None
         r_min = 1.0 / max(1e-9, max(abs(k) for k in ks))
         print(f"GUARDADO en {path}  ({n} seg, {self.L:.0f} m, "
-              f"radio min {r_min:.0f} m, {len(self.elements)} alineaciones)")
-        self.ax.set_title(f"GUARDADO: {path}    |    "
-                          f"{len(self.elements)} alineaciones")
+              f"radio min {r_min:.0f} m, {len(self.elements)} alineaciones)"
+              + (f"  + alineaciones en {aln}" if aln else ""))
+        # confirmación bien visible en la ventana (verde)
+        self.ax.set_title(f"✓ GUARDADO: {path}", color="#1a7d1a")
         self.fig.canvas.draw_idle()
+
+    def load_alignments(self):
+        """Reanuda el trabajo previo: si existe el .aln.json junto a la
+        salida, reconstruye las alineaciones (reajustando desde sus puntos)."""
+        if not os.path.exists(self.aln_path):
+            return
+        try:
+            import json
+            data = json.load(open(self.aln_path))
+            for d in data:
+                self.elements.append(
+                    ag.build_element(d["kind"], d["pts"], self.xy,
+                                     self.stations))
+            print(f"reanudadas {len(self.elements)} alineaciones de "
+                  f"{self.aln_path}")
+        except Exception as ex:
+            print("no se pudieron cargar alineaciones previas:", ex)
 
     def show(self):
         print(__doc__)

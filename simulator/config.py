@@ -12,8 +12,8 @@ VERSION = "v3.1"
 # ===========================================================================
 # VENTANA Y BUCLE
 # ===========================================================================
-WINDOW_WIDTH = 1280          # px, ancho de la ventana [800 .. 1920]
-WINDOW_HEIGHT = 720          # px, alto de la ventana [600 .. 1080]
+WINDOW_WIDTH = 1920          # px, ancho de la ventana [800 .. 1920]
+WINDOW_HEIGHT = 1080         # px, alto de la ventana [600 .. 1080]
 WINDOW_TITLE = b"Car Driving Simulator - Thrustmaster"
 TARGET_FPS = 60              # objetivo de imágenes por segundo (informativo)
 PHYSICS_HZ = 480             # Hz del paso de física; más alto = más precisa
@@ -65,7 +65,7 @@ VIEW_MODE = 0            # vista inicial: 0 = sin coche (cámara interior),
 # FFB_MAX_TORQUE_NM la dureza; el resto son efectos concretos.
 # ===========================================================================
 FFB_ENABLED = True
-FFB_GAIN = 0.5           # ganancia global del par [0 .. 1]
+FFB_GAIN = 0.8           # ganancia global del par [0 .. 1]
 FFB_INVERT = False       # True si el volante empuja hacia FUERA de la
                          # curva en vez de autocentrarse
 FFB_MAX_TORQUE_NM = 25.0 # Nm de columna que saturan el volante; BAJARLO

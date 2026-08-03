@@ -265,6 +265,11 @@ simulator/
   tracks/     circuitos (silverstone, spa, ovalo)
 tools/
   import_track.py  importa circuitos reales (TUM) y sintetiza relieve/peralte
+  import_kml.py    importa desde KML/KMZ de Google Earth (+ elevación real)
+  alignment_editor.py  editor gráfico de alineaciones en planta (rectas,
+                   círculos y clotoides) que ajusta el trazado a mano y
+                   exporta al formato del simulador (requiere matplotlib)
+  alignment_geom.py    geometría del editor (ajustes y ensamblado, testeable)
   make_oval.py     genera el óvalo peraltado
 docs/
   FISICA.md        el modelo físico explicado para un ingeniero

@@ -1,3 +1,6 @@
 pysdl2>=0.9.16
 pysdl2-dll>=2.28.0
 numpy>=1.24
+# Solo para el editor de alineaciones (tools/alignment_editor.py); el
+# simulador y las pruebas no lo necesitan:
+matplotlib>=3.5

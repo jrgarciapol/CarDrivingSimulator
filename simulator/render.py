@@ -911,8 +911,13 @@ class Hud:
         if st.wheelspin:
             font.draw_text(self.r, "TRACCION", W / 2 - 48, y_warn, 2, (255, 120, 60, 255))
             y_warn -= 24
-        if st.front_grip_used > 0.88 and st.speed_kmh > 25:
-            font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, y_warn, 2, (255, 220, 80, 255))
+        # balance al límite: sobreviraje (más urgente) tiene prioridad
+        if st.oversteer > 0.12 and st.speed_kmh > 25:
+            font.draw_text(self.r, "SOBREVIRAJE", W / 2 - 66, y_warn, 2,
+                           (255, 90, 60, 255))
+        elif st.understeer > 0.12 and st.speed_kmh > 25:
+            font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, y_warn, 2,
+                           (255, 220, 80, 255))
 
     def draw_debug(self, wheel, car_state, surface):
         """Superposición F1: ejes y botones en crudo para configurar el mapeo,
@@ -1047,7 +1052,7 @@ class Hud:
 
         box_x, box_y, box_w, box_h = W - 320, 110, 300, 508
         self._fill(box_x, box_y, box_w, box_h, (0, 0, 0, 190))
-        font.draw_text(self.r, "F2: CIRCULO DE FRICCION", box_x + 12, box_y + 10, 2)
+        font.draw_text(self.r, "F2: FRICCION Y TEMP.", box_x + 12, box_y + 10, 2)
         names = ("DI", "DD", "TI", "TD")
         radius = 52
         peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
@@ -1055,20 +1060,22 @@ class Hud:
         for i in range(4):
             cx = box_x + 80 + (i % 2) * 145
             cy = box_y + 88 + (i // 2) * 148
-            # el ARO del círculo se pinta con la temperatura de la goma:
-            # azul fría, verde en ventana, rojo recalentada — se lee de
-            # un vistazo sin saturar el panel
+            # el ARO GRUESO del círculo es la temperatura de la goma:
+            # azul fría (hay que calentarla), verde en ventana óptima,
+            # rojo recalentada. Se lee de un vistazo el estado de cada rueda.
             tt = car_state.tire_temp[i]
             if tt < cfg.TIRE_TEMP_OPT - 15.0:
-                tcol = (110, 170, 255, 255)
+                tcol = (90, 160, 255, 255)
             elif tt <= cfg.TIRE_TEMP_OPT + 15.0:
-                tcol = (95, 200, 95, 255)
+                tcol = (80, 220, 90, 255)
             else:
-                tcol = (255, 90, 70, 255)
-            for deg in range(0, 360, 5):
+                tcol = (255, 75, 55, 255)
+            # aro de 3 px de grosor y bien tupido (cada 3°) para que la
+            # temperatura sea inconfundible
+            for deg in range(0, 360, 3):
                 a = math.radians(deg)
-                self._fill(cx + radius * math.cos(a) - 1,
-                           cy + radius * math.sin(a) - 1, 2, 2, tcol)
+                self._fill(cx + radius * math.cos(a) - 2,
+                           cy + radius * math.sin(a) - 2, 4, 4, tcol)
             self._fill(cx - radius, cy, radius * 2, 1, (70, 70, 70))
             self._fill(cx, cy - radius, 1, radius * 2, (70, 70, 70))
             font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)

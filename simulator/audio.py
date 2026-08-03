@@ -6,6 +6,8 @@
 - Neumáticos: chirrido con dos formantes (~800 y ~1250 Hz) con vibrato y
   trémolo, más soplo de ruido en banda; el nivel sigue al deslizamiento.
 - Viento: ruido grave que crece con el cuadrado de la velocidad.
+- ADAS: pitido de aviso de subviraje/sobreviraje cuya frecuencia de
+  repetición sube con la severidad (tonos distintos para cada uno).
 
 Si numpy o el dispositivo de audio no están disponibles, el simulador
 funciona igualmente sin sonido.
@@ -49,6 +51,10 @@ class EngineSound:
         self._ph_trem = 0.0
         self._screech_lp = 0.0
         self._rpm_lp = 900.0
+        self._adas_ph = 0.0      # fase del tono del pitido ADAS
+        self._adas_rp = 0.0      # fase de repetición del pitido [0..1)
+        self._adas_lvl = 0.0     # severidad suavizada del aviso
+        self._adas_kind = 0      # 0 = subviraje, 1 = sobreviraje
         if not cfg.AUDIO_ENABLED or np is None:
             return
         # filtros continuos (uno por fuente de ruido)
@@ -69,7 +75,8 @@ class EngineSound:
         return self.device > 0
 
     def update(self, rpm: float, throttle: float, screech: float = 0.0,
-               engine_on: bool = True, speed: float = 0.0):
+               engine_on: bool = True, speed: float = 0.0,
+               understeer: float = 0.0, oversteer: float = 0.0):
         """Encola audio si la cola se está quedando corta. Llamar cada frame."""
         if not self.ok:
             return
@@ -138,6 +145,43 @@ class EngineSound:
         if wind_lvl > 0.02:
             wind = self._f_wind(np.random.uniform(-1, 1, n))
             wave += wind * wind_lvl * cfg.AUDIO_VOLUME * 0.5
+
+        # --- ADAS: aviso de subviraje / sobreviraje -----------------------
+        # pitido cuya FRECUENCIA DE REPETICIÓN sube con la severidad; el
+        # sobreviraje (más urgente) tiene prioridad y un tono más agudo.
+        if getattr(cfg, "ADAS_ENABLED", False):
+            if oversteer >= understeer:
+                sev, kind, tone_f = oversteer, 1, cfg.ADAS_OVERSTEER_TONE
+            else:
+                sev, kind, tone_f = understeer, 0, cfg.ADAS_UNDERSTEER_TONE
+            if kind != self._adas_kind:
+                self._adas_kind = kind
+            self._adas_lvl += (sev - self._adas_lvl) * 0.30
+            if self._adas_lvl > 0.03:
+                rep = cfg.ADAS_MIN_HZ + (cfg.ADAS_MAX_HZ - cfg.ADAS_MIN_HZ) \
+                    * min(1.0, self._adas_lvl)
+                duty = 0.55
+                # fase de repetición continua: aunque cambie el ritmo con
+                # la severidad, la fase avanza suave y no hay clics
+                rp = self._adas_rp + np.cumsum(np.full(n, rep / rate))
+                cyc = rp % 1.0
+                # envolvente de medio seno: arranca y acaba en cero -> sin
+                # discontinuidades en los bordes del pitido
+                env = np.where(cyc < duty,
+                               np.sin(np.pi * np.clip(cyc / duty, 0, 1)), 0.0)
+                ph = self._adas_ph + np.arange(1, n + 1) * (tone_f / rate)
+                if kind == 1:   # sobreviraje: segundo armónico -> más brillante
+                    tone = 0.7 * np.sin(2 * np.pi * ph) \
+                        + 0.3 * np.sin(2 * np.pi * ph * 1.5)
+                else:           # subviraje: tono simple, más grave
+                    tone = np.sin(2 * np.pi * ph)
+                self._adas_ph = float(ph[-1] % 1.0)
+                self._adas_rp = float(rp[-1] % 1.0)
+                gain = cfg.ADAS_VOLUME * cfg.AUDIO_VOLUME \
+                    * (0.45 + 0.55 * self._adas_lvl)
+                wave += tone * env * gain
+            else:
+                self._adas_rp = 0.0
 
         samples = np.clip(wave * 32767.0, -32767, 32767).astype(np.int16)
         buf = samples.tobytes()

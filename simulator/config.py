@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v3.1"
+VERSION = "v3.2"
 
 # ===========================================================================
 # VENTANA Y BUCLE
@@ -68,7 +68,7 @@ FFB_ENABLED = True
 FFB_GAIN = 0.8           # ganancia global del par [0 .. 1]
 FFB_INVERT = False       # True si el volante empuja hacia FUERA de la
                          # curva en vez de autocentrarse
-FFB_MAX_TORQUE_NM = 25.0 # Nm de columna que saturan el volante; BAJARLO
+FFB_MAX_TORQUE_NM = 35.0 # Nm de columna que saturan el volante; BAJARLO
                          # endurece el volante en apoyo y hace más evidente
                          # el aligeramiento al subvirar [20 .. 60]
 FFB_COLUMN_DAMPING = 1.3 # Nm por rad/s de giro del volante; amortigua las
@@ -325,6 +325,25 @@ PARTICLES_MAX = 260          # tope de partículas vivas [60 .. 500]
 # SONIDO
 # ===========================================================================
 AUDIO_ENABLED = True
-AUDIO_RATE = 22050           # Hz de muestreo
+AUDIO_RATE = 44100           # Hz de muestreo; 44100 (calidad CD) da un
+                             # siseo del chirrido y una aspiración más
+                             # limpios que 22050, a coste de CPU mínimo
 AUDIO_VOLUME = 0.5           # volumen general [0 .. 1]
 SCREECH_VOLUME = 1.2         # volumen del chirrido de neumáticos [0 .. 1.5]
+
+# ===========================================================================
+# ADAS — ayudas a la conducción
+#
+# Avisos acústicos del límite de adherencia: un pitido cuya frecuencia de
+# repetición sube al acercarte y superar el límite. Subviraje y sobreviraje
+# usan tonos distintos para diferenciarlos de oído.
+# ===========================================================================
+ADAS_ENABLED = True          # avisos de subviraje/sobreviraje
+ADAS_VOLUME = 0.55           # volumen de los pitidos [0 .. 1]
+ADAS_MIN_HZ = 2.5            # pitidos/s justo al entrar en el límite
+ADAS_MAX_HZ = 13.0           # pitidos/s con subviraje/sobreviraje severo
+                             # (casi tono continuo) [6 .. 20]
+ADAS_UNDERSTEER_TONE = 620.0 # Hz del aviso de subviraje (grave, "te vas
+                             # de morro") [400 .. 800]
+ADAS_OVERSTEER_TONE = 1050.0 # Hz del aviso de sobreviraje (agudo y urgente,
+                             # "se va la cola") [900 .. 1400]

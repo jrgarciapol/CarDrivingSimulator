@@ -19,7 +19,7 @@ RECORDS_PATH = os.path.join(os.path.dirname(__file__), "..", "records.json")
 
 # Parámetros que un archivo de coche puede definir
 CAR_KEYS = {
-    "NAME", "DESC", "CAR_COLOR", "CAMERA_HEIGHT",
+    "NAME", "DESC", "CAR_COLOR", "CAMERA_HEIGHT", "CAMERA_FORWARD",
     "CAR_MASS", "CAR_INERTIA_Z", "CAR_INERTIA_PITCH", "CAR_INERTIA_ROLL",
     "WHEELBASE", "WEIGHT_DIST_FRONT", "CAR_CG_HEIGHT", "CAR_TRACK_WIDTH",
     "CAR_WHEEL_RADIUS", "CAR_WHEEL_INERTIA", "STEER_RATIO",

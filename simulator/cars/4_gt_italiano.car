@@ -39,3 +39,4 @@ CAMERA_HEIGHT = 1.05              # m, ojo del conductor: casi tumbado
 UNSPRUNG_MASS = 28.0              # kg por rueda, llanta forjada
 SUSP_CAMBER_GAIN = 1.2            # geometria de circuito
 TIRE_TEMP_OPT = 95.0              # goma semislick: pide temperatura
+CAMERA_FORWARD = 0.40             # m, motor central: piloto algo adelantado

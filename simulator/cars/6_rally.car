@@ -37,3 +37,4 @@ BRAKE_BIAS_FRONT = 0.66           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.35              # m, ojo del conductor: con casco y baquet
 UNSPRUNG_MASS = 40.0              # kg por rueda, refuerzos de grava
 SUSP_CAMBER_GAIN = 0.9            # recorrido largo bien guiado
+CAMERA_FORWARD = 0.50             # m, ojo del conductor

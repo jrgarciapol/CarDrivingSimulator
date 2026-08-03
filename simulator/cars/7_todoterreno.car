@@ -38,3 +38,4 @@ CAMERA_HEIGHT = 1.80              # m, ojo del conductor: dominando el trafico
 UNSPRUNG_MASS = 65.0              # kg por rueda, llanta y freno grandes
 TIRE_VERT_STIFF = 400000.0        # N/m, globo de perfil alto
 SUSP_CAMBER_GAIN = 0.15           # eje casi rigido
+CAMERA_FORWARD = 0.80             # m, puesto alto y adelantado

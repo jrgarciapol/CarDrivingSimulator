@@ -293,14 +293,18 @@ def main(argv=None):
                               + base_seg.kappa * 40.0)
         # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,
         # 2 = coche completo 3D con camara de persecucion
+        cam_fwd = 0.0
         if view_mode == 2:
             cam_h, cam_back, ygain = 2.5, 6.5, 0.35
         else:
-            # vista interior: ojo del conductor (depende del coche);
-            # vista trasera: cámara elevada tras el coche
+            # vista interior: ojo del conductor (altura y adelantamiento
+            # dependen del coche); vista trasera: cámara elevada tras el coche
             cam_h = (cfg.CAMERA_HEIGHT, cfg.CAMERA_HEIGHT_REAR)[view_mode]
             cam_back, ygain = 0.0, None
-        scene.draw_road(track, car.state, show_line, cam_h, cam_back, ygain)
+            if view_mode == 0:
+                cam_fwd = cfg.CAMERA_FORWARD
+        scene.draw_road(track, car.state, show_line, cam_h, cam_back, ygain,
+                        cam_fwd)
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
             g = ghost_sample(ghost_best, lap_time, track.length)

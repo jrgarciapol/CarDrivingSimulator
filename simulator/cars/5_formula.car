@@ -47,3 +47,4 @@ TIRE_VERT_STIFF = 350000.0        # N/m, carcasa rigida de slick
 TIRE_VERT_DAMP = 1200.0           # N*s/m
 SUSP_CAMBER_GAIN = 1.5            # geometria de competicion
 TIRE_TEMP_OPT = 95.0              # slick: fria no agarra NADA
+CAMERA_FORWARD = 0.15             # m, piloto casi centrado en el coche

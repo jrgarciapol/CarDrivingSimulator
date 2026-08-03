@@ -43,3 +43,4 @@ UNSPRUNG_MASS = 320.0             # kg por rueda: eje rigido y gemelas
 TIRE_VERT_STIFF = 2000000.0       # N/m, neumatico de camion
 TIRE_VERT_DAMP = 8000.0           # N*s/m
 SUSP_CAMBER_GAIN = 0.0            # eje rigido: no gana caida
+CAMERA_FORWARD = 2.20             # m, conductor al frente, sobre el eje delantero

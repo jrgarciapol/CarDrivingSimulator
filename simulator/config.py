@@ -290,6 +290,12 @@ CAMERA_HEIGHT = 1.35         # m, altura del OJO del conductor en la vista
                              # interior; cada coche la redefine en su .car
                              # (formula a ras de suelo, autobus en lo alto)
                              # [0.8 .. 2.5]
+CAMERA_FORWARD = 0.5         # m que el ojo del conductor va por DELANTE del
+                             # punto del coche (centro), solo en la vista
+                             # interior. Sitúa la cámara en el puesto de
+                             # conducción y no en el centro del coche; cada
+                             # coche lo redefine (autobus muy adelante sobre
+                             # el eje, formula casi centrado) [0 .. 3]
 CAMERA_HEIGHT_REAR = 2.5     # m, altura de la cámara de la vista trasera
                              # cercana (con el coche visto desde atrás)
                              # [1.5 .. 3.5]

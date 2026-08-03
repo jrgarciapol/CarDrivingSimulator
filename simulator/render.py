@@ -109,7 +109,7 @@ class Renderer:
 
     # ------------------------------------------------------------------
     def draw_road(self, track, car_state, show_line=True, cam_height=None,
-                  cam_back=0.0, yaw_gain=None):
+                  cam_back=0.0, yaw_gain=None, cam_forward=0.0):
         """Renderizador 3D real: proyección en perspectiva de la malla de
         la carretera con la cámara anclada al coche (posición, rumbo y
         altura reales). La geometría se construye por secciones
@@ -237,6 +237,11 @@ class Renderer:
 
         # desplazar al coche (está a +n del centro) y girar por el rumbo
         cx = cx - car_state.n
+        # ojo del conductor: la cámara interior va cam_forward metros por
+        # delante del punto del coche, a lo largo del eje de la carretera
+        # (el puesto de conducción, no el centro del vehículo)
+        if cam_forward:
+            cz = cz - cam_forward
         xr = cx * cp - cz * sp
         zr = cx * sp + cz * cp + cam_back
         rxr = hx * cp - hz * sp

@@ -35,3 +35,4 @@ BRAKE_BIAS_FRONT = 0.74           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.40              # m, ojo del conductor: alto y erguido
 UNSPRUNG_MASS = 28.0              # kg por rueda, llanta pequena
 SUSP_CAMBER_GAIN = 0.5            # geometria sencilla McPherson
+CAMERA_FORWARD = 0.55             # m, ojo del conductor adelantado (coche corto)

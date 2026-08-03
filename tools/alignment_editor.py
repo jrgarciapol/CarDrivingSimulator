@@ -3,22 +3,23 @@
 Ajusta el trazado en planta de un circuito (línea del KML/KMZ) a
 alineaciones de diseño de carreteras y lo exporta al formato del simulador.
 
-Flujo (como en restitución de trazado):
-  1. Elige una herramienta y pincha puntos sobre la traza:
-       R = recta      (ajuste por mínimos cuadrados totales)
-       C = círculo    (ajuste de Kåsa; curva de radio constante)
-       P = punto      (curvatura en un punto: curva sin arco circular)
-     ENTER confirma la alineación, ESC la cancela, RETROCESO quita el
-     último punto.
+TODO se maneja con BOTONES del panel izquierdo (las teclas están reservadas
+por matplotlib). Flujo, como en restitución de trazado:
+
+  1. Pulsa RECTA / CIRCULO / PUNTO y pincha puntos sobre la traza; pulsa
+     CONFIRMAR para fijar la alineación (QUITAR PUNTO / CANCELAR corrigen).
+       - RECTA: mínimos cuadrados totales
+       - CIRCULO: ajuste de Kåsa (curva de radio constante)
+       - PUNTO: una curvatura en un punto (curva sin arco circular)
   2. Repite con todas las curvas y rectas. No hace falta pinchar en las
      transiciones: los HUECOS entre alineaciones se rellenan solos con
      CLOTOIDES (rampa lineal de curvatura). Como la rampa es lineal, una
      recta↔círculo da una clotoide, y un círculo-derecha↔círculo-izquierda
      cruza κ=0 solo (el caso clotoide↔clotoide, curva de reversa).
-  3. La línea azul es el resultado ensamblado en vivo sobre tu traza.
-       D = borra la última alineación
-       E = exporta a CSV (formato del simulador)
-  Zoom y desplazamiento: barra de herramientas de matplotlib (lupa y mano).
+  3. Las primitivas ajustadas se dibujan ancladas a la traza (recta verde,
+     círculo rojo, punto morado; clotoides discontinuas azules). SELECCIONAR
+     + pinchar elige una alineación (queda resaltada); BORRAR la elimina.
+  4. ZOOM / MOVER / VISTA COMPLETA para navegar; GUARDAR exporta el CSV.
 
 Uso:
   python tools/alignment_editor.py entrada.kml [--linea=1] [--salida=ruta.csv]
@@ -31,7 +32,12 @@ import sys
 import zipfile
 
 import matplotlib
+# anular los atajos de teclado por defecto de matplotlib: aquí todo va por
+# botones y no queremos que una tecla dispare guardar/zoom/pan del backend
+for _k in [k for k in matplotlib.rcParams if k.startswith("keymap.")]:
+    matplotlib.rcParams[_k] = []
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Button
 
 sys.path.insert(0, os.path.dirname(__file__))
 import alignment_geom as ag
@@ -75,8 +81,6 @@ def load_elev_column(csv_path, n):
 
 
 class PlanEditor:
-    TOOLS = {"r": "recta", "c": "circulo", "p": "punto"}
-
     def __init__(self, xy, out_path, elev_csv=None, step=SEGMENT_LENGTH):
         self.xy = xy
         self.stations = ag.polyline_stations(xy)
@@ -87,68 +91,105 @@ class PlanEditor:
         self.elements = []
         self.tool = None
         self.pending = []
+        self.selected = None          # índice de alineación seleccionada
 
-        self.fig, self.ax = plt.subplots(figsize=(12.5, 8.5))
+        self.fig = plt.figure(figsize=(14.0, 8.5))
+        self.ax = self.fig.add_axes([0.24, 0.06, 0.74, 0.90])
         self.ax.set_aspect("equal")
         tx = [p[0] for p in xy] + [xy[0][0]]
         ty = [p[1] for p in xy] + [xy[0][1]]
-        self.ax.plot(tx, ty, "-", color="0.6", lw=1.0, label="traza (KML)")
+        self.ax.plot(tx, ty, "-", color="0.6", lw=1.0)
         self._art = []
-        self.fig.canvas.mpl_connect("key_press_event", self.on_key)
+        self._buttons = []
+        self._build_buttons()
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
-        self._status = self.ax.set_title("")
         self.set_tool(None)
         self.redraw()
+
+    # ------------------------------------------------------------------
+    def _build_buttons(self):
+        # (etiqueta, callback, herramienta-que-activa|None)
+        specs = [
+            ("RECTA", lambda e: self.set_tool("line"), "line"),
+            ("CIRCULO", lambda e: self.set_tool("arc"), "arc"),
+            ("PUNTO", lambda e: self.set_tool("point"), "point"),
+            (None, None, None),
+            ("CONFIRMAR", lambda e: self.commit(), None),
+            ("QUITAR PUNTO", lambda e: self.undo_point(), None),
+            ("CANCELAR", lambda e: self.cancel(), None),
+            (None, None, None),
+            ("SELECCIONAR", lambda e: self.set_tool("select"), "select"),
+            ("BORRAR", lambda e: self.delete_selected(), None),
+            (None, None, None),
+            ("ZOOM", lambda e: self._toolbar("zoom"), None),
+            ("MOVER", lambda e: self._toolbar("pan"), None),
+            ("VISTA COMPLETA", lambda e: self._toolbar("home"), None),
+            (None, None, None),
+            ("GUARDAR", lambda e: self.export(), None),
+        ]
+        self._tool_buttons = {}
+        y = 0.94
+        h = 0.045
+        for label, cb, tool in specs:
+            if label is None:
+                y -= h * 0.5            # separador
+                continue
+            axb = self.fig.add_axes([0.02, y - h, 0.19, h])
+            b = Button(axb, label)
+            b.on_clicked(cb)
+            self._buttons.append(b)
+            if tool:
+                self._tool_buttons[tool] = b
+            y -= h + 0.006
+
+    def _toolbar(self, action):
+        tb = getattr(self.fig.canvas, "manager", None)
+        tb = getattr(tb, "toolbar", None) or \
+            getattr(self.fig.canvas, "toolbar", None)
+        if tb is None:
+            return
+        # al usar zoom/mover se desactiva la herramienta de dibujo
+        if action in ("zoom", "pan"):
+            self.set_tool(None)
+            getattr(tb, action)()
+        elif action == "home":
+            tb.home()
 
     # ------------------------------------------------------------------
     def set_tool(self, t):
         self.tool = t
         self.pending = []
-        name = self.TOOLS.get(t, "ninguna")
-        self.ax.set_title(
-            f"Herramienta: {name.upper()}   |   R recta  C circulo  P punto  "
-            f"ENTER ok  ESC cancela  D borra  E exporta   |   "
-            f"{len(self.elements)} alineaciones")
+        for name, b in self._tool_buttons.items():
+            b.ax.set_facecolor("#ffd27f" if name == t else "0.85")
+        title = {None: "ninguna", "line": "RECTA", "arc": "CIRCULO",
+                 "point": "PUNTO", "select": "SELECCIONAR"}.get(t, "-")
+        self.ax.set_title(f"Herramienta activa: {title}    |    "
+                          f"{len(self.elements)} alineaciones")
         self.fig.canvas.draw_idle()
 
-    def on_key(self, e):
-        k = (e.key or "").lower()
-        if k in self.TOOLS:
-            self.set_tool(k)
-        elif k == "enter":
-            self.commit()
-        elif k == "escape":
-            self.set_tool(self.tool)
-        elif k == "backspace":
-            if self.pending:
-                self.pending.pop()
-                self.redraw()
-        elif k == "d":
-            if self.elements:
-                self.elements.pop()
-                self.redraw()
-        elif k == "e":
-            self.export()
-
     def on_click(self, e):
-        # no capturar clics cuando la barra está en modo zoom/desplazar
+        # ignorar clics en el panel de botones o con zoom/mover activos
+        if e.inaxes != self.ax or e.button != 1 or e.xdata is None:
+            return
         tb = getattr(self.fig.canvas, "toolbar", None)
         if tb is not None and getattr(tb, "mode", ""):
             return
-        if self.tool is None or e.inaxes != self.ax or e.button != 1:
-            return
-        if e.xdata is None:
-            return
-        self.pending.append((e.xdata, e.ydata))
-        self.redraw()
+        if self.tool in ("line", "arc", "point"):
+            self.pending.append((e.xdata, e.ydata))
+            self.redraw()
+        elif self.tool == "select":
+            self.selected = self._nearest_element((e.xdata, e.ydata))
+            self.redraw()
 
     def commit(self):
-        need = 2 if self.tool == "line" or self.tool == "r" else 3
-        kind = {"r": "line", "c": "arc", "p": "point"}.get(self.tool)
-        if kind is None or len(self.pending) < (2 if kind == "line" else 3):
+        if self.tool not in ("line", "arc", "point"):
+            return
+        if len(self.pending) < (2 if self.tool == "line" else 3):
+            print("faltan puntos para ajustar la alineación")
             return
         try:
-            el = ag.build_element(kind, self.pending, self.xy, self.stations)
+            el = ag.build_element(self.tool, self.pending, self.xy,
+                                  self.stations)
         except Exception as ex:               # ajuste degenerado
             print("no se pudo ajustar:", ex)
             return
@@ -157,39 +198,66 @@ class PlanEditor:
         self.set_tool(self.tool)
         self.redraw()
 
+    def undo_point(self):
+        if self.pending:
+            self.pending.pop()
+            self.redraw()
+
+    def cancel(self):
+        self.pending = []
+        self.redraw()
+
+    def delete_selected(self):
+        if self.selected is not None and self.selected < len(self.elements):
+            self.elements.pop(self.selected)
+        elif self.elements:
+            self.elements.pop()
+        self.selected = None
+        self.set_tool(self.tool)
+        self.redraw()
+
+    def _nearest_element(self, pt):
+        best_d, best_i = 1e30, None
+        for i, el in enumerate(self.elements):
+            for q in ag.element_polyline(el, self.xy, self.stations, 20):
+                d = (q[0] - pt[0]) ** 2 + (q[1] - pt[1]) ** 2
+                if d < best_d:
+                    best_d, best_i = d, i
+        return best_i
+
     # ------------------------------------------------------------------
     def redraw(self):
         for a in self._art:
             a.remove()
         self._art = []
-        # primitivas ajustadas, dibujadas ANCLADAS a la traza (sin deriva
-        # de integración): recta verde, círculo rojo, punto morado
-        els = sorted(self.elements, key=lambda e: e["s0"])
-        for el in els:
+        # primitivas ajustadas, ANCLADAS a la traza (sin deriva): recta
+        # verde, círculo rojo, punto morado; la seleccionada, gruesa/naranja
+        for i, el in enumerate(self.elements):
             col = {"line": "#1a9641", "arc": "#d7191c",
                    "point": "#b03fb0"}[el["kind"]]
+            lw = 2.4
+            if i == self.selected:
+                col, lw = "#ff8c00", 4.0
             poly = ag.element_polyline(el, self.xy, self.stations)
             self._art += self.ax.plot([p[0] for p in poly],
                                       [p[1] for p in poly], "-",
-                                      color=col, lw=2.4)
+                                      color=col, lw=lw)
             self._art += self.ax.plot([poly[0][0], poly[-1][0]],
                                       [poly[0][1], poly[-1][1]], "o",
                                       color=col, ms=4)
-        # clotoides: conectan el fin de una alineación con el inicio de la
-        # siguiente (línea discontinua azul = la transición que se rellena)
+        # clotoides: conectan alineaciones consecutivas (discontinua azul)
+        els = sorted(self.elements, key=lambda e: e["s0"])
         for i in range(len(els)):
-            e0 = els[i]
-            e1 = els[(i + 1) % len(els)]
-            p0 = ag.element_polyline(e0, self.xy, self.stations)[-1]
-            p1 = ag.element_polyline(e1, self.xy, self.stations)[0]
+            p0 = ag.element_polyline(els[i], self.xy, self.stations)[-1]
+            p1 = ag.element_polyline(els[(i + 1) % len(els)], self.xy,
+                                     self.stations)[0]
             self._art += self.ax.plot([p0[0], p1[0]], [p0[1], p1[1]], "--",
                                       color="#2c7fb8", lw=1.3)
         # puntos en curso
         if self.pending:
-            xs = [p[0] for p in self.pending]
-            ys = [p[1] for p in self.pending]
-            self._art += self.ax.plot(xs, ys, "x", color="orange", ms=9,
-                                      mew=2)
+            self._art += self.ax.plot([p[0] for p in self.pending],
+                                      [p[1] for p in self.pending], "x",
+                                      color="orange", ms=9, mew=2)
         self.fig.canvas.draw_idle()
 
     def _trace_point(self, s):

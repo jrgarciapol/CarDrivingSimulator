@@ -352,7 +352,15 @@ class Car:
             self._prev_bump[i] = bump[i]
             comp = bump[i] - st.zu[i]          # compresión de la goma
             comp_v = bump_v - st.zu_v[i]
-            f_tire_v[i] = cfg.TIRE_VERT_STIFF * comp + cfg.TIRE_VERT_DAMP * comp_v
+            # el neumático solo EMPUJA, nunca tira: en cuanto la fuerza
+            # total de contacto (estática + desviación) se anula, la rueda
+            # está en el aire y ni el muelle ni la amortiguación de la
+            # goma actúan. Trabajamos en desviaciones sobre el equilibrio,
+            # así que el despegue no es comp = 0 (esa es la compresión
+            # nominal en parado) sino f_desviación = -carga_estática.
+            f_tire_v[i] = max(-self._static_fz[i],
+                              cfg.TIRE_VERT_STIFF * comp
+                              + cfg.TIRE_VERT_DAMP * comp_v)
             # la rueda también vive en el sistema de la carretera: la
             # rasante (a_road) la acelera igual que al chasis
             zu_acc = (f_tire_v[i] - f_susp[i]) / cfg.UNSPRUNG_MASS - a_road

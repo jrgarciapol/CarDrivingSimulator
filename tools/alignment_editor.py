@@ -284,7 +284,18 @@ class PlanEditor:
                 / (2 * win + 1)
             b = max(-cap, min(cap, k * BANK_SCALE))
             banks.append(b if abs(b) > 0.004 else 0.0)
-        with open(self.out_path, "w") as f:
+        # guardar de forma ROBUSTA: crear la carpeta si no existe y avisar
+        # con la ruta ABSOLUTA (en pantalla y por consola). Si por lo que sea
+        # el destino no se puede escribir, se cae a la carpeta actual para
+        # NUNCA perder el trabajo.
+        path = os.path.abspath(self.out_path)
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            fh = open(path, "w")
+        except OSError:
+            path = os.path.abspath("editado.csv")
+            fh = open(path, "w")
+        with fh as f:
             f.write("# Trazado en planta EDITADO a mano (alignment_editor):\n")
             f.write("# rectas + circulos + clotoides; rasante conservada\n")
             f.write("# kappa_1pm,elev_m,kerb,peralte_rad (seg %.1f m)\n"
@@ -293,8 +304,11 @@ class PlanEditor:
                 kerb = 1 if abs(k) > KERB_KAPPA else 0
                 f.write("%.6f,%.2f,%d,%.4f\n" % (k, elev[i], kerb, banks[i]))
         r_min = 1.0 / max(1e-9, max(abs(k) for k in ks))
-        print(f"exportado {self.out_path}: {n} seg, {self.L:.0f} m, "
-              f"radio min {r_min:.0f} m, {len(self.elements)} alineaciones")
+        print(f"GUARDADO en {path}  ({n} seg, {self.L:.0f} m, "
+              f"radio min {r_min:.0f} m, {len(self.elements)} alineaciones)")
+        self.ax.set_title(f"GUARDADO: {path}    |    "
+                          f"{len(self.elements)} alineaciones")
+        self.fig.canvas.draw_idle()
 
     def show(self):
         print(__doc__)
@@ -315,8 +329,12 @@ def main():
         print(__doc__)
         raise SystemExit(1)
     src = args[0]
-    out = out or os.path.join("simulator", "tracks", "editado.csv")
-    elev_csv = os.path.join("simulator", "tracks", "spa.csv")
+    # rutas por defecto RELATIVAS AL REPOSITORIO (la carpeta padre de
+    # tools/), no al directorio desde el que se ejecuta: así GUARDAR
+    # siempre escribe en simulator/tracks/ del proyecto, exista o no el cwd
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    out = out or os.path.join(root, "simulator", "tracks", "editado.csv")
+    elev_csv = os.path.join(root, "simulator", "tracks", "spa.csv")
     xy = load_plan(src, line_idx)
     ed = PlanEditor(xy, out, elev_csv if os.path.exists(elev_csv) else None)
     ed.show()

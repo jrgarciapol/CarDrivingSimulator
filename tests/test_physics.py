@@ -551,6 +551,40 @@ def main():
                          f"yaw={y_geo:.3f} vs {y_rigid:.3f} sin geometria"))
 
     # ------------------------------------------------------------------
+    print("--- balance: subviraje / sobreviraje ---")
+
+    # dirección creciente a velocidad fija: el delantero satura antes ->
+    # la senal de subviraje sube y la de sobreviraje se queda en cero
+    def balance_at(steer, thr, v, gear=None):
+        c = Car()
+        settle(c, flat, 0.5)
+        set_speed(c, v)
+        if gear:
+            c.state.gear = gear
+        for k in range(int(1.5 / DT)):
+            c.step(DT, steer, thr, 0.0, flat)
+        return c.state.understeer, c.state.oversteer
+
+    u_soft, o_soft = balance_at(0.12, 0.3, 30.0)
+    u_hard, o_hard = balance_at(0.30, 0.3, 30.0)
+    results.append(check("el subviraje sube con la direccion",
+                         u_hard > u_soft and u_hard > 0.3,
+                         f"U {u_soft:.2f} -> {u_hard:.2f}"))
+    results.append(check("subvirando no se marca sobreviraje",
+                         o_hard < 0.05, f"O={o_hard:.2f}"))
+
+    # RWD a fondo en 2a con algo de volante: el trasero patina -> sobreviraje
+    u_pow, o_pow = balance_at(0.15, 1.0, 14.0, gear=2)
+    results.append(check("el sobreviraje se marca al patinar el trasero",
+                         o_pow > 0.3, f"O={o_pow:.2f}"))
+
+    # acelerar en linea RECTA (sin volante) no debe marcar balance: es
+    # patinaje, no perdida de eje
+    u_line, o_line = balance_at(0.0, 1.0, 14.0, gear=2)
+    results.append(check("acelerar recto no marca sobreviraje",
+                         o_line < 0.05, f"O={o_line:.2f}"))
+
+    # ------------------------------------------------------------------
     print("--- FFB y circuito real ---")
     car = Car()
     settle(car, flat, 1.0)

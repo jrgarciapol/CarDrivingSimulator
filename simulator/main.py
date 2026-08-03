@@ -269,10 +269,17 @@ def main(argv=None):
                            abs(st.slip_ratio[i]) / cfg.TIRE_PEAK_SLIP_RATIO,
                            abs(st.slip_angle[i]) / peak_a)
         # el chirrido arranca justo en el pico de agarre: también suena
-        # el empuje de subviraje, no solo los derrapes grandes
-        screech = max(0.0, min(1.0, (over - 0.96) * 1.6))
+        # el empuje de subviraje, no solo los derrapes grandes (onset a
+        # 0.92 con pendiente firme: el subviraje al límite ya canta)
+        screech = max(0.0, min(1.0, (over - 0.92) * 2.1))
+        # ADAS: alimenta los avisos con el balance de la física, pero solo
+        # en pista (fuera, en la hierba, todo desliza y no es un aviso útil)
+        adas_u = st.understeer
+        adas_o = st.oversteer
+        if abs(st.n) > cfg.ROAD_HALF_WIDTH + cfg.KERB_WIDTH:
+            adas_u = adas_o = 0.0
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
-                     abs(st.vx))
+                     abs(st.vx), adas_u, adas_o)
 
         # ------------------------------------------------ render
         sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)

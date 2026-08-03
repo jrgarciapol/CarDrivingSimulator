@@ -125,6 +125,8 @@ class CarState:
         self.wheelspin = False
         self.front_grip_used = 0.0
         self.rear_grip_used = 0.0
+        self.understeer = 0.0   # 0..1: cuánto se va el tren delantero
+        self.oversteer = 0.0    # 0..1: cuánto se va el tren trasero
         self.alpha_front = 0.0
         self.steer_column_torque = 0.0
 
@@ -692,6 +694,23 @@ class Car:
         st.alpha_front = (st.slip_angle[FL] + st.slip_angle[FR]) / 2.0
         st.front_grip_used = max(grip_used[FL], grip_used[FR])
         st.rear_grip_used = max(grip_used[RL], grip_used[RR])
+
+        # balance dinámico subviraje/sobreviraje (0..1), en "unidades de
+        # pico" de deriva: el eje que MÁS pasado del pico va marca la
+        # tendencia. Subviraje = el delantero se va antes; sobreviraje =
+        # el trasero (por deriva o por patinaje de tracción). Solo cuenta
+        # si hay deriva real (no patinaje en línea recta) y a velocidad de
+        # conducción. Es la señal que alimentan el chirrido y el ADAS.
+        af = max(abs(st.slip_angle[FL]), abs(st.slip_angle[FR])) / peak_a
+        ar = max(abs(st.slip_angle[RL]), abs(st.slip_angle[RR])) / peak_a
+        sr_rear = max(abs(st.slip_ratio[RL]), abs(st.slip_ratio[RR])) / peak_s
+        rear_axle = max(ar, sr_rear * 0.5)   # el patinaje pesa la mitad
+        if max(af, ar) > 0.5 and vx_abs > 6.0:
+            st.understeer = max(0.0, min(1.0, af - max(rear_axle, 1.0)))
+            st.oversteer = max(0.0, min(1.0, rear_axle - max(af, 1.0)))
+        else:
+            st.understeer = 0.0
+            st.oversteer = 0.0
 
         # --- par en la columna para el force feedback -------------------
         mz = 0.0

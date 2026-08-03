@@ -115,6 +115,13 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
 - **Humo, chispas y polvo**: partículas procedurales al pasarse del límite
   de agarre — humo blanco derrapando en asfalto, chispas naranjas sobre
   los pianos y polvo en la hierba (`PARTICLES_ENABLED`).
+- **ADAS (avisos acústicos)**: un pitido avisa cuando te acercas y superas
+  el límite de adherencia; su frecuencia de repetición sube con la
+  severidad. Subviraje (tono grave) y sobreviraje (tono agudo y urgente)
+  suenan distinto para diferenciarlos de oído (`ADAS_ENABLED`).
+- **Temperatura de neumáticos en F2**: el aro de color de cada círculo de
+  fricción indica la temperatura de esa goma (azul fría, verde en ventana
+  óptima, roja recalentada), con el valor numérico al lado.
 - **Chirrido de neumáticos**: cuando una rueda supera el pico de agarre
   (bloqueo de frenada o deriva al límite en curva) se oye chirriar, con
   volumen proporcional al deslizamiento. La hierba no chirría (`SCREECH_VOLUME`).

@@ -911,11 +911,13 @@ class Hud:
         if st.wheelspin:
             font.draw_text(self.r, "TRACCION", W / 2 - 48, y_warn, 2, (255, 120, 60, 255))
             y_warn -= 24
-        # balance al límite: sobreviraje (más urgente) tiene prioridad
-        if st.oversteer > 0.12 and st.speed_kmh > 25:
+        # balance al límite: el pitido ADAS avisa antes (en la aproximación);
+        # el TEXTO aparece al cruzar el límite de verdad. Sobreviraje (más
+        # urgente) tiene prioridad.
+        if st.oversteer > 0.28 and st.speed_kmh > 25:
             font.draw_text(self.r, "SOBREVIRAJE", W / 2 - 66, y_warn, 2,
                            (255, 90, 60, 255))
-        elif st.understeer > 0.12 and st.speed_kmh > 25:
+        elif st.understeer > 0.28 and st.speed_kmh > 25:
             font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, y_warn, 2,
                            (255, 220, 80, 255))
 

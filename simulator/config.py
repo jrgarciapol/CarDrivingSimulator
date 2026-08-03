@@ -340,7 +340,16 @@ SCREECH_VOLUME = 1.2         # volumen del chirrido de neumáticos [0 .. 1.5]
 # ===========================================================================
 ADAS_ENABLED = True          # avisos de subviraje/sobreviraje
 ADAS_VOLUME = 0.55           # volumen de los pitidos [0 .. 1]
-ADAS_MIN_HZ = 2.5            # pitidos/s justo al entrar en el límite
+ADAS_WARN_FROM = 0.72        # fracción del pico de agarre a la que EMPIEZA
+                             # el aviso. Este es el mando del "cuándo": es
+                             # el tiempo de antelación, NO la velocidad del
+                             # pitido. Bajarlo (p.ej. 0.62) avisa antes,
+                             # con más margen para corregir, a riesgo de
+                             # pitar en cada curva rápida; subirlo (0.85)
+                             # solo avisa casi encima del límite [0.55 .. 0.95]
+ADAS_MIN_HZ = 2.5            # pitidos/s al ENTRAR en el aviso (tic lento).
+                             # MIN/MAX_HZ controlan la VELOCIDAD del pitido
+                             # según la gravedad, no cuándo empieza [1 .. 6]
 ADAS_MAX_HZ = 13.0           # pitidos/s con subviraje/sobreviraje severo
                              # (casi tono continuo) [6 .. 20]
 ADAS_UNDERSTEER_TONE = 620.0 # Hz del aviso de subviraje (grave, "te vas

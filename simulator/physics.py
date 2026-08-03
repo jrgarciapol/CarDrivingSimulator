@@ -705,9 +705,15 @@ class Car:
         ar = max(abs(st.slip_angle[RL]), abs(st.slip_angle[RR])) / peak_a
         sr_rear = max(abs(st.slip_ratio[RL]), abs(st.slip_ratio[RR])) / peak_s
         rear_axle = max(ar, sr_rear * 0.5)   # el patinaje pesa la mitad
+        # el aviso arranca en la APROXIMACIÓN al límite (ADAS_WARN_FROM del
+        # pico), no una vez pasado: así da tiempo a corregir. El eje que se
+        # va antes marca la tendencia; en equilibrio neutro (ambos ejes
+        # igual de cargados) no se marca ninguno, evitando el pitido
+        # constante en el apoyo balanceado.
+        floor = getattr(cfg, "ADAS_WARN_FROM", 0.72)
         if max(af, ar) > 0.5 and vx_abs > 6.0:
-            st.understeer = max(0.0, min(1.0, af - max(rear_axle, 1.0)))
-            st.oversteer = max(0.0, min(1.0, rear_axle - max(af, 1.0)))
+            st.understeer = max(0.0, min(1.0, af - max(rear_axle, floor)))
+            st.oversteer = max(0.0, min(1.0, rear_axle - max(af, floor)))
         else:
             st.understeer = 0.0
             st.oversteer = 0.0

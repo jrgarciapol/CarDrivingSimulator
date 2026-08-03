@@ -88,8 +88,10 @@ vive en coordenadas locales de la carretera (s, n, psi).
   en perspectiva real, malla adaptativa 1/2/4 m, peralte inclinando cada
   sección, cámara solidaria al plano local del asfalto y al chasis —
   heave/pitch en las vistas interiores).
-- El relieve y peralte de Silverstone/Spa son **sintéticos** (la base TUM
-  solo trae la planta): plausibles y deterministas, no topografía real.
+- Spa tiene **geometría y rasante reales** (eje trazado en Google Earth +
+  elevación del modelo EU-DEM 25 m vía OpenTopoData, `tools/import_kml.py`);
+  su peralte es sintético. Silverstone viene de la base TUM (solo planta),
+  así que su relieve y peralte son sintéticos: plausibles y deterministas.
 - Simplificaciones asumidas (candidatas a futuro, por orden de valor):
   desgaste y presión de neumáticos, geometría de dirección completa
   (caster/convergencia), embrague con pedal y calado real, colisiones,

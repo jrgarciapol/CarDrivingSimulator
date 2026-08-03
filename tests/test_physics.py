@@ -573,6 +573,14 @@ def main():
     results.append(check("subvirando no se marca sobreviraje",
                          o_hard < 0.05, f"O={o_hard:.2f}"))
 
+    # aviso TEMPRANO: en la aproximación al límite (tren delantero cargado
+    # ~90 % pero aún NO pasado del pico) el subviraje ya es no nulo, para
+    # que el pitido ADAS dé margen a corregir antes del deslizamiento
+    u_appr, o_appr = balance_at(0.14, 0.3, 30.0)
+    results.append(check("el aviso arranca en la aproximacion al limite",
+                         0.05 < u_appr < 0.35,
+                         f"U={u_appr:.2f} (grip ~0.9, aun sin subvirar)"))
+
     # RWD a fondo en 2a con algo de volante: el trasero patina -> sobreviraje
     u_pow, o_pow = balance_at(0.15, 1.0, 14.0, gear=2)
     results.append(check("el sobreviraje se marca al patinar el trasero",

@@ -69,11 +69,15 @@ calzada y cámara solidaria al chasis: cabecea al frenar y sube y baja con la
 suspensión), cronómetro de vueltas y sonido de motor y chirrido de
 neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
 
-- **Silverstone** (5,9 km) y **Spa-Francorchamps** (7,0 km) reales,
-  importados del eje central escaneado del
-  [racetrack-database de la TU München](https://github.com/TUMFTM/racetrack-database).
-  La base solo trae la planta, así que el relieve (82 y 105 m de desnivel) y
-  el peralte (hasta 6°) son sintéticos: plausibles y deterministas.
+- **Spa-Francorchamps** (7,0 km) con **geometría y rasante REALES**: el eje
+  se trazó en Google Earth y la altura de cada punto se consultó en un
+  modelo digital de elevación (EU-DEM 25 m), dando el desnivel real de
+  **105 m** (Eau Rouge/Raidillon incluidos). Regenerable con
+  `tools/import_kml.py`.
+- **Silverstone** (5,9 km) importado del eje central escaneado del
+  [racetrack-database de la TU München](https://github.com/TUMFTM/racetrack-database);
+  como esa base solo trae la planta, su relieve (82 m) es sintético. El
+  peralte (hasta 6°) es sintético en ambos.
 - **Óvalo peraltado** (2,1 km): curvas de 180° con 18° de peralte — se toman
   a más de 170 km/h donde en llano el límite serían ~150.
 - El circuito de pruebas integrado (2,8 km, con colinas y dos curvas

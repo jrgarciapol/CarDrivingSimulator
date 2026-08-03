@@ -1055,11 +1055,20 @@ class Hud:
         for i in range(4):
             cx = box_x + 80 + (i % 2) * 145
             cy = box_y + 88 + (i // 2) * 148
-            # aro rho = 1 y ejes
+            # el ARO del círculo se pinta con la temperatura de la goma:
+            # azul fría, verde en ventana, rojo recalentada — se lee de
+            # un vistazo sin saturar el panel
+            tt = car_state.tire_temp[i]
+            if tt < cfg.TIRE_TEMP_OPT - 15.0:
+                tcol = (110, 170, 255, 255)
+            elif tt <= cfg.TIRE_TEMP_OPT + 15.0:
+                tcol = (95, 200, 95, 255)
+            else:
+                tcol = (255, 90, 70, 255)
             for deg in range(0, 360, 5):
                 a = math.radians(deg)
                 self._fill(cx + radius * math.cos(a) - 1,
-                           cy + radius * math.sin(a) - 1, 2, 2, (110, 110, 110))
+                           cy + radius * math.sin(a) - 1, 2, 2, tcol)
             self._fill(cx - radius, cy, radius * 2, 1, (70, 70, 70))
             self._fill(cx, cy - radius, 1, radius * 2, (70, 70, 70))
             font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)
@@ -1098,14 +1107,7 @@ class Hud:
             r_px = max(2, min(16, int(1 + cfg.TELEM_DOT_LOAD_GAIN * d0[2])))
             self._fill(cx + d0[0] * radius - r_px, cy - d0[1] * radius - r_px,
                        r_px * 2, r_px * 2, color)
-            # temperatura de la goma: azul fria / verde en ventana / roja
-            tt = car_state.tire_temp[i]
-            if tt < cfg.TIRE_TEMP_OPT - 15.0:
-                tcol = (110, 170, 255, 255)
-            elif tt <= cfg.TIRE_TEMP_OPT + 15.0:
-                tcol = (120, 230, 120, 255)
-            else:
-                tcol = (255, 90, 70, 255)
+            # y el valor exacto, compacto, del color del aro
             font.draw_text(self.r, f"{tt:3.0f}C", cx + radius - 26,
                            cy - radius - 4, 2, tcol)
         font.draw_text(self.r, "PUNTO GRANDE = MAS CARGA",

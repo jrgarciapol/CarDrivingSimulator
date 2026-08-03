@@ -7,7 +7,7 @@ paréntesis [mín .. máx]. Tras editar, basta reiniciar el simulador.
 
 # Versión del simulador: se muestra en pantalla (esquina inferior) y en la
 # consola al arrancar, para comprobar qué copia estás ejecutando.
-VERSION = "v3.0"
+VERSION = "v3.1"
 
 # ===========================================================================
 # VENTANA Y BUCLE

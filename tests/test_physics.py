@@ -474,17 +474,23 @@ def main():
     kerb = KerbTrack()
     min_fz = 1e9
     max_heave = 0.0
+    max_zu = 0.0
     for k in range(int(1.0 / DT)):
         car.step(DT, 0.0, 0.2, 0.0, kerb)
         if k > int(0.3 / DT):
             min_fz = min(min_fz, min(car.state.fz[0], car.state.fz[1]))
             max_heave = max(max_heave, abs(car.state.heave))
+            max_zu = max(max_zu, max(abs(z) for z in car.state.zu))
     static_f = cfg.CAR_MASS * 9.81 * cfg.WEIGHT_DIST_FRONT / 2.0
     results.append(check("la rueda vuela sobre el piano corrugado",
                          min_fz < static_f * 0.45,
                          f"fz min={min_fz:.0f} N (estatica {static_f:.0f})"))
     results.append(check("el chasis filtra el piano (no lo copia)",
                          max_heave < 0.02, f"heave max={max_heave*1000:.1f} mm"))
+    # en el aire el neumatico no tira de la rueda hacia el suelo: el
+    # recorrido de la masa no suspendida queda acotado (sin explosiones)
+    results.append(check("la rueda en el aire queda acotada",
+                         max_zu < 0.12, f"zu max={max_zu*1000:.0f} mm"))
 
     # derrapar calienta la goma; rodar tranquilo la enfria
     car = Car()

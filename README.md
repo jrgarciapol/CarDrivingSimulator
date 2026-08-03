@@ -72,8 +72,11 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
 - **Spa-Francorchamps** (7,0 km) con **geometría y rasante REALES**: el eje
   se trazó en Google Earth y la altura de cada punto se consultó en un
   modelo digital de elevación (EU-DEM 25 m), dando el desnivel real de
-  **105 m** (Eau Rouge/Raidillon incluidos). Regenerable con
-  `tools/import_kml.py`.
+  **103 m** (Eau Rouge/Raidillon incluidos). Además, el trazado se
+  **idealiza a alineaciones de diseño de carreteras** (rectas, círculos y
+  clotoides en planta; rasantes y acuerdos parabólicos en alzado),
+  eliminando el temblor de trazar a mano — la curvatura queda 29× más lisa.
+  Todo regenerable con `tools/import_kml.py --idealizar`.
 - **Silverstone** (5,9 km) importado del eje central escaneado del
   [racetrack-database de la TU München](https://github.com/TUMFTM/racetrack-database);
   como esa base solo trae la planta, su relieve (82 m) es sintético. El

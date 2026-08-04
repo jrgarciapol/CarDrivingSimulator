@@ -77,6 +77,12 @@ def mercator(lat, lon):
     return x, y
 
 
+def inv_mercator(x, y):
+    lon = math.degrees(x / R_EARTH)
+    lat = math.degrees(2 * math.atan(math.exp(y / R_EARTH)) - math.pi / 2)
+    return lat, lon
+
+
 def deg2tile(lat, lon, z):
     n = 2 ** z
     xt = (lon + 180.0) / 360.0 * n
@@ -143,6 +149,14 @@ class GeorefTool:
         self.ctrl = {1: {"idx": None, "ll": None},
                      2: {"idx": None, "ll": None}}
         self.picking = None
+        # fase de ajuste sobre la ortofoto (en la MISMA ventana)
+        self.mode = "pick"            # "pick" (elegir puntos) | "adjust"
+        self.M0 = None                # trazado en mercator (colocacion inicial)
+        self.C0 = None                # centroide (para girar/escalar)
+        self.adj = {"th": 0.0, "s": 1.0, "tx": 0.0, "ty": 0.0}
+        self._moving = False
+        self._last = None
+        self._track_art = None
 
         self.fig = plt.figure(figsize=(13.5, 8.5))
         self.ax = self.fig.add_axes([0.30, 0.08, 0.68, 0.88])
@@ -159,7 +173,9 @@ class GeorefTool:
                           "reconocible; pega su coordenada de Google Earth")
         self._marks = []
         self._build_widgets()
-        self.fig.canvas.mpl_connect("button_press_event", self.on_click)
+        self.fig.canvas.mpl_connect("button_press_event", self.on_press)
+        self.fig.canvas.mpl_connect("motion_notify_event", self.on_motion)
+        self.fig.canvas.mpl_connect("button_release_event", self.on_release)
 
     def _build_widgets(self):
         self._w = []
@@ -200,6 +216,15 @@ class GeorefTool:
         }
         btn(0.19, 0.33, 0.075, 0.055, "VISTA",
             lambda e: self._toolbar("home"))
+        # ajuste fino sobre la ortofoto (solo activo tras VER SATÉLITE)
+        self._move_btn = btn(0.02, 0.24, 0.115, 0.055, "MOVER TRAZADO",
+                             lambda e: self._toggle_move())
+        btn(0.145, 0.24, 0.055, 0.055, "GIRAR −",
+            lambda e: self._rotate(-1))
+        btn(0.205, 0.24, 0.055, 0.055, "GIRAR +",
+            lambda e: self._rotate(+1))
+        btn(0.145, 0.175, 0.055, 0.055, "ESC −", lambda e: self._scale(0.99))
+        btn(0.205, 0.175, 0.055, 0.055, "ESC +", lambda e: self._scale(1.01))
         self.status = self.fig.text(0.02, 0.10, "", fontsize=9, wrap=True)
         self._refresh_status()
 
@@ -246,12 +271,15 @@ class GeorefTool:
                           f"reconocible", color="#1a7")
         self.fig.canvas.draw_idle()
 
-    def on_click(self, e):
-        if self.picking is None or e.inaxes != self.ax or e.xdata is None:
+    def on_press(self, e):
+        if e.inaxes != self.ax or e.xdata is None or self._nav_active():
             return
-        if self._nav_active():          # zoom/mover manda: no elegir punto
+        if self.mode == "adjust" and self._moving:
+            self._last = (e.xdata, e.ydata)   # empezar a arrastrar el trazado
             return
-        # índice del punto del CSV más cercano al clic
+        if self.picking is None:
+            return
+        # índice del punto del CSV más cercano al clic (fase de elección)
         i = min(range(len(self.pts)),
                 key=lambda k: (self.pts[k][0] - e.xdata) ** 2
                 + (self.pts[k][1] - e.ydata) ** 2)
@@ -259,6 +287,18 @@ class GeorefTool:
         self.picking = None
         self._draw_marks()
         self._refresh_status()
+
+    def on_motion(self, e):
+        if (not self._moving or self._last is None
+                or e.inaxes != self.ax or e.xdata is None):
+            return
+        self.adj["tx"] += e.xdata - self._last[0]
+        self.adj["ty"] += e.ydata - self._last[1]
+        self._last = (e.xdata, e.ydata)
+        self._draw_track_merc()
+
+    def on_release(self, e):
+        self._last = None
 
     def _set_coord(self, n, s):
         if not s.strip():
@@ -330,47 +370,94 @@ class GeorefTool:
                                 self.pts[B["idx"]], B["ll"])
 
     def ver_satelite(self):
+        """Descarga la ortofoto y la pinta en la MISMA ventana con el trazado
+        encima, pasando a modo AJUSTE (arrastrar / girar / escalar)."""
         if not self._ready():
             self.status.set_text("faltan los 2 puntos (índice + coordenada)")
             self.fig.canvas.draw_idle()
             return
+        import numpy as np
         latlon = self._georef()
+        self.M0 = np.array([mercator(la, lo) for la, lo in latlon])
+        self.C0 = self.M0.mean(axis=0)
+        self.adj = {"th": 0.0, "s": 1.0, "tx": 0.0, "ty": 0.0}
         self.status.set_text("descargando ortofoto…")
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
         moza = fetch_esri_mosaic(latlon)
-        fig2, ax2 = plt.subplots(figsize=(9, 9))
-        mx = [mercator(la, lo)[0] for la, lo in latlon]
-        my = [mercator(la, lo)[1] for la, lo in latlon]
+        self.ax.clear()
         if moza is not None:
             img, ext = moza
-            ax2.imshow(img, extent=ext, origin="upper")
-        ax2.plot(mx + [mx[0]], my + [my[0]], "-", color="#ffcc00", lw=2.0)
-        for n in (1, 2):
-            la, lo = self.ctrl[n]["ll"]
-            x, y = mercator(la, lo)
-            ax2.plot(x, y, "o", color="#1a7", ms=10, mfc="none", mew=2.5)
-        ax2.set_aspect("equal")
-        ax2.set_title("Planta georreferenciada sobre ortofoto (amarillo). "
-                      "Si calza, EXPORTA en la otra ventana.")
-        ax2.set_xticks([])
-        ax2.set_yticks([])
-        fig2.tight_layout()
-        plt.show(block=False)
+            self.ax.imshow(img, extent=ext, origin="upper")
+        else:
+            self.status.set_text("sin ortofoto (sin red): ajusta a ciegas o "
+                                 "revisa la conexión")
+        self.ax.set_aspect("equal")
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.ax.set_title("MOVER TRAZADO + GIRAR/ESC hasta que calce sobre la "
+                          "ortofoto; luego EXPORTAR KML", color="#7b2d8e")
+        self._track_art = None
+        self.mode = "adjust"
+        self._draw_track_merc()
+
+    def _apply_adj(self):
+        """Puntos del trazado en mercator con el ajuste manual aplicado."""
+        import numpy as np
+        th, s = self.adj["th"], self.adj["s"]
+        c, si = math.cos(th), math.sin(th)
+        Rm = np.array([[c, -si], [si, c]])
+        P = (self.M0 - self.C0) * s @ Rm.T + self.C0
+        P = P + np.array([self.adj["tx"], self.adj["ty"]])
+        return P
+
+    def _draw_track_merc(self):
+        if self.M0 is None:
+            return
+        P = self._apply_adj()
+        xs = list(P[:, 0]) + [P[0, 0]]
+        ys = list(P[:, 1]) + [P[0, 1]]
+        if self._track_art is None:
+            (self._track_art,) = self.ax.plot(xs, ys, "-", color="#ffcc00",
+                                              lw=2.0)
+        else:
+            self._track_art.set_data(xs, ys)
+        self.fig.canvas.draw_idle()
+
+    def _toggle_move(self):
+        self._moving = not self._moving
+        self._move_btn.ax.set_facecolor("#ffd27f" if self._moving else "0.85")
+        if self._moving:
+            self._deactivate_nav()
+            self._refresh_nav_marks()
+        self.fig.canvas.draw_idle()
+
+    def _rotate(self, deg):
+        if self.mode != "adjust":
+            return
+        self.adj["th"] += math.radians(deg)
+        self._draw_track_merc()
+
+    def _scale(self, f):
+        if self.mode != "adjust":
+            return
+        self.adj["s"] *= f
+        self._draw_track_merc()
 
     def exportar(self):
         if not self._ready():
             self.status.set_text("faltan los 2 puntos (índice + coordenada)")
             self.fig.canvas.draw_idle()
             return
-        latlon = self._georef()
+        if self.mode == "adjust" and self.M0 is not None:
+            # usar la colocación AJUSTADA a mano sobre la ortofoto
+            P = self._apply_adj()
+            latlon = [inv_mercator(x, y) for (x, y) in P]
+        else:
+            latlon = self._georef()
         name = os.path.splitext(os.path.basename(self.out_path))[0]
         gr.write_kml(latlon, os.path.abspath(self.out_path), name)
-        _, _, _, scale, _ = gr.similarity(
-            self.pts[self.ctrl[1]["idx"]], self.ctrl[1]["ll"],
-            self.pts[self.ctrl[2]["idx"]], self.ctrl[2]["ll"])
-        msg = (f"✓ EXPORTADO {os.path.abspath(self.out_path)}  "
-               f"(escala CSV→m = {scale:.4f}). "
+        msg = (f"✓ EXPORTADO {os.path.abspath(self.out_path)}. "
                f"Ahora: import_kml.py para bajar la altimetría.")
         print(msg)
         self.status.set_text(msg)

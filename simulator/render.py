@@ -827,7 +827,7 @@ class Hud:
         sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name,
-             auto_gear=False, time_scale=1.0):
+             auto_gear=False, time_scale=1.0, track=None):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
 
@@ -873,6 +873,29 @@ class Hud:
         self._fill(20, H - 116, 260, 96, (0, 0, 0, 160))
         font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 100, 6)
         font.draw_text(self.r, "KM/H", 170, H - 84, 2)
+
+        # ------- radio de la curva a HUD_RADIUS_LOOKAHEAD_M por delante
+        if track is not None:
+            look = cfg.HUD_RADIUS_LOOKAHEAD_M
+            s_a = st.s + look
+            # curvatura media en un entorno del punto de mira (estabiliza)
+            ks = [track.kappa_at(s_a + d) for d in (-8, -4, 0, 4, 8)]
+            kap = sum(ks) / len(ks)
+            self._fill(292, H - 116, 262, 96, (0, 0, 0, 160))
+            font.draw_text(self.r, f"CURVA +{int(look)} M", 312, H - 108, 2,
+                           (190, 190, 190, 255))
+            if abs(kap) < 1.0 / cfg.HUD_RADIUS_STRAIGHT_M:
+                font.draw_text(self.r, "RECTA", 312, H - 86, 4,
+                               (120, 220, 120, 255))
+            else:
+                R = 1.0 / abs(kap)
+                side = "^" if kap > 0 else "<"   # der / izq (flecha simple)
+                col = (255, 90, 70, 255) if R < 60 else (
+                    (255, 200, 60, 255) if R < 200 else (120, 220, 120, 255))
+                font.draw_text(self.r, f"{R:4.0f}", 312, H - 86, 6, col)
+                font.draw_text(self.r, "M", 470, H - 70, 2, col)
+                font.draw_text(self.r, "DER" if kap > 0 else "IZQ",
+                               470, H - 96, 2, (190, 190, 190, 255))
 
         # tiempos
         self._fill(W - 320, 20, 300, 92, (0, 0, 0, 160))

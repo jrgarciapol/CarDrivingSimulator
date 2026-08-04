@@ -362,3 +362,8 @@ ADAS_UNDERSTEER_TONE = 620.0 # Hz del aviso de subviraje (grave, "te vas
                              # de morro") [400 .. 800]
 ADAS_OVERSTEER_TONE = 1050.0 # Hz del aviso de sobreviraje (agudo y urgente,
                              # "se va la cola") [900 .. 1400]
+
+# ---- indicador de radio de curva (HUD) ---------------------------------
+HUD_RADIUS_LOOKAHEAD_M = 50.0  # distancia por delante del coche a la que se
+                               # mide el radio de la alineacion (m)
+HUD_RADIUS_STRAIGHT_M = 3000.0 # por encima de este radio se muestra "RECTA"

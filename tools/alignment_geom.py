@@ -142,8 +142,14 @@ def assemble_kappa(elements, total_len, step, close=True):
     clotoides (rampa lineal de κ). Devuelve la lista de κ por segmento.
 
     Los elementos se ordenan por estación y se cierra el bucle (el hueco
-    entre el último y el primero cruza la meta). Con close, se escala κ para
-    que la vuelta gire exactamente ±2π."""
+    entre el último y el primero cruza la meta).
+
+    close=True escala TODA la curvatura para que la vuelta gire exactamente
+    ±2π. OJO: el simulador conduce sobre κ(s) directo y NO necesita cierre
+    geométrico (el minimapa reparte su propio error de cierre), así que el
+    editor exporta con close=False para respetar los RADIOS reales dibujados
+    —forzar el cierre los apretaba en bloque y hacía el trazado inconducible.
+    close=True se mantiene por compatibilidad y para pruebas."""
     n = int(round(total_len / step))
     if len(elements) < 2:
         # con 0 o 1 alineación no hay trazado que cerrar; se devuelve la
@@ -194,6 +200,50 @@ def assemble_kappa(elements, total_len, step, close=True):
             f = math.copysign(2 * math.pi, turn) / turn
             ks = [k * f for k in ks]
     return ks
+
+
+def total_turn(ks, step):
+    """Giro total del trazado ensamblado: Σκ·ds (rad). Un circuito cerrado
+    real gira ±2π. Sirve para medir el ERROR DE CIERRE del dibujo (cuánto se
+    aleja de ±2π) sin distorsionar nada: el simulador consume κ(s) directo y
+    NO necesita cierre geométrico, así que este número es informativo."""
+    return sum(ks) * step
+
+
+def turn_deficit(ks, xy, stations, step, window=200.0):
+    """Compara, en ventanas de `window` m, el giro que dibujó el usuario
+    (integral de κ del ensamblado) con el giro REAL de la traza. Devuelve
+    [(s0, giro_traza_deg, giro_dibujo_deg, defecto_deg), ...] ordenado por
+    mayor defecto: dónde el dibujo gira MENOS que la traza (curva que se
+    quedó corta de radio o de longitud de arco). Herramienta de diseño para
+    corregir el trazado en el editor, no una corrección automática."""
+    L = stations[-1]
+    n = len(ks)
+
+    def wrap(a):
+        while a > math.pi:
+            a -= 2 * math.pi
+        while a < -math.pi:
+            a += 2 * math.pi
+        return a
+
+    def trace_turn(sa, sb):
+        txa, tya = tangent_at(sa % L, xy, stations)
+        txb, tyb = tangent_at(min(sb, L - 1.0), xy, stations)
+        return wrap(math.atan2(tyb, txb) - math.atan2(tya, txa))
+
+    rows = []
+    s0 = 0.0
+    while s0 < L:
+        i0 = int(s0 / step)
+        i1 = min(n, int((s0 + window) / step))
+        asm = -sum(ks[i0:i1]) * step        # giro geométrico del dibujo
+        tra = trace_turn(s0, s0 + window)
+        rows.append((s0, math.degrees(tra), math.degrees(asm),
+                     abs(math.degrees(tra)) - abs(math.degrees(asm))))
+        s0 += window * 0.5                    # ventanas solapadas
+    rows.sort(key=lambda r: -r[3])
+    return rows
 
 
 def element_polyline(el, xy, stations, npts=40):

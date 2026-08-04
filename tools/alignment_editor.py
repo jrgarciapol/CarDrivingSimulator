@@ -138,6 +138,7 @@ class PlanEditor:
             ("VISTA COMPLETA", lambda e: self._toolbar("home"), None),
             (None, None, None),
             ("GUARDAR", lambda e: self.export(), None),
+            ("RESOLVER", lambda e: self.resolver(), None),
         ]
         self._tool_buttons = {}
         y = 0.955
@@ -439,6 +440,48 @@ class PlanEditor:
         # confirmación bien visible en la ventana (verde)
         self.ax.set_title(f"✓ GUARDADO: {path}   (cierre {miss:+.0f}°, "
                           f"radio mín {r_min:.0f} m)", color="#1a7d1a")
+        self.fig.canvas.draw_idle()
+
+    def resolver(self):
+        """Resuelve el trazado de DISEÑO desde las directrices: genera las
+        clotoides (tangencia C1/C2), cierra el anillo a ±360° y ajusta radios
+        y rumbos lo justo (≤6°, ≤25%) para pegarse al GPS (opción 2). Escribe
+        un CSV '<salida>_resuelto.csv' con la cota re-muestreada y dibuja la
+        planta resuelta (morada) para compararla con la traza."""
+        if len(self.elements) < 2:
+            self._flash("hacen falta al menos 2 alineaciones", "#c33")
+            return
+        self._flash("RESOLVIENDO (clotoides + cierre + ajuste al GPS)... "
+                    "espera unos segundos", "#7b2d8e")
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
+        try:
+            import alignment_solver as asv
+            import resolve_track as rt
+            res = asv.solve_fit(self.elements, self.xy, self.stations,
+                                step=self.step)
+            rpath = os.path.splitext(os.path.abspath(self.out_path))[0] \
+                + "_resuelto.csv"
+            elev = (rt.elevation_by_position(res, self.xy, self.stations,
+                                             self.elev_csv, self.step)
+                    if self.elev_csv else [0.0] * len(res["ks"]))
+            rt.write_csv(res, rpath, elev, self.step)
+        except Exception as ex:
+            self._flash(f"error al resolver: {ex}", "#c33")
+            return
+        pl = res["plan"]
+        self._art += self.ax.plot([p[0] for p in pl], [p[1] for p in pl],
+                                  "-", color="#7b2d8e", lw=2.2, alpha=0.9)
+        print(f"RESUELTO en {rpath}: giro {math.degrees(res['turn']):.0f}°, "
+              f"radio min {res['rmin']:.0f} m, deriva vs GPS "
+              f"{res['trace_drift']:.0f} m, rumbos movidos "
+              f"≤{res.get('fit_dtheta_max', 0):.1f}°")
+        for a in res["avisos"]:
+            print("  AVISO:", a)
+        self.ax.set_title(
+            f"✓ RESUELTO (morado): giro {math.degrees(res['turn']):.0f}°, "
+            f"R_min {res['rmin']:.0f} m, deriva {res['trace_drift']:.0f} m  "
+            f"-> {rpath}", color="#7b2d8e")
         self.fig.canvas.draw_idle()
 
     def load_alignments(self):

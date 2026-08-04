@@ -86,6 +86,17 @@ def main():
                     rl and all(0 <= d["p_in"] < 0.5 * R for d in rl),
                     f"p_max={max(max(d['p_in'], d['p_out']) for d in rl):.2f} m"))
 
+    # --- opción 2 (ajuste al GPS): no debe empeorar un stadium ya perfecto,
+    #     y los cambios de radio/rumbo deben quedar dentro de las cotas -------
+    res2 = sv.solve_fit(els, xy, st, step=4.0, iters=8)
+    ok.append(check("opción 2: cambios de radio/rumbo acotados",
+                    res2["fit_dtheta_max"] <= 6.01 and res2["fit_dR_max"] < 0.26 * R,
+                    f"dθ={res2['fit_dtheta_max']:.1f}° dR={res2['fit_dR_max']:.1f} m"))
+    ok.append(check("opción 2: sigue cerrando a ±360° y radio sano",
+                    abs(abs(math.degrees(res2["turn"])) - 360) < 8
+                    and res2["rmin"] > 0.7 * R,
+                    f"giro={math.degrees(res2['turn']):.1f}° R_min={res2['rmin']:.1f}"))
+
     print(f"\n{sum(ok)}/{len(ok)} pruebas correctas")
     return 0 if all(ok) else 1
 

@@ -331,36 +331,33 @@ def _trace_xy_at(s, xy, stations):
     return xy[i]
 
 
-def solve(elements, xy, stations, step=4.0):
-    """Resuelve el trazado completo a partir de las directrices. Devuelve un
-    dict con: ks (κ(s) para el simulador), ring, segs, lengths, plan (planta
-    world alineada a la traza), retranqueos [(centro_dibujado, centro_resuelto,
-    R, dist)], avisos, y métricas (giro, radio_min, longitud)."""
+def _core(ring, xy, stations, step):
+    """Geometría resuelta de un anillo dado (rumbos/κ tal cual estén en él):
+    longitudes, planta (world, alineada a la traza) y centros. No construye
+    informe (eso es _report)."""
     L = stations[-1]
-    ring, avisos = build_ring(elements, xy, stations)
     segs = build_segments(ring, L)
     targets = span_targets(ring, xy, stations)
     lengths_pre = solve_lengths(segs, targets, ring)
-
-    # rumbo inicial = tangente de la traza al inicio de la 1ª directriz, para
-    # que la planta resuelta quede orientada como la traza
     s0 = ring[0]["s0"]
     tx, ty = ag.tangent_at(s0, xy, stations)
     h0 = math.atan2(ty, tx)
     lengths = close_position(segs, lengths_pre, h0)
-
-    ks = kappa_profile(segs, lengths, step)
     pts, hs, cens = march_segments(segs, lengths, h0)
-    # trasladar la planta al punto de la traza correspondiente
     P0 = np.asarray(_trace_xy_at(s0, xy, stations), float)
     plan = [(P0[0] + p[0], P0[1] + p[1]) for p in pts]
     cens_w = [None if c is None else (P0[0] + c[0], P0[1] + c[1])
               for c in cens]
+    return {"segs": segs, "lengths": lengths, "lengths_pre": lengths_pre,
+            "plan": plan, "centers": cens_w, "h0": h0,
+            "P0": (float(P0[0]), float(P0[1]))}
 
-    # RETRANQUEO LOCAL de cada círculo: desplazamiento p que introduce su
-    # clotoide de entrada/salida (clásico, pocos metros). L de cada clotoide
-    # sale del solver (segmentos vecinos).
+
+def _report(ring, core, xy, avisos, step):
+    """Construye el dict de resultado (κ(s), retranqueos, métricas)."""
     import clothoid as cl
+    segs, lengths, plan = core["segs"], core["lengths"], core["plan"]
+    ks = kappa_profile(segs, lengths, step)
     nseg = len(segs)
     retr_local = []
     for i, s in enumerate(segs):
@@ -368,32 +365,179 @@ def solve(elements, xy, stations, step=4.0):
             continue
         R = 1.0 / abs(s["ks"])
         sign = 1.0 if s["ks"] > 0 else -1.0
-        L_in = lengths[(i - 1) % nseg]
-        L_out = lengths[(i + 1) % nseg]
+        L_in, L_out = lengths[(i - 1) % nseg], lengths[(i + 1) % nseg]
         p_in = cl.clothoid_shift(L_in, R, sign)[0] if L_in > 1e-6 else 0.0
         p_out = cl.clothoid_shift(L_out, R, sign)[0] if L_out > 1e-6 else 0.0
         retr_local.append({"R": R, "L_in": L_in, "L_out": L_out,
                            "p_in": p_in, "p_out": p_out})
-
-    # desviación de la planta resuelta respecto a la traza (coste de exigir
-    # radios Y rectas exactos en un dibujo a mano que no cierra por sí solo)
     drift = 0.0
     for p in plan:
         dmin = min(math.hypot(p[0] - q[0], p[1] - q[1]) for q in xy[::4])
         drift = max(drift, dmin)
-
-    # error de cierre ANTES de forzar el cierre (lo que absorbió el ajuste de
-    # longitudes de recta): mide cuánto NO cierran por sí solos radios+rectas
-    pts_raw, _, _ = march_segments(segs, lengths_pre, h0)
+    pts_raw, _, _ = march_segments(segs, core["lengths_pre"], core["h0"])
     misclose = math.hypot(pts_raw[-1][0] - pts_raw[0][0],
                           pts_raw[-1][1] - pts_raw[0][1])
-
     turn = sum(ks) * step
     rmin = 1.0 / max(abs(k) for k in ks) if ks else float("inf")
     return {
         "ks": ks, "ring": ring, "segs": segs, "lengths": lengths,
-        "plan": plan, "centers": cens_w, "retranqueos_local": retr_local,
-        "avisos": avisos, "h0": h0, "P0": (float(P0[0]), float(P0[1])),
-        "turn": turn, "rmin": rmin, "length": sum(lengths),
-        "trace_drift": drift, "misclose": misclose,
+        "plan": plan, "centers": core["centers"],
+        "retranqueos_local": retr_local, "avisos": avisos,
+        "h0": core["h0"], "P0": core["P0"], "turn": turn, "rmin": rmin,
+        "length": sum(lengths), "trace_drift": drift, "misclose": misclose,
     }
+
+
+def solve(elements, xy, stations, step=4.0):
+    """OPCIÓN 1 — radios y rectas EXACTOS. Resuelve el trazado a partir de las
+    directrices manteniendo intactos los radios dibujados y las direcciones de
+    recta; genera las clotoides y cierra el anillo. La planta puede alejarse
+    del GPS si las directrices no cierran solas (ver 'trace_drift')."""
+    ring, avisos = build_ring(elements, xy, stations)
+    core = _core(ring, xy, stations, step)
+    return _report(ring, core, xy, avisos, step)
+
+
+# --------------------------------------------- opción 2: ajuste al GPS real
+def _param_layout(ring):
+    lines = [i for i, d in enumerate(ring) if d["kind"] == "line"]
+    arcs = [i for i, d in enumerate(ring) if d["kind"] != "line"]
+    return lines, arcs
+
+
+def _get_params(ring, lines, arcs):
+    p = [math.atan2(ring[i]["dir"][1], ring[i]["dir"][0]) for i in lines]
+    p += [ring[i]["kappa"] for i in arcs]
+    return np.array(p, float)
+
+
+def _apply_params(ring, lines, arcs, p):
+    r = [dict(d) for d in ring]
+    for k, i in enumerate(lines):
+        th = p[k]
+        r[i]["dir"] = (math.cos(th), math.sin(th))
+    for k, i in enumerate(arcs):
+        kap = p[len(lines) + k]
+        r[i] = dict(r[i], kappa=kap, R=1.0 / max(1e-6, abs(kap)))
+    return r
+
+
+def solve_fit(elements, xy, stations, step=4.0, iters=25,
+              w_theta=22.0, w_krel=22.0, max_dtheta_deg=6.0, max_dR_rel=0.25):
+    """OPCIÓN 2 — ajustada al GPS. Relaja los radios y los rumbos lo justo
+    (mínimos cuadrados, regularizados y ACOTADOS) para que la planta resuelta
+    se pegue a la traza GPS real y desaparezca la deriva global, manteniendo
+    tangencia C1/C2 y cierre. w_theta / w_krel controlan cuánto se penaliza
+    mover rumbos/radios; max_dtheta_deg y max_dR_rel son cotas duras."""
+    L = stations[-1]
+    ring0, avisos = build_ring(elements, xy, stations)
+    lines, arcs = _param_layout(ring0)
+    p0 = _get_params(ring0, lines, arcs)
+    nl = len(lines)
+    max_dth = math.radians(max_dtheta_deg)
+
+    def clamp(p):
+        p = p.copy()
+        for k in range(nl):
+            p[k] = p0[k] + max(-max_dth, min(max_dth, _wrap(p[k] - p0[k])))
+        for k in range(len(arcs)):
+            j = nl + k
+            k0 = p0[j]
+            lo, hi = k0 * (1 - max_dR_rel), k0 * (1 + max_dR_rel)
+            p[j] = min(max(p[j], min(lo, hi)), max(lo, hi))
+        return p
+
+    # muestras de la planta a proyectar sobre la traza (~ cada 90 m)
+    ns = max(30, int(L / 90.0))
+
+    def residual(p):
+        ring = _apply_params(ring0, lines, arcs, p)
+        core = _core(ring, xy, stations, step)
+        plan = core["plan"]
+        m = len(plan)
+        res = []
+        for j in range(ns):
+            pt = plan[min(m - 1, int(j * m / ns))]
+            s_guess = (j / ns) * L
+            sp = _project_windowed(pt, xy, stations, s_guess, 250.0)
+            q = _trace_xy_at(sp, xy, stations)
+            res.append(pt[0] - q[0])
+            res.append(pt[1] - q[1])
+        # regularización: rumbos y radios cerca de lo dibujado
+        for k in range(nl):
+            res.append(w_theta * _wrap(p[k] - p0[k]))
+        for k in range(len(arcs)):
+            k0 = p0[nl + k]
+            res.append(w_krel * (p[nl + k] - k0) / max(1e-4, abs(k0)))
+        return np.array(res)
+
+    p = p0.copy()
+    r = residual(p)
+    cost = float(r @ r)
+    lam = 1e-3
+    for _ in range(iters):
+        # jacobiano numérico
+        J = np.zeros((len(r), len(p)))
+        for k in range(len(p)):
+            dp = 1e-4 if k < nl else 1e-4 * max(1e-4, abs(p0[k]))
+            pk = p.copy()
+            pk[k] += dp
+            J[:, k] = (residual(pk) - r) / dp
+        JtJ = J.T @ J
+        Jtr = J.T @ r
+        for _try in range(8):
+            try:
+                dp = np.linalg.solve(JtJ + lam * np.diag(np.diag(JtJ) + 1e-9),
+                                     -Jtr)
+            except np.linalg.LinAlgError:
+                lam *= 10
+                continue
+            pn = clamp(p + dp)
+            rn = residual(pn)
+            cn = float(rn @ rn)
+            if cn < cost:
+                p, r, cost = pn, rn, cn
+                lam = max(1e-6, lam * 0.5)
+                break
+            lam *= 4
+        else:
+            break
+
+    ring = _apply_params(ring0, lines, arcs, p)
+    core = _core(ring, xy, stations, step)
+    rep = _report(ring, core, xy, avisos, step)
+    # informe de cuánto se movieron radios y rumbos
+    dth = [math.degrees(abs(_wrap(p[k] - p0[k]))) for k in range(nl)]
+    dR = []
+    for k in range(len(arcs)):
+        R0 = 1.0 / max(1e-6, abs(p0[nl + k]))
+        R1 = 1.0 / max(1e-6, abs(p[nl + k]))
+        dR.append(abs(R1 - R0))
+    rep["fit_dtheta_max"] = max(dth) if dth else 0.0
+    rep["fit_dR_max"] = max(dR) if dR else 0.0
+    rep["fit_dtheta_mean"] = float(np.mean(dth)) if dth else 0.0
+    return rep
+
+
+def _project_windowed(pt, xy, stations, s_guess, win):
+    """Estación de la traza más cercana a pt, buscando solo en una ventana
+    alrededor de s_guess (evita saltar a la otra rama en las horquillas)."""
+    px, py = pt
+    best_d, best_s = 1e30, s_guess
+    L = stations[-1]
+    for i in range(len(xy) - 1):
+        smid = stations[i]
+        ds = abs(((smid - s_guess + L / 2) % L) - L / 2)
+        if ds > win:
+            continue
+        ax, ay = xy[i]
+        bx, by = xy[i + 1]
+        dx, dy = bx - ax, by - ay
+        ll = dx * dx + dy * dy or 1e-9
+        t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / ll))
+        qx, qy = ax + t * dx, ay + t * dy
+        d = (px - qx) ** 2 + (py - qy) ** 2
+        if d < best_d:
+            best_d = d
+            best_s = stations[i] + t * math.hypot(dx, dy)
+    return best_s

@@ -150,10 +150,55 @@ class GeorefTool:
             lambda e: self.ver_satelite())
         btn(0.02, 0.42, 0.24, 0.07, "EXPORTAR KML",
             lambda e: self.exportar())
+        self._nav_buttons = {
+            "zoom": btn(0.02, 0.33, 0.075, 0.055, "ZOOM",
+                        lambda e: self._toolbar("zoom")),
+            "pan": btn(0.105, 0.33, 0.075, 0.055, "MOVER",
+                       lambda e: self._toolbar("pan")),
+        }
+        btn(0.19, 0.33, 0.075, 0.055, "VISTA",
+            lambda e: self._toolbar("home"))
         self.status = self.fig.text(0.02, 0.10, "", fontsize=9, wrap=True)
         self._refresh_status()
 
+    # ---- navegación (zoom/mover del backend, sin dejarlos pegados) -----
+    def _get_toolbar(self):
+        tb = getattr(getattr(self.fig.canvas, "manager", None),
+                     "toolbar", None)
+        return tb or getattr(self.fig.canvas, "toolbar", None)
+
+    def _nav_active(self):
+        tb = self._get_toolbar()
+        return tb.mode if (tb and getattr(tb, "mode", "")) else ""
+
+    def _deactivate_nav(self):
+        tb = self._get_toolbar()
+        if tb and getattr(tb, "mode", ""):
+            if "zoom" in tb.mode:
+                tb.zoom()
+            elif "pan" in tb.mode:
+                tb.pan()
+
+    def _toolbar(self, action):
+        tb = self._get_toolbar()
+        if tb is None:
+            return
+        if action in ("zoom", "pan"):
+            self.picking = None
+            getattr(tb, action)()
+        elif action == "home":
+            tb.home()
+        self._refresh_nav_marks()
+
+    def _refresh_nav_marks(self):
+        nav = self._nav_active()
+        for name, b in self._nav_buttons.items():
+            b.ax.set_facecolor("#ffd27f" if name in nav else "0.85")
+        self.fig.canvas.draw_idle()
+
     def _start_pick(self, n):
+        self._deactivate_nav()          # al elegir punto, soltar zoom/mover
+        self._refresh_nav_marks()
         self.picking = n
         self.ax.set_title(f"PUNTO {n}: pincha en la planta el sitio "
                           f"reconocible", color="#1a7")
@@ -161,6 +206,8 @@ class GeorefTool:
 
     def on_click(self, e):
         if self.picking is None or e.inaxes != self.ax or e.xdata is None:
+            return
+        if self._nav_active():          # zoom/mover manda: no elegir punto
             return
         # índice del punto del CSV más cercano al clic
         i = min(range(len(self.pts)),

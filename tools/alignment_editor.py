@@ -138,6 +138,7 @@ class PlanEditor:
             ("VISTA COMPLETA", lambda e: self._toolbar("home"), None),
             (None, None, None),
             ("GUARDAR", lambda e: self.export(), None),
+            ("RESOLVER", lambda e: self.resolver(), None),
         ]
         self._tool_buttons = {}
         y = 0.955
@@ -372,7 +373,14 @@ class PlanEditor:
             print("hacen falta al menos 2 alineaciones para exportar")
             return
         n = int(round(self.L / self.step))
-        ks = ag.assemble_kappa(self.elements, self.L, self.step, close=True)
+        # NO se fuerza el cierre geométrico (close=False): el simulador conduce
+        # sobre el campo de curvatura κ(s) —estación + desplazamiento lateral—
+        # y NO necesita que el bucle cierre en x/y (el minimapa ya reparte el
+        # error de cierre él solo). Forzar el cierre escalaba TODA la curvatura
+        # y apretaba los radios que el usuario eligió a mano (p.ej. 18→13.5 m),
+        # dejando el trazado inconducible. Con close=False se respetan los
+        # radios REALES dibujados y el error de cierre se informa abajo.
+        ks = ag.assemble_kappa(self.elements, self.L, self.step, close=False)
         elev = (load_elev_column(self.elev_csv, n) if self.elev_csv
                 else [0.0] * n)
         cap = math.radians(BANK_MAX_DEG)
@@ -412,11 +420,68 @@ class PlanEditor:
         except OSError:
             aln = None
         r_min = 1.0 / max(1e-9, max(abs(k) for k in ks))
+        # diagnóstico de CIERRE: cuánto gira el dibujo frente a los ±360° que
+        # tiene todo circuito cerrado, y en qué curvas se queda corto. No se
+        # corrige solo (respeta el diseño); es información para afinar a mano.
+        turn = ag.total_turn(ks, self.step)
+        miss = math.degrees(turn) - math.copysign(360.0, turn)
+        worst = ag.turn_deficit(ks, self.xy, self.stations, self.step)
         print(f"GUARDADO en {path}  ({n} seg, {self.L:.0f} m, "
               f"radio min {r_min:.0f} m, {len(self.elements)} alineaciones)"
               + (f"  + alineaciones en {aln}" if aln else ""))
+        print(f"  cierre: el dibujo gira {math.degrees(turn):+.0f}° "
+              f"(un circuito cerrado gira ±360°) -> descuadre {miss:+.0f}°")
+        if worst and worst[0][3] > 8.0:
+            print("  curvas que se quedan CORTAS de giro (afínalas en el editor):")
+            for s0, tra, asm, dfc in worst[:4]:
+                if dfc > 8.0:
+                    print(f"    s≈{s0:.0f} m: traza {tra:+.0f}°, dibujo "
+                          f"{asm:+.0f}°  (faltan {dfc:.0f}°)")
         # confirmación bien visible en la ventana (verde)
-        self.ax.set_title(f"✓ GUARDADO: {path}", color="#1a7d1a")
+        self.ax.set_title(f"✓ GUARDADO: {path}   (cierre {miss:+.0f}°, "
+                          f"radio mín {r_min:.0f} m)", color="#1a7d1a")
+        self.fig.canvas.draw_idle()
+
+    def resolver(self):
+        """Resuelve el trazado de DISEÑO desde las directrices: genera las
+        clotoides (tangencia C1/C2), cierra el anillo a ±360° y ajusta radios
+        y rumbos lo justo (≤6°, ≤25%) para pegarse al GPS (opción 2). Escribe
+        un CSV '<salida>_resuelto.csv' con la cota re-muestreada y dibuja la
+        planta resuelta (morada) para compararla con la traza."""
+        if len(self.elements) < 2:
+            self._flash("hacen falta al menos 2 alineaciones", "#c33")
+            return
+        self._flash("RESOLVIENDO (clotoides + cierre + ajuste al GPS)... "
+                    "espera unos segundos", "#7b2d8e")
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
+        try:
+            import alignment_solver as asv
+            import resolve_track as rt
+            res = asv.solve_fit(self.elements, self.xy, self.stations,
+                                step=self.step)
+            rpath = os.path.splitext(os.path.abspath(self.out_path))[0] \
+                + "_resuelto.csv"
+            elev = (rt.elevation_by_position(res, self.xy, self.stations,
+                                             self.elev_csv, self.step)
+                    if self.elev_csv else [0.0] * len(res["ks"]))
+            rt.write_csv(res, rpath, elev, self.step)
+        except Exception as ex:
+            self._flash(f"error al resolver: {ex}", "#c33")
+            return
+        pl = res["plan"]
+        self._art += self.ax.plot([p[0] for p in pl], [p[1] for p in pl],
+                                  "-", color="#7b2d8e", lw=2.2, alpha=0.9)
+        print(f"RESUELTO en {rpath}: giro {math.degrees(res['turn']):.0f}°, "
+              f"radio min {res['rmin']:.0f} m, deriva vs GPS "
+              f"{res['trace_drift']:.0f} m, rumbos movidos "
+              f"≤{res.get('fit_dtheta_max', 0):.1f}°")
+        for a in res["avisos"]:
+            print("  AVISO:", a)
+        self.ax.set_title(
+            f"✓ RESUELTO (morado): giro {math.degrees(res['turn']):.0f}°, "
+            f"R_min {res['rmin']:.0f} m, deriva {res['trace_drift']:.0f} m  "
+            f"-> {rpath}", color="#7b2d8e")
         self.fig.canvas.draw_idle()
 
     def load_alignments(self):

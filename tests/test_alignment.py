@@ -98,6 +98,21 @@ def main():
     ok.append(check("el ensamblado reproduce la traza sintética",
                     dev < 3.0, f"desv local {dev:.2f} m"))
 
+    # --- giro total y diagnóstico de cierre ----------------------------
+    # el κ sintético (recta-clotoide-arco-clotoide-recta) gira exactamente
+    # el ángulo del arco+clotoides; total_turn debe recuperarlo
+    turn = ag.total_turn(ktrue, step)
+    # arco 400 m a 1/200 = 2.0 rad; cada clotoide media aporta 0.25 rad
+    ok.append(check("total_turn recupera el giro del κ sintético",
+                    abs(turn - 2.5) < 0.05, f"giro={turn:.3f} rad"))
+
+    # turn_deficit: con el ensamblado que reproduce la traza, el defecto
+    # local debe ser pequeño (el dibujo gira lo mismo que la traza)
+    defs = ag.turn_deficit(ks, xy, stations, step, window=200.0)
+    peor = max(abs(r[3]) for r in defs)
+    ok.append(check("turn_deficit ~0 cuando el dibujo sigue a la traza",
+                    peor < 6.0, f"peor defecto {peor:.1f}°"))
+
     # una curva a IZQUIERDAS debe dar κ negativa
     kleft = [-(1 / 150) if 300 < i * step < 700 else 0.0 for i in range(n)]
     xyl = ag.integrate_xy(kleft, step)

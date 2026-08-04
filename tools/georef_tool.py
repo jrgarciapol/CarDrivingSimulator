@@ -39,6 +39,38 @@ R_EARTH = 6378137.0
 C_MERC = math.pi * R_EARTH
 
 
+def read_clipboard(fig=None):
+    """Lee texto del portapapeles del sistema (la caja de texto de matplotlib
+    no admite pegar). Prueba Tk y, si no, órdenes del sistema operativo."""
+    if fig is not None:
+        try:
+            return fig.canvas.get_tk_widget().clipboard_get()
+        except Exception:
+            pass
+    try:
+        import tkinter as tk
+        r = tk._default_root or tk.Tk()
+        return r.clipboard_get()
+    except Exception:
+        pass
+    import subprocess
+    try:
+        if sys.platform.startswith("win"):
+            return subprocess.check_output(
+                ["powershell", "-command", "Get-Clipboard"], text=True)
+        if sys.platform == "darwin":
+            return subprocess.check_output(["pbpaste"], text=True)
+        for cmd in (["xclip", "-selection", "clipboard", "-o"],
+                    ["xsel", "--clipboard", "--output"]):
+            try:
+                return subprocess.check_output(cmd, text=True)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
 def mercator(lat, lon):
     x = math.radians(lon) * R_EARTH
     y = math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * R_EARTH
@@ -144,12 +176,16 @@ class GeorefTool:
             self._w.append(t)
             return t
 
-        self.b1 = btn(0.02, 0.86, 0.11, 0.06, "PUNTO 1",
+        self.b1 = btn(0.02, 0.86, 0.115, 0.06, "PUNTO 1",
                       lambda e: self._start_pick(1))
+        btn(0.145, 0.86, 0.115, 0.06, "PEGAR 1",
+            lambda e: self._paste_coord(1))
         self.t1 = txt(0.02, 0.79, 0.24, 0.05, "coord 1: ",
                       lambda s: self._set_coord(1, s))
-        self.b2 = btn(0.02, 0.70, 0.11, 0.06, "PUNTO 2",
+        self.b2 = btn(0.02, 0.70, 0.115, 0.06, "PUNTO 2",
                       lambda e: self._start_pick(2))
+        btn(0.145, 0.70, 0.115, 0.06, "PEGAR 2",
+            lambda e: self._paste_coord(2))
         self.t2 = txt(0.02, 0.63, 0.24, 0.05, "coord 2: ",
                       lambda s: self._set_coord(2, s))
         btn(0.02, 0.52, 0.24, 0.07, "VER SATÉLITE",
@@ -233,6 +269,30 @@ class GeorefTool:
             self.status.set_text(str(ex))
             self.fig.canvas.draw_idle()
             return
+        self._refresh_status()
+
+    def _paste_coord(self, n):
+        """Pega la coordenada del portapapeles (copiada en Google Earth) en el
+        punto n, sin teclear."""
+        txt = read_clipboard(self.fig)
+        if not txt or not txt.strip():
+            self.status.set_text("portapapeles vacío: copia antes la "
+                                 "coordenada en Google Earth")
+            self.fig.canvas.draw_idle()
+            return
+        txt = txt.strip().splitlines()[0]
+        try:
+            self.ctrl[n]["ll"] = gr.parse_coord(txt)
+        except ValueError:
+            self.status.set_text(f"no se pudo interpretar del portapapeles: "
+                                 f"{txt!r}")
+            self.fig.canvas.draw_idle()
+            return
+        tb = self.t1 if n == 1 else self.t2
+        try:
+            tb.set_val(txt)
+        except Exception:
+            pass
         self._refresh_status()
 
     def _draw_marks(self):

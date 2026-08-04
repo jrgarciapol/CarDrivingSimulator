@@ -52,13 +52,35 @@ def parse_coord(s):
 
 
 def load_xy(path):
+    """Lee el eje central MÉTRICO de TUMFTM (x_m,y_m,...). Detecta si por error
+    se le pasa un track YA convertido (kappa,elev,...) y avisa."""
+    header = ""
     pts = []
     for ln in open(path):
         ln = ln.strip()
-        if not ln or ln.startswith("#") or ln.lower().startswith("x_m"):
+        if not ln:
+            continue
+        if ln.startswith("#"):
+            header += ln.lower()
+            continue
+        if ln.lower().startswith("x_m"):
             continue
         p = ln.replace(";", ",").split(",")
         pts.append((float(p[0]), float(p[1])))
+    if "kappa" in header:
+        raise ValueError(
+            "ese CSV es un TRACK YA CONVERTIDO (kappa,elev,...), no el eje "
+            "metrico de TUMFTM. Necesitas el CSV del repositorio "
+            "github.com/TUMFTM/racetrack-database (columnas x_m,y_m,...). "
+            "Prueba con tools/ejemplos/Silverstone_TUMFTM.csv")
+    if pts:
+        spanx = max(p[0] for p in pts) - min(p[0] for p in pts)
+        spany = max(p[1] for p in pts) - min(p[1] for p in pts)
+        if spanx < 50 and spany < 50:
+            raise ValueError(
+                f"las coordenadas son diminutas (span {spanx:.1f}x{spany:.1f}); "
+                "no parece un eje metrico (x_m,y_m) de TUMFTM. ¿Le has pasado "
+                "un track convertido en vez del CSV del repositorio?")
     return pts
 
 

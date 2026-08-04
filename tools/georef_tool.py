@@ -10,8 +10,14 @@ Flujo, todo en la ventana:
   4. EXPORTAR KML guarda el trazado georreferenciado (lat/lon); luego
      import_kml le baja la altimetría y profile_editor ajusta el alzado.
 
+IMPORTANTE: la entrada es el eje central MÉTRICO de TUMFTM (columnas
+x_m,y_m,...), que bajas de github.com/TUMFTM/racetrack-database. NO es el
+track ya convertido de simulator/tracks/ (ese es kappa,elev,... y no vale).
+Hay un ejemplo listo en tools/ejemplos/Silverstone_TUMFTM.csv.
+
 Uso:
-  python tools/georef_tool.py silverstone.csv [--salida=silverstone.kml]
+  python tools/georef_tool.py tools/ejemplos/Silverstone_TUMFTM.csv
+  python tools/georef_tool.py Spa.csv --salida=spa.kml
 """
 
 import io
@@ -326,7 +332,12 @@ def main():
     for a in argv:
         if a.startswith("--salida="):
             out = a.split("=", 1)[1]
-    GeorefTool(args[0], out).show()
+    try:
+        tool = GeorefTool(args[0], out)
+    except ValueError as ex:
+        print("\nERROR:", ex, "\n")
+        raise SystemExit(1)
+    tool.show()
 
 
 if __name__ == "__main__":

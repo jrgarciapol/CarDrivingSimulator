@@ -20,9 +20,35 @@ altimetría y escribir el track:
 """
 
 import math
+import re
 import sys
 
 MLAT = 111320.0        # m por grado de latitud (esférico, suficiente a ~km)
+
+
+def parse_coord(s):
+    """Interpreta coordenadas de Google Earth. Acepta el formato DMS que da al
+    'copiar coordenadas'  (p.ej.  50°26'29.58\"N 5°57'59.57\"E) y también
+    decimal (50.441550, 5.966547). Devuelve (lat, lon)."""
+    s = s.strip()
+    dms = re.findall(
+        r"(\d+(?:\.\d+)?)\s*[°d]\s*(?:(\d+(?:\.\d+)?)\s*['′m]\s*"
+        r"(?:(\d+(?:\.\d+)?)\s*[\"″s]?)?)?\s*([NSEWnsew])", s)
+    lat = lon = None
+    for deg, mnt, sec, h in dms:
+        v = float(deg) + (float(mnt) / 60 if mnt else 0.0) \
+            + (float(sec) / 3600 if sec else 0.0)
+        hu = h.upper()
+        if hu in ("N", "S"):
+            lat = v if hu == "N" else -v
+        else:
+            lon = v if hu == "E" else -v
+    if lat is not None and lon is not None:
+        return (lat, lon)
+    nums = re.findall(r"[-+]?\d+\.?\d*", s)
+    if len(nums) >= 2:
+        return (float(nums[0]), float(nums[1]))
+    raise ValueError(f"no se pudo interpretar la coordenada: {s!r}")
 
 
 def load_xy(path):

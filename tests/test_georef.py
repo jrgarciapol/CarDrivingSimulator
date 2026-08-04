@@ -81,6 +81,20 @@ def main():
                     max(errs2) < 1.0 and abs(scale2 - 1000.0) < 1.0,
                     f"error max {max(errs2):.3f} m, escala={scale2:.1f}"))
 
+    # --- parser de coordenadas DMS de Google Earth --------------------
+    lat, lon = gr.parse_coord('50°26\'29.58"N 5°57\'59.57"E')
+    ok.append(check("parse DMS (formato Google Earth)",
+                    abs(lat - 50.44155) < 1e-4 and abs(lon - 5.966547) < 1e-4,
+                    f"lat={lat:.5f} lon={lon:.5f}"))
+    lat2, lon2 = gr.parse_coord('52°04\'42.0"N 1°00\'54.0"W')
+    ok.append(check("parse DMS con W (longitud oeste negativa)",
+                    abs(lat2 - 52.0783) < 1e-3 and abs(lon2 + 1.015) < 1e-3,
+                    f"lat={lat2:.4f} lon={lon2:.4f}"))
+    lat3, lon3 = gr.parse_coord("50.441550, 5.966547")
+    ok.append(check("parse decimal simple",
+                    abs(lat3 - 50.44155) < 1e-5 and abs(lon3 - 5.966547) < 1e-5,
+                    f"lat={lat3:.5f} lon={lon3:.5f}"))
+
     print(f"\n{sum(ok)}/{len(ok)} pruebas correctas")
     return 0 if all(ok) else 1
 

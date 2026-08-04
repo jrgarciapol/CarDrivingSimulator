@@ -339,7 +339,7 @@ def main():
     idealizar = "--idealizar" in argv
     plan_tol = 3.0        # m de desviación lateral admitida en planta
     alz_tol = 2.0         # m de desviación en alzado
-    line_idx = 1
+    line_idx = None       # None = automático (la LineString más larga)
     for a in argv:
         if a.startswith("--linea="):
             line_idx = int(a.split("=")[1])
@@ -351,6 +351,16 @@ def main():
         raise SystemExit(1)
     src, dst = args
     lines = parse_kml_lines(src)
+    if not lines:
+        print("el KML no contiene ninguna LineString")
+        raise SystemExit(1)
+    if line_idx is None:
+        # por defecto, la línea con más puntos (el eje principal); asi valen
+        # tanto el KML de una sola linea (georef_tool) como los de varias
+        line_idx = max(range(len(lines)), key=lambda i: len(lines[i]))
+    elif line_idx < 0 or line_idx >= len(lines):
+        print(f"aviso: el KML solo tiene {len(lines)} linea(s); uso la 0")
+        line_idx = 0
     pts = lines[line_idx]
     cache = os.path.splitext(src)[0] + "_elev.json"
     elev = fetch_elevations(pts, cache)

@@ -29,9 +29,10 @@ SEGMENT_LENGTH = 4.0
 
 
 def load_track(path):
-    """Lee un CSV del simulador. Devuelve (kappa, elev, kerb, bank) por
-    segmento."""
-    kap, elev, kerb, bank = [], [], [], []
+    """Lee un CSV del simulador. Devuelve (kappa, elev, kerb, bank, ancho) por
+    segmento; ancho es None si el CSV no trae la 5ª columna (semiancho)."""
+    kap, elev, kerb, bank, half = [], [], [], [], []
+    has_w = False
     for ln in open(path):
         ln = ln.strip()
         if not ln or ln.startswith("#"):
@@ -41,13 +42,19 @@ def load_track(path):
         elev.append(float(parts[1]) if len(parts) > 1 else 0.0)
         kerb.append(int(parts[2]) if len(parts) > 2 else 0)
         bank.append(float(parts[3]) if len(parts) > 3 else 0.0)
-    return kap, elev, kerb, bank
+        if len(parts) > 4 and parts[4].strip():
+            half.append(float(parts[4]))
+            has_w = True
+        else:
+            half.append(None)
+    return kap, elev, kerb, bank, (half if has_w else None)
 
 
 class ProfileEditor:
     def __init__(self, csv_path, step=SEGMENT_LENGTH):
         self.csv_path = os.path.abspath(csv_path)
-        self.kap, self.z_terrain, self.kerb, self.bank = load_track(csv_path)
+        (self.kap, self.z_terrain, self.kerb, self.bank,
+         self.half_w) = load_track(csv_path)
         self.step = step
         self.n = len(self.z_terrain)
         self.L = self.n * step
@@ -330,12 +337,18 @@ class ProfileEditor:
             with open(out, "w") as f:
                 f.write("# Track con ALZADO de diseno (profile_editor):\n")
                 f.write("# planta resuelta + rasantes y acuerdos parabolicos\n")
-                f.write("# kappa_1pm,elev_m,kerb,peralte_rad (seg %.1f m)\n"
-                        % self.step)
+                wcol = ",semiancho_m" if self.half_w is not None else ""
+                f.write("# kappa_1pm,elev_m,kerb,peralte_rad%s (seg %.1f m)\n"
+                        % (wcol, self.step))
                 for i in range(self.n):
                     zi = z[i] if i < len(z) else z[-1]
-                    f.write("%.6f,%.2f,%d,%.4f\n"
-                            % (self.kap[i], zi, self.kerb[i], self.bank[i]))
+                    if self.half_w is not None:
+                        f.write("%.6f,%.2f,%d,%.4f,%.2f\n"
+                                % (self.kap[i], zi, self.kerb[i],
+                                   self.bank[i], self.half_w[i]))
+                    else:
+                        f.write("%.6f,%.2f,%d,%.4f\n"
+                                % (self.kap[i], zi, self.kerb[i], self.bank[i]))
         except OSError as ex:
             self._flash(f"error al escribir: {ex}", "#c33")
             return

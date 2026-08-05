@@ -109,18 +109,20 @@ def fetch_elevations(pts, cache_path):
     return elevs
 
 
-def resample(xy, elev, step):
-    """Remuestrea geometría y elevación a paso constante, cerrando el bucle.
-    Devuelve (puntos_xy, elevaciones, longitud_total)."""
+def resample(xy, elev, step, widths=None):
+    """Remuestrea geometría y elevación (y opcionalmente el semiancho) a paso
+    constante, cerrando el bucle. Devuelve (puntos_xy, elevaciones, longitud);
+    si se pasan widths, devuelve (puntos_xy, elevaciones, semianchos, longitud)."""
     n = len(xy)
     ring_xy = xy + [xy[0]]
     ring_e = elev + [elev[0]]
+    ring_w = (widths + [widths[0]]) if widths is not None else None
     cum = [0.0]
     for i in range(n):
         cum.append(cum[-1] + math.dist(ring_xy[i], ring_xy[i + 1]))
     total = cum[-1]
     m = max(8, int(round(total / step)))
-    out_xy, out_e = [], []
+    out_xy, out_e, out_w = [], [], []
     j = 0
     for k in range(m):
         target = total * k / m
@@ -133,7 +135,54 @@ def resample(xy, elev, step):
         e = ring_e[j] + (ring_e[j + 1] - ring_e[j]) * t
         out_xy.append((x, y))
         out_e.append(e)
+        if ring_w is not None:
+            out_w.append(ring_w[j] + (ring_w[j + 1] - ring_w[j]) * t)
+    if widths is not None:
+        return out_xy, out_e, out_w, total
     return out_xy, out_e, total
+
+
+def build_track(pts, dst, widths=None, cache=None, invert=False):
+    """Construye un track del simulador (κ + cota REAL del DEM + piano +
+    peralte sintético[, semiancho]) a partir de una polilínea lat/lon, SIN
+    idealizar la planta (para fuentes ya limpias como TUMFTM). Si se pasan
+    widths (semiancho por punto de `pts`), se escribe una 5ª columna con el
+    semiancho remuestreado. Devuelve (n_segmentos, longitud)."""
+    cache = cache or (os.path.splitext(dst)[0] + "_elev.json")
+    elev = median_closed(fetch_elevations(pts, cache), 2)
+    xy = to_local_xy(pts)
+    if widths is not None:
+        xy, elev, ws, total = resample(xy, elev, SEGMENT_LENGTH, widths)
+    else:
+        xy, elev, total = resample(xy, elev, SEGMENT_LENGTH)
+        ws = None
+    ks = curvatures(xy, SEGMENT_LENGTH, invert)
+    n = len(ks)
+    half = max(1, int(ELEV_SMOOTH_M / SEGMENT_LENGTH / 2))
+    elev = smooth_closed(elev, half)
+    err = elev[-1] - elev[0]
+    elev = [elev[i] - err * (i / n) for i in range(n)]
+    e0 = elev[0]
+    elev = [e - e0 for e in elev]
+    win = max(1, int(15.0 / SEGMENT_LENGTH))
+    cap = math.radians(BANK_MAX_DEG)
+    banks = []
+    for i in range(n):
+        k = sum(ks[(i + j) % n] for j in range(-win, win + 1)) / (2 * win + 1)
+        b = max(-cap, min(cap, k * BANK_SCALE))
+        banks.append(b if abs(b) > 0.004 else 0.0)
+    with open(dst, "w") as f:
+        f.write("# Track importado (planta cruda + cota REAL del DEM)\n")
+        f.write("# kappa_1pm,elev_m,kerb,peralte_rad" +
+                (",semiancho_m\n" if ws is not None else "\n"))
+        for i, k in enumerate(ks):
+            kerb = 1 if abs(k) > KERB_KAPPA else 0
+            if ws is not None:
+                f.write("%.6f,%.2f,%d,%.4f,%.2f\n"
+                        % (k, elev[i], kerb, banks[i], ws[i]))
+            else:
+                f.write("%.6f,%.2f,%d,%.4f\n" % (k, elev[i], kerb, banks[i]))
+    return n, total
 
 
 def smooth_closed(vals, half):

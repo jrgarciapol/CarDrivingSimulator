@@ -123,7 +123,7 @@ class Renderer:
         n_segs = len(segs)
         L = cfg.SEGMENT_LENGTH
         f = cfg.CAMERA_DEPTH
-        half_w = cfg.ROAD_HALF_WIDTH
+        half_w = getattr(track, "half_w", cfg.ROAD_HALF_WIDTH)
         kerb_w = cfg.KERB_WIDTH
 
         base_i = int(car_state.s / L)

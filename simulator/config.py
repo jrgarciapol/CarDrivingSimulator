@@ -249,7 +249,11 @@ SUSP_CAMBER_GAIN = 0.8       # rad de caída negativa ganada por metro de
 # ===========================================================================
 # AERODINÁMICA Y RESISTENCIAS
 # ===========================================================================
-AERO_DRAG = 0.38             # N/(m/s)², resistencia al avance (0.5*rho*Cd*A)
+AIR_DENSITY = 1.225          # kg/m³, densidad del aire a nivel del mar y 15 °C
+# Cada coche define Cd (coef. de arrastre) y AREA_FRONTAL (m²) y el simulador
+# calcula AERO_DRAG = ½·ρ·Cd·A. Estos valores por defecto son la reserva si un
+# coche no los trae desglosados.
+AERO_DRAG = 0.38             # N/(m/s)², resistencia al avance (½·ρ·Cd·A)
                              # [0.25 .. 0.6]
 AERO_DOWNFORCE = 0.55        # N/(m/s)², carga aerodinámica total (~1700 N a
                              # 200 km/h); 0 = turismo sin apéndices, 3+ =

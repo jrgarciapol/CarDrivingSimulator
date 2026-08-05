@@ -36,7 +36,8 @@ CAR_KEYS = {
     "TIRE_VERT_STIFF", "TIRE_VERT_DAMP", "UNSPRUNG_MASS",
     "SUSP_SPRING_FRONT", "SUSP_SPRING_REAR", "SUSP_DAMPER",
     "ARB_FRONT", "ARB_REAR", "SUSP_CAMBER_GAIN",
-    "AERO_DRAG", "AERO_DOWNFORCE", "AERO_DF_FRONT_SHARE", "ROLLING_RESIST",
+    "AERO_DRAG", "AERO_DOWNFORCE", "CD", "CL", "FRONTAL_AREA",
+    "AERO_DF_FRONT_SHARE", "ROLLING_RESIST",
     "BRAKE_FORCE_MAX", "BRAKE_BIAS_FRONT", "ABS_ENABLED", "ABS_SLIP_TARGET",
 }
 
@@ -98,6 +99,15 @@ def load_car(path):
     # recalcular derivados de la geometría
     cfg.CAR_CG_TO_FRONT = cfg.WHEELBASE * (1.0 - cfg.WEIGHT_DIST_FRONT)
     cfg.CAR_CG_TO_REAR = cfg.WHEELBASE * cfg.WEIGHT_DIST_FRONT
+    # aerodinámica: si el coche da Cd/Cl y área frontal, se calcula el
+    # coeficiente agrupado ½·ρ·C·A (más físico y fácil de ajustar). Si en su
+    # lugar trae AERO_DRAG/AERO_DOWNFORCE directos (formato antiguo), se
+    # respetan.
+    rho = getattr(cfg, "AIR_DENSITY", 1.225)
+    if "CD" in data and "FRONTAL_AREA" in data:
+        cfg.AERO_DRAG = 0.5 * rho * data["CD"] * data["FRONTAL_AREA"]
+    if "CL" in data and "FRONTAL_AREA" in data:
+        cfg.AERO_DOWNFORCE = 0.5 * rho * data["CL"] * data["FRONTAL_AREA"]
     return data.get("NAME", os.path.basename(path))
 
 

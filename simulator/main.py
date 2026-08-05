@@ -276,7 +276,7 @@ def main(argv=None):
         # en pista (fuera, en la hierba, todo desliza y no es un aviso útil)
         adas_u = st.understeer
         adas_o = st.oversteer
-        if abs(st.n) > cfg.ROAD_HALF_WIDTH + cfg.KERB_WIDTH:
+        if abs(st.n) > track.half_at(st.s) + cfg.KERB_WIDTH:
             adas_u = adas_o = 0.0
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
                      abs(st.vx), adas_u, adas_o)
@@ -339,7 +339,7 @@ def main(argv=None):
                                cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 4) // 2,
                                150, 4, (120, 255, 120, 255))
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
-                 auto_gear, time_scale)
+                 auto_gear, time_scale, track)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:

@@ -15,15 +15,17 @@ from . import config as cfg
 
 
 class Segment:
-    __slots__ = ("index", "kappa", "y", "kerb", "bank")
+    __slots__ = ("index", "kappa", "y", "kerb", "bank", "half_w")
 
-    def __init__(self, index, kappa, y, kerb, bank=0.0):
+    def __init__(self, index, kappa, y, kerb, bank=0.0, half_w=None):
         self.index = index
         self.kappa = kappa    # curvatura 1/m (positiva = curva a la derecha)
         self.y = y            # altura del terreno (m)
         self.kerb = kerb      # True si el tramo tiene pianos
         self.bank = bank      # peralte (rad): >0 = borde izquierdo elevado
                               # (peralte correcto de una curva a la derecha)
+        # semiancho de asfalto (m) del tramo; None -> el fijo de config
+        self.half_w = cfg.ROAD_HALF_WIDTH if half_w is None else half_w
 
 
 def _sections():
@@ -81,7 +83,7 @@ def build():
 
 def build_from_file(path):
     """Carga un circuito importado. Columnas por segmento de 4 m:
-    kappa, elevación, piano[, peralte_rad con signo]."""
+    kappa, elevación, piano[, peralte_rad con signo[, semiancho_m]]."""
     segments = []
     idx = 0
     with open(path) as f:
@@ -91,8 +93,10 @@ def build_from_file(path):
                 continue
             cols = line.split(",")
             bank = float(cols[3]) if len(cols) > 3 else 0.0
+            half_w = float(cols[4]) if len(cols) > 4 and cols[4].strip() \
+                else None
             segments.append(Segment(idx, float(cols[0]), float(cols[1]),
-                                    cols[2].strip() == "1", bank))
+                                    cols[2].strip() == "1", bank, half_w))
             idx += 1
     if len(segments) < 10:
         raise ValueError(f"circuito invalido: {path}")
@@ -109,8 +113,16 @@ class Track:
         else:
             self.segments = build()
         self.length = len(self.segments) * cfg.SEGMENT_LENGTH
+        # semiancho representativo (mediana) para el render; la conducción usa
+        # el de cada tramo (half_at)
+        ws = sorted(s.half_w for s in self.segments)
+        self.half_w = ws[len(ws) // 2]
         self._precompute_vertical()
         self._precompute_racing_line()
+
+    def half_at(self, s: float) -> float:
+        """Semiancho de asfalto (m) del tramo en la estación s."""
+        return self.segment_at(s).half_w
 
     def _precompute_racing_line(self):
         """Trazada ideal simplificada: desplazamiento lateral hacia el
@@ -263,8 +275,9 @@ class Track:
         superficie: 'road' | 'kerb' | 'grass'
         """
         an = abs(n)
-        if an <= cfg.ROAD_HALF_WIDTH:
+        hw = self.segment_at(s).half_w
+        if an <= hw:
             return "road", cfg.TIRE_MU
-        if an <= cfg.ROAD_HALF_WIDTH + cfg.KERB_WIDTH and self.segment_at(s).kerb:
+        if an <= hw + cfg.KERB_WIDTH and self.segment_at(s).kerb:
             return "kerb", cfg.TIRE_MU * 0.92
         return "grass", cfg.TIRE_MU_GRASS

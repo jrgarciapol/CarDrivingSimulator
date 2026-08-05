@@ -93,17 +93,23 @@ def main():
         widths = None
 
     # ---- fase 1: georreferenciar (bloquea hasta cerrar la ventana) -------
+    reuse = False
     if os.path.exists(kml):
-        os.remove(kml)
-    print("\n[1/3] GEORREFERENCIA: coloca el trazado y pulsa EXPORTAR KML.")
-    try:
-        GeorefTool(src, kml).show()
-    except ValueError as ex:
-        print("ERROR:", ex)
-        return
-    if not os.path.exists(kml):
-        print("no exportaste el KML; se cancela el flujo.")
-        return
+        ans = input(f"\nYa existe {os.path.basename(kml)}. ¿Reutilizar esa "
+                    f"georreferencia y saltar a la altimetría? (s/n): ")
+        reuse = ans.strip().lower().startswith("s")
+    if not reuse:
+        if os.path.exists(kml):
+            os.remove(kml)
+        print("\n[1/3] GEORREFERENCIA: coloca el trazado y pulsa EXPORTAR KML.")
+        try:
+            GeorefTool(src, kml).show()
+        except ValueError as ex:
+            print("ERROR:", ex)
+            return
+        if not os.path.exists(kml):
+            print("no exportaste el KML; se cancela el flujo.")
+            return
 
     # ---- fase 2: altimetría + anchos -> track ----------------------------
     print("[2/3] Bajando altimetría del DEM y construyendo el track…")

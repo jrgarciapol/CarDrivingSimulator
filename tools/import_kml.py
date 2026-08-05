@@ -78,21 +78,35 @@ def to_local_xy(pts):
             for lon, lat in pts]
 
 
-def fetch_elevations(pts, cache_path):
-    """Elevación (m) de cada punto lon/lat. Cachea en cache_path."""
-    if os.path.exists(cache_path):
-        cached = json.load(open(cache_path))
-        if len(cached) == len(pts):
-            print(f"elevaciones desde caché ({len(cached)} puntos)")
-            return cached
-    elevs = []
-    for bi in range(0, len(pts), 100):
-        batch = pts[bi:bi + 100]
-        locs = "|".join(f"{lat:.6f},{lon:.6f}" for lon, lat in batch)
-        for attempt in range(5):
+# modelos de elevación de OpenTopoData a probar, en orden. Los primeros son
+# GLOBALES (valen fuera de Europa: Suzuka, Interlagos...); eudem25m es de mayor
+# resolución pero SOLO Europa, así que va al final como refinamiento.
+DEM_DATASETS = ["mapzen", "srtm30m", "aster30m"]
+
+
+def _fill_none(vals):
+    """Rellena los None (puntos sin dato del DEM: agua, hueco) con el vecino
+    conocido más cercano (circular). Si TODO es None, devuelve ceros."""
+    n = len(vals)
+    known = [i for i, v in enumerate(vals) if v is not None]
+    if not known:
+        return [0.0] * n
+    out = list(vals)
+    for i in range(n):
+        if out[i] is None:
+            j = min(known, key=lambda k: min(abs(k - i), n - abs(k - i)))
+            out[i] = out[j]
+    return out
+
+
+def _fetch_batch(batch):
+    """Elevación de un lote (<=100 puntos) probando varios DEM globales."""
+    locs = "|".join(f"{lat:.6f},{lon:.6f}" for lon, lat in batch)
+    for ds in DEM_DATASETS:
+        for attempt in range(3):
             r = subprocess.run(
                 ["curl", "-sS", "--max-time", "30",
-                 "https://api.opentopodata.org/v1/eudem25m",
+                 f"https://api.opentopodata.org/v1/{ds}",
                  "--data-urlencode", f"locations={locs}"],
                 capture_output=True, text=True)
             try:
@@ -100,13 +114,31 @@ def fetch_elevations(pts, cache_path):
             except ValueError:
                 data = {"status": "parse_error"}
             if data.get("status") == "OK":
-                elevs += [pt["elevation"] for pt in data["results"]]
-                break
-            time.sleep(2.0)
-        else:
-            raise SystemExit(f"la API de elevación falló en el lote {bi//100}")
+                vals = [pt["elevation"] for pt in data["results"]]
+                if any(v is not None for v in vals):
+                    return vals            # dataset con cobertura aquí
+                break                      # OK pero sin datos: probar el sig.
+            time.sleep(1.5)
+    return [None] * len(batch)
+
+
+def fetch_elevations(pts, cache_path):
+    """Elevación (m) de cada punto lon/lat, con DEM global y relleno de None.
+    Cachea en cache_path; ignora una caché mayormente vacía (de un DEM sin
+    cobertura, p.ej. EU-DEM fuera de Europa) y vuelve a bajar."""
+    if os.path.exists(cache_path):
+        cached = json.load(open(cache_path))
+        none_frac = sum(v is None for v in cached) / max(1, len(cached))
+        if len(cached) == len(pts) and none_frac < 0.5:
+            print(f"elevaciones desde caché ({len(cached)} puntos)")
+            return _fill_none(cached)
+    elevs = []
+    for bi in range(0, len(pts), 100):
+        elevs += _fetch_batch(pts[bi:bi + 100])
+    if all(v is None for v in elevs):
+        raise SystemExit("ningún DEM tiene cobertura para este circuito")
     json.dump(elevs, open(cache_path, "w"))
-    return elevs
+    return _fill_none(elevs)
 
 
 def resample(xy, elev, step, widths=None):

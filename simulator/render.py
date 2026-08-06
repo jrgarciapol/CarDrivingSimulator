@@ -827,7 +827,8 @@ class Hud:
         sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name,
-             auto_gear=False, time_scale=1.0, track=None):
+             auto_gear=False, time_scale=1.0, track=None, car_name="",
+             condition=""):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
 
@@ -874,28 +875,29 @@ class Hud:
         font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 100, 6)
         font.draw_text(self.r, "KM/H", 170, H - 84, 2)
 
-        # ------- radio de la curva a HUD_RADIUS_LOOKAHEAD_M por delante
+        # ------- radio de la curva: CENTRADO justo encima del horizonte, para
+        # tenerlo delante de los ojos sin apartar la mirada del centro
         if track is not None:
             look = cfg.HUD_RADIUS_LOOKAHEAD_M
-            s_a = st.s + look
             # curvatura media en un entorno del punto de mira (estabiliza)
-            ks = [track.kappa_at(s_a + d) for d in (-8, -4, 0, 4, 8)]
+            ks = [track.kappa_at(st.s + look + d) for d in (-8, -4, 0, 4, 8)]
             kap = sum(ks) / len(ks)
-            self._fill(292, H - 116, 262, 96, (0, 0, 0, 160))
-            font.draw_text(self.r, f"CURVA +{int(look)} M", 312, H - 108, 2,
-                           (190, 190, 190, 255))
+            cxc = W // 2
+            hy = H // 2 + int(camera_pitch_px(st))       # horizonte
+            by = hy - 108
+            self._fill(cxc - 150, by, 300, 64, (0, 0, 0, 150))
+            lbl = f"RADIO A {int(look)} M"
+            font.draw_text(self.r, lbl, cxc - font.text_width(lbl, 2) // 2,
+                           by + 5, 2, (190, 190, 190, 255))
             if abs(kap) < 1.0 / cfg.HUD_RADIUS_STRAIGHT_M:
-                font.draw_text(self.r, "RECTA", 312, H - 86, 4,
-                               (120, 220, 120, 255))
+                txt, col = "RECTA", (120, 220, 120, 255)
             else:
                 R = 1.0 / abs(kap)
-                side = "^" if kap > 0 else "<"   # der / izq (flecha simple)
                 col = (255, 90, 70, 255) if R < 60 else (
                     (255, 200, 60, 255) if R < 200 else (120, 220, 120, 255))
-                font.draw_text(self.r, f"{R:4.0f}", 312, H - 86, 6, col)
-                font.draw_text(self.r, "M", 470, H - 70, 2, col)
-                font.draw_text(self.r, "DER" if kap > 0 else "IZQ",
-                               470, H - 96, 2, (190, 190, 190, 255))
+                txt = f"{R:.0f} M  {'DER' if kap > 0 else 'IZQ'}"
+            font.draw_text(self.r, txt, cxc - font.text_width(txt, 4) // 2,
+                           by + 26, 4, col)
 
         # tiempos
         self._fill(W - 320, 20, 300, 92, (0, 0, 0, 160))
@@ -904,11 +906,12 @@ class Hud:
         best_txt = _fmt_time(best_lap) if best_lap else "--:--.-"
         font.draw_text(self.r, f"MEJOR  {best_txt}", W - 300, 80, 2, (255, 200, 60, 255))
 
-        # estado del dispositivo (abajo, junto al velocímetro) y versión
-        dev = wheel_name if wheel_name else "TECLADO - FLECHAS"
-        ffb = "FFB OK" if ffb_ok else "SIN FFB"
-        font.draw_text(self.r, f"{dev[:30]}  {ffb}  {cfg.DRIVE_TYPE}", 20, H - 140, 2,
-                       (180, 255, 180, 255) if ffb_ok else (255, 180, 140, 255))
+        # abajo: LO ELEGIDO en la configuración (coche, circuito, asfalto),
+        # para no olvidarlo a mitad de vuelta. Sustituye a los datos del
+        # volante, que no aportaban nada mientras se conduce.
+        trk = track.name if track is not None else ""
+        info = f"COCHE {car_name}    CIRCUITO {trk}    ASFALTO {condition}"
+        font.draw_text(self.r, info, 20, H - 140, 2, (200, 220, 255, 255))
         font.draw_text(self.r, cfg.VERSION, W - font.text_width(cfg.VERSION, 2) - 14,
                        H - 24, 2, (150, 150, 150, 255))
 
@@ -1080,7 +1083,10 @@ class Hud:
         k_dot = min(1.0, dt / 0.30) if dt > 0 else 0.0
         k_ang = min(1.0, dt / 0.30) if dt > 0 else 0.0
 
-        box_x, box_y, box_w, box_h = W - 320, 110, 300, 508
+        # CENTRADA horizontalmente y en la mitad superior, para tenerla
+        # delante de los ojos sin mirar a una esquina
+        box_w, box_h = 300, 508
+        box_x, box_y = (W - box_w) // 2, 96
         self._fill(box_x, box_y, box_w, box_h, (0, 0, 0, 190))
         font.draw_text(self.r, "F2: FRICCION Y TEMP.", box_x + 12, box_y + 10, 2)
         names = ("DI", "DD", "TI", "TD")

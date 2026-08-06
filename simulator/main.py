@@ -339,7 +339,7 @@ def main(argv=None):
                                cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 4) // 2,
                                150, 4, (120, 255, 120, 255))
         hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
-                 auto_gear, time_scale, track)
+                 auto_gear, time_scale, track, car_name, condition)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:

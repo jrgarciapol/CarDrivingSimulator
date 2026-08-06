@@ -28,8 +28,9 @@ SUSP_SPRING_REAR = 30000.0        # N/m, muelle trasero por rueda
 SUSP_DAMPER = 4600.0              # N*s/m, amortiguadores
 ARB_FRONT = 26000.0               # N/m, barra estabilizadora delantera
 ARB_REAR = 12000.0                # N/m, barra estabilizadora trasera
-AERO_DRAG = 0.40                  # N/(m/s)2, resistencia al aire
-AERO_DOWNFORCE = 0.2              # N/(m/s)2, carga aerodinamica (aprieta al suelo)
+CD = 0.284                     # coef. de arrastre aerodinamico (turismo ~0.30)
+FRONTAL_AREA = 2.30             # m2, area frontal del coche
+CL = 0.142                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 22000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.70           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.30              # m, ojo del conductor: berlina comoda

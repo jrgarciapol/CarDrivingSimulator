@@ -340,6 +340,18 @@ PARTICLES_ENABLED = True     # partículas de humo (derrape en asfalto),
 PARTICLES_MAX = 260          # tope de partículas vivas [60 .. 500]
 
 # ===========================================================================
+# GRAFICOS — realismo atmosferico
+# ===========================================================================
+GFX_FOG_DIST = 600.0         # m, alcance de la bruma atmosférica: lo lejano
+                             # se funde con el cielo (perspectiva aérea, da
+                             # profundidad). 0 desactiva [0 .. 2000]
+GFX_SUN_SHADE = 0.16         # intensidad del sombreado del relieve por el
+                             # sol (cuestas y peraltes cambian de brillo
+                             # según su orientación). 0 = plano [0 .. 0.4]
+GFX_SUN = True               # dibujar el sol y su halo en el cielo (se
+                             # oculta solo con LLUVIA)
+
+# ===========================================================================
 # SONIDO
 # ===========================================================================
 AUDIO_ENABLED = True

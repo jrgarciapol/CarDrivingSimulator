@@ -19,6 +19,8 @@ from . import font
 # Paleta (mutable: set_condition() la ajusta al estado del asfalto)
 SKY_TOP = (78, 154, 219)
 SKY_BOTTOM = (170, 210, 240)
+HAZE = (236, 240, 244)       # calima del horizonte (perspectiva aérea)
+SUN_VISIBLE = True
 GRASS = [(16, 122, 40), (12, 105, 34)]
 ROAD = [(84, 84, 88), (78, 78, 82)]
 KERB = [(214, 40, 40), (235, 235, 235)]
@@ -28,7 +30,8 @@ HORIZON_MOUNTAIN = (58, 108, 76)
 
 def set_condition(cond):
     """Ajusta la paleta al estado del asfalto elegido en el menú."""
-    global SKY_TOP, SKY_BOTTOM, GRASS, ROAD, LINE
+    global SKY_TOP, SKY_BOTTOM, GRASS, ROAD, LINE, SUN_VISIBLE
+    SUN_VISIBLE = cond != "LLUVIA"
     if cond == "LLUVIA":
         SKY_TOP = (95, 105, 120)
         SKY_BOTTOM = (150, 158, 170)
@@ -76,24 +79,52 @@ class Renderer:
     # ------------------------------------------------------------------
     def draw_background(self, horizon_y, road_heading):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
-        # cielo degradado
+        # cielo degradado, con CALIMA junto al horizonte (perspectiva aérea:
+        # el aire acumulado blanquea lo lejano)
         bands = 24
         for i in range(bands):
             t = i / bands
-            c = tuple(int(SKY_TOP[j] + (SKY_BOTTOM[j] - SKY_TOP[j]) * t) for j in range(3))
+            c = [SKY_TOP[j] + (SKY_BOTTOM[j] - SKY_TOP[j]) * t
+                 for j in range(3)]
+            haze = 0.55 * t ** 5
+            c = tuple(int(c[j] * (1 - haze) + HAZE[j] * haze)
+                      for j in range(3))
             y0 = int(horizon_y * t)
             y1 = int(horizon_y * (i + 1) / bands)
             self._fill(0, y0, W, max(1, y1 - y0), c)
-        # montañas lejanas con parallax según el rumbo
+        # sol con halo (parallax lento: está lejísimos); la lluvia lo tapa
+        if getattr(cfg, "GFX_SUN", True) and SUN_VISIBLE:
+            sx = (int(-road_heading * 380) + int(W * 0.68)) % (2 * W) - W // 2
+            sy = int(horizon_y * 0.34)
+            self._draw_disc(sx, sy, 120, (255, 250, 225), 26)
+            self._draw_disc(sx, sy, 70, (255, 250, 230), 60)
+            self._draw_disc(sx, sy, 34, (255, 252, 240), 255)
+        # montañas lejanas con parallax según el rumbo, EMPALIDECIDAS por la
+        # perspectiva aérea (están a kilómetros: se funden con la calima)
+        mcol = tuple(int(HORIZON_MOUNTAIN[j] * 0.52 + HAZE[j] * 0.48)
+                     for j in range(3))
         off = int(-road_heading * 600) % W
         for base in (-W, 0, W):
             for k in range(5):
                 mx = base + off + k * (W // 4)
                 mw = W // 3
                 mh = 40 + (k * 37) % 60
-                self._draw_triangle(mx, horizon_y, mw, mh, HORIZON_MOUNTAIN)
+                self._draw_triangle(mx, horizon_y, mw, mh, mcol)
         # suelo por defecto (por si la carretera no cubre todo)
         self._fill(0, horizon_y, W, H - horizon_y, GRASS[0])
+
+    def _draw_disc(self, cx, cy, r, color, alpha):
+        """Disco relleno por franjas horizontales (con alfa: halos)."""
+        sdl2.SDL_SetRenderDrawColor(self.r, color[0], color[1], color[2],
+                                    alpha)
+        step = 4
+        for dy in range(-r, r + 1, step):
+            hw = int((r * r - dy * dy) ** 0.5)
+            self._rect.x = int(cx - hw)
+            self._rect.y = int(cy + dy)
+            self._rect.w = 2 * hw
+            self._rect.h = step
+            sdl2.SDL_RenderFillRect(self.r, self._rect)
 
     def _draw_triangle(self, x, base_y, w, h, color):
         sdl2.SDL_SetRenderDrawColor(self.r, color[0], color[1], color[2], 255)
@@ -383,6 +414,39 @@ class Renderer:
             # trazada discontinua, como la ayuda de los simuladores: los
             # huecos toman el color del asfalto que tienen debajo
             rl_c = np.where(dash[:, None], rl_c, road_c)
+
+        # --- iluminación: sombreado solar del relieve + bruma ------------
+        # sombreado: las cuestas y peraltes cambian de brillo según su
+        # orientación (cuesta abajo mira al sol -> más clara; el peralte
+        # inclina la calzada hacia/contra la luz). Barato y muy eficaz para
+        # LEER el relieve por delante.
+        shade = getattr(cfg, "GFX_SUN_SHADE", 0.0)
+        rels_np = np.asarray(rels)
+        if shade > 0.0:
+            g_slope = np.gradient(elev, rels_np)
+            light = (1.0 + shade * np.clip(-g_slope * 5.0, -1.0, 1.0)
+                     + shade * 0.7 * np.sin(bk))[:, None]
+            grass_c = np.clip(grass_c * light, 0, 255)
+            road_c = np.clip(road_c * light, 0, 255)
+            kerb_c = np.clip(kerb_c * light, 0, 255)
+        # bruma atmosférica: lo lejano se funde con el color del horizonte
+        # (perspectiva aérea). Da profundidad y suaviza el "popping" del
+        # límite de dibujado.
+        fog_d = getattr(cfg, "GFX_FOG_DIST", 0.0)
+        if fog_d > 1.0:
+            fog_col = np.array(
+                [0.5 * (SKY_BOTTOM[j] + HAZE[j]) for j in range(3)])
+            fogf = (1.0 - np.exp(-(np.maximum(rels_np, 0.0) / fog_d) ** 1.6))
+            fogf = (0.92 * fogf)[:, None]
+
+            def _fog(c):
+                return c * (1.0 - fogf) + fog_col * fogf
+            grass_c = _fog(grass_c)
+            road_c = _fog(road_c)
+            kerb_c = _fog(kerb_c)
+            edge_c = _fog(edge_c)
+            if show_line and cfg.RACING_LINE:
+                rl_c = _fog(rl_c)
 
         band_colors = [grass_c, kerb_c, road_c, edge_c, edge_c,
                        kerb_c, grass_c]

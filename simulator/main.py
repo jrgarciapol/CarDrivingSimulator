@@ -89,23 +89,55 @@ def main(argv=None):
     # ------------------------------------------------ menú de arranque
     car_name = "DEPORTIVO"
     condition = "SECO"
-    if not args.frames:
-        sel = run_menu(renderer)
-        if sel is None:
-            sdl2.SDL_DestroyRenderer(renderer)
-            sdl2.SDL_DestroyWindow(window)
-            sdl2.SDL_Quit()
-            return 0
-        if sel["car"] is not None:
-            car_name = garage.load_car(sel["car"][1])
-        cfg.TRACK_FILE = sel["track"][1]
-        condition = sel["cond"]
-        garage.apply_condition(condition)
-        render_mod.set_condition(condition)
-
+    # las condiciones MULTIPLICAN estos valores: guardar la base para
+    # restaurarla al volver al menú (si no, se acumularían)
+    _cond_base = {k: getattr(cfg, k)
+                  for k in ("TIRE_MU", "TIRE_MU_GRASS", "ROLLING_RESIST")}
     wheel = WheelInput()
     ffb = ForceFeedback(wheel)
     sound = EngineSound()
+
+    # ESC durante el juego vuelve a este menú (elegir otro coche/circuito o
+    # tocar los AJUSTES AVANZADOS) sin cerrar el programa; ESC en el menú sale.
+    while True:
+        if not args.frames:
+            sel = run_menu(renderer)
+            if sel is None:
+                sound.close()
+                ffb.close()
+                wheel.close()
+                sdl2.SDL_DestroyRenderer(renderer)
+                sdl2.SDL_DestroyWindow(window)
+                sdl2.SDL_Quit()
+                return 0
+            for k, v in _cond_base.items():
+                setattr(cfg, k, v)
+            if sel["car"] is not None:
+                car_name = garage.load_car(sel["car"][1])
+            cfg.TRACK_FILE = sel["track"][1]
+            condition = sel["cond"]
+            garage.apply_condition(condition)
+            render_mod.set_condition(condition)
+
+        to_menu = run_session(renderer, window, wheel, ffb, sound,
+                              car_name, condition, args)
+        if args.frames or not to_menu:
+            break
+
+    sound.close()
+    ffb.close()
+    wheel.close()
+    sdl2.SDL_DestroyRenderer(renderer)
+    sdl2.SDL_DestroyWindow(window)
+    sdl2.SDL_Quit()
+    return 0
+
+
+def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
+                args):
+    """Una tanda de conducción. Devuelve True si el usuario pidió volver al
+    menú (ESC) o False si cerró el programa."""
+    sound.resume()
     track = Track()
     car = Car()
     scene = Renderer(renderer)
@@ -151,6 +183,7 @@ def main(argv=None):
     frame = 0
     event = sdl2.SDL_Event()
     running = True
+    to_menu = False
 
     while running:
         # ------------------------------------------------ eventos
@@ -160,6 +193,7 @@ def main(argv=None):
             elif event.type == sdl2.SDL_KEYDOWN and not event.key.repeat:
                 sym = event.key.keysym.sym
                 if sym == sdl2.SDLK_ESCAPE:
+                    to_menu = True      # ESC: volver al menu, no cerrar
                     running = False
                 elif sym == sdl2.SDLK_F1:
                     show_debug = not show_debug
@@ -350,13 +384,10 @@ def main(argv=None):
         if args.frames and frame >= args.frames:
             running = False
 
-    sound.close()
-    ffb.close()
-    wheel.close()
-    sdl2.SDL_DestroyRenderer(renderer)
-    sdl2.SDL_DestroyWindow(window)
-    sdl2.SDL_Quit()
-    return 0
+    # dejar el volante quieto y el motor en silencio mientras dura el menú
+    sound.pause()
+    ffb.still()
+    return to_menu
 
 
 if __name__ == "__main__":

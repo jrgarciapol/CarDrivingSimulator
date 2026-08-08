@@ -279,6 +279,18 @@ class ForceFeedback:
             eff.periodic.period = period_ms
             self._update("rumble")
 
+    def still(self):
+        """Deja el volante en reposo (par y vibración a cero) sin cerrar los
+        efectos: para los menús, entre tandas."""
+        eff = self._effects.get("constant")
+        if eff is not None:
+            eff.constant.level = 0
+            self._update("constant")
+        eff = self._effects.get("rumble")
+        if eff is not None:
+            eff.periodic.magnitude = 0
+            self._update("rumble")
+
     def close(self):
         if self.haptic:
             for eid in self._ids.values():

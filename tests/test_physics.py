@@ -628,6 +628,44 @@ def main():
                          f"s={car.state.s:.0f}m"))
 
     # ------------------------------------------------------------------
+    print("--- Rigidez torsional del chasis ---")
+    # En curva sostenida, con el tren delantero mucho más rígido que el
+    # trasero (barra delantera gorda), un chasis RÍGIDO reacciona casi toda
+    # la transferencia en el eje delantero; un chasis BLANDO desacopla los
+    # ejes y la barra pierde autoridad -> baja la fracción delantera de la
+    # transferencia (y con ella el subviraje). También: con chasis blando
+    # debe aparecer torsión (twist != 0) y con rígido, no.
+    old_arb_f, old_arb_r = cfg.ARB_FRONT, cfg.ARB_REAR
+    old_kc = cfg.CHASSIS_TORSION_STIFF
+    cfg.ARB_FRONT, cfg.ARB_REAR = 60000.0, 2000.0
+
+    def front_share_and_twist(kc):
+        cfg.CHASSIS_TORSION_STIFF = kc
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 22.0)
+        for _ in range(int(3.0 / DT)):
+            c.step(DT, 0.30, 0.35, 0.0, flat)     # curva a la derecha
+        s = c.state
+        tf = s.fz[FL] - s.fz[FR]                  # transferencia delante
+        tr = s.fz[RL] - s.fz[RR]                  # y detrás
+        return tf / max(1e-6, tf + tr), s.chassis_twist
+
+    share_rigid, twist_rigid = front_share_and_twist(0.0)
+    share_soft, twist_soft = front_share_and_twist(4000.0)
+    results.append(check("chasis rigido: sin torsion (comportamiento previo)",
+                         abs(twist_rigid) < 1e-9,
+                         f"twist={twist_rigid:.2e} rad"))
+    results.append(check("chasis blando: aparece torsion del bastidor",
+                         abs(twist_soft) > 1e-5,
+                         f"twist={math.degrees(twist_soft):.3f} deg"))
+    results.append(check("chasis blando: la barra delantera pierde autoridad",
+                         share_soft < share_rigid - 0.01,
+                         f"frac. delantera {share_rigid:.3f} -> {share_soft:.3f}"))
+    cfg.ARB_FRONT, cfg.ARB_REAR = old_arb_f, old_arb_r
+    cfg.CHASSIS_TORSION_STIFF = old_kc
+
+    # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")
     from simulator import garage
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS

@@ -104,6 +104,14 @@ CAR_INERTIA_Z = 1900.0       # kg·m², inercia de guiñada; más alta = coche
                              # más "perezoso" al girar [1200 .. 4000]
 CAR_INERTIA_PITCH = 2100.0   # kg·m², inercia de cabeceo [1500 .. 4500]
 CAR_INERTIA_ROLL = 550.0     # kg·m², inercia de balanceo [350 .. 1200]
+CHASSIS_TORSION_STIFF = 20000.0  # N·m/°, rigidez torsional del bastidor.
+                             # Turismo 10-25k, GT3 ~40k, monocasco 60k+,
+                             # chasis de largueros ~7k. Un chasis blando
+                             # desacopla los ejes: el reparto de transferencia
+                             # se acerca al de los momentos y las barras
+                             # estabilizadoras pierden autoridad (cambia el
+                             # BALANCE sub/sobrevirador). 0 = rígido ideal
+                             # (comportamiento sin torsión). [0 .. 80000]
 WHEELBASE = 2.60             # m, batalla (distancia entre ejes) [2.2 .. 3.2]
 WEIGHT_DIST_FRONT = 0.546    # fracción del peso sobre el eje delantero,
                              # como en la ficha técnica; 0.5 = 50/50

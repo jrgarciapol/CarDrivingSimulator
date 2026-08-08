@@ -165,6 +165,31 @@ dinámica (frenar carga el morro porque las fuerzas de frenada crean momento
 de cabeceo que comprime los muelles delanteros), no fórmulas cuasi-estáticas
 `ΔFz = m·a·h/L` — por eso tienen su transitorio y su rebote naturales.
 
+### Rigidez torsional del chasis
+
+El bastidor no es infinitamente rígido: el tren delantero y el trasero
+balancean ángulos distintos, acoplados por el muelle de torsión del chasis
+`K_c` (`CHASSIS_TORSION_STIFF`, N·m/° por coche: monocasco de fórmula 60k,
+GT ~35k, turismo 10-25k, chasis de largueros ~7k). Se resuelve el equilibrio
+cuasi-estático (los modos de torsión reales, 20-40 Hz, quedan muy por encima
+de la dinámica de conducción):
+
+```
+K_f·φ_f + K_c·(φ_f − φ_r) = M_f          M_i = Fy_eje,i · h_cg
+K_r·φ_r + K_c·(φ_r − φ_f) = M_r          K_i = (k_muelle,i + k_barra,i)·B²/2
+Δφ = (M_f·K_r − M_r·K_f) / (K_f·K_r + K_c·(K_f + K_r))
+```
+
+La torsión `Δφ` (filtrada a ~50 ms) se superpone al balanceo rígido:
+cada eje usa `φ ± Δφ/2` al evaluar sus muelles y barras. Con `K_c → ∞`
+(o 0 = desactivado) se recupera el chasis rígido exacto. El efecto físico
+es el conocido de pista: un chasis blando **desacopla los ejes** — el
+reparto de transferencia de carga se acerca al de los momentos generados
+y las barras estabilizadoras **pierden autoridad**, así que el balance
+sub/sobrevirador responde menos al reglaje. No cambia la rapidez de
+respuesta de la dirección (eso es la longitud de relajación del neumático
+y la inercia de guiñada); cambia el *balance*.
+
 ## 4. El neumático
 
 ### Deslizamientos

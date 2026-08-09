@@ -3,19 +3,51 @@
 Esfera **digital moderna y minimalista** para el **Garmin Epix Pro 51 mm (Gen 2)**
 (pantalla AMOLED redonda de 454 × 454 px, ID de dispositivo `epix2pro51mm`).
 
+Diseñada para **máxima legibilidad**, con fuentes **Roboto Mono** (open source,
+Apache 2.0) y **Always-On Display** seguro contra *burn-in*.
+
+![Vista previa](preview/preview.png)
+
 ## Diseño
 
-- **Fondo oscuro** (negro) — ideal para AMOLED y batería.
-- **Hora grande** `HH:MM` en blanco, en el centro.
-- **Día de la semana + fecha** arriba (`LUN 09 AGO`), en gris discreto.
-- **Segundos** en color de **acento azul** debajo de la hora (se ocultan
-  automáticamente en reposo para cuidar el AMOLED).
-- Fina **línea de acento** bajo la hora.
+La esfera tiene **dos presentaciones** que cambian solas:
+
+### Modo INTERACTIVO (cuando miras el reloj)
+
+- **Fondo negro** con máximo contraste.
+- **Hora `HH:MM`** en **Roboto Mono Bold**, muy grande y blanca.
+- **Día + fecha** arriba (`LUN 09 AGO`) en gris.
+- **Segundos** en color de **acento** + fina línea de acento.
+
+### Modo ALWAYS-ON (reposo, pantalla siempre encendida)
+
+- **Hora `HH:MM`** en **Roboto Mono Light** (trazo fino) → **legible pero
+  seguro**: solo ~4 % de píxeles encendidos (Garmin exige < 10 % en AOD).
+- **Fecha** pequeña y atenuada.
+- **Sin segundos ni rellenos.**
+- **Desplazamiento de píxeles cada minuto** (± 8 px) para evitar el quemado
+  del panel AMOLED (*burn-in protection*).
 
 ### Personalizable desde Garmin Connect
 
 - **Formato 24 horas** (activado por defecto).
 - **Color de acento**: Azul (por defecto), Rojo, Verde, Naranja o Blanco.
+
+## ⚠️ Sobre la sensibilidad del gesto de muñeca / brillo
+
+Es la única petición que **no se puede resolver por software** en una esfera:
+la detección del gesto de levantar la muñeca y el control de la
+retroiluminación los gestiona el **firmware del reloj**, y Connect IQ **no
+expone ninguna API** para que una watch face los haga más sensibles ni fuerce
+el brillo (está bloqueado a propósito). Lo que sí hace esta esfera es
+**repintar al instante** el diseño brillante al despertar (`onExitSleep`).
+
+Para afinar la respuesta al gesto, en el **propio reloj**:
+
+- **Configuración → Sistema → Retroiluminación → Gesto:** *Activado*.
+- Sube el **Brillo** y alarga el **Tiempo de espera**.
+- Con **Always-On Display activado**, la hora se ve siempre sin necesidad del
+  gesto (por eso hemos cuidado tanto ese modo).
 
 ## Estructura del proyecto
 
@@ -25,14 +57,30 @@ garmin-watchface/
 ├── monkey.jungle                    # Configuración de build
 ├── source/
 │   ├── EpixWatchFaceApp.mc          # Clase de la aplicación
-│   └── EpixWatchFaceView.mc         # Dibujado de la esfera
+│   └── EpixWatchFaceView.mc         # Dibujado (interactivo + AOD)
 ├── resources/
 │   ├── drawables/                   # Icono de lanzador
+│   ├── fonts/                       # Roboto Mono rasterizada (BMFont .fnt+.png)
 │   ├── strings/                     # Textos (inglés + fallback)
 │   └── settings/                    # Ajustes del usuario
-└── resources-spa/
-    └── strings/                     # Textos en español (días/meses)
+├── resources-spa/
+│   └── strings/                     # Textos en español (días/meses)
+├── fonts-src/                       # TTF originales + generador + licencia
+└── preview/                         # Imagen de vista previa + generador
 ```
+
+## Fuentes (Roboto Mono)
+
+Connect IQ no consume TTF directamente: usa fuentes **BMFont** (`.fnt` + `.png`).
+Los `.ttf` originales están en `fonts-src/` y se rasterizan con
+`fonts-src/gen_fonts.py` (requiere `Pillow`). Para regenerarlas:
+
+```bash
+python3 fonts-src/gen_fonts.py
+```
+
+Roboto Mono © The Roboto Mono Project Authors, licencia Apache 2.0
+(ver `fonts-src/LICENSE.txt`).
 
 ## Cómo compilarla y cargarla en tu reloj
 

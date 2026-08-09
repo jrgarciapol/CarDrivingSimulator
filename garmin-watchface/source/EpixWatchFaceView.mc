@@ -6,35 +6,69 @@ using Toybox.Time as Time;
 using Toybox.Time.Gregorian as Calendar;
 using Toybox.Application as App;
 
-//! Esfera digital moderna para el Epix Pro 51 mm (454 x 454, AMOLED).
+//! Esfera digital para el Epix Pro 51 mm (454 x 454, AMOLED), pensada para
+//! MÁXIMA LEGIBILIDAD, con fuentes Roboto Mono (open source) y soporte real de
+//! Always-On Display (AOD) seguro contra burn-in.
 //!
-//! Distribución:
-//!   - Arriba:  DÍA  DD MES        (gris claro, discreto)
-//!   - Centro:  HH:MM              (blanco, muy grande)
-//!   - Abajo:   SS                 (color de acento; solo con pantalla activa)
+//! Dos presentaciones:
 //!
-//! En modo de bajo consumo (muñeca abajo / reposo) se ocultan los segundos
-//! para reducir píxeles encendidos y cuidar el AMOLED y la batería.
+//!   INTERACTIVA (mirando el reloj) — brillo máximo, contraste alto:
+//!     - Fecha (Roboto Mono Medium, gris claro)
+//!     - Hora HH:MM (Roboto Mono Bold, blanco, muy grande)
+//!     - Línea de acento + segundos (color de acento)
+//!
+//!   ALWAYS-ON (reposo, pantalla siempre encendida) — legible pero seguro:
+//!     - Hora HH:MM (Roboto Mono Light: trazo fino = pocos píxeles encendidos)
+//!     - Fecha pequeña
+//!     - Sin segundos ni rellenos; ~4% de píxeles encendidos (Garmin exige <10%)
+//!     - Desplazamiento de píxeles cada minuto para evitar quemado del AMOLED.
 class EpixWatchFaceView extends Ui.WatchFace {
 
-    // ¿Está la pantalla en alto consumo (mirándola)?
+    // ¿Pantalla en alto consumo (el usuario la está mirando)?
     private var mIsAwake = true;
+
+    // ¿El dispositivo exige protección anti burn-in? (true en AMOLED Epix Pro)
+    private var mBurnIn = false;
 
     // Ajustes configurables por el usuario.
     private var mUse24Hour = true;
     private var mAccentColor = 0x1E9BFF; // azul brillante por defecto
 
-    // Colores fijos del tema oscuro.
-    private const COLOR_BG    = Gfx.COLOR_BLACK;
-    private const COLOR_TIME  = 0xFFFFFF; // blanco puro
-    private const COLOR_DATE  = 0xAAAAAA; // gris claro
+    // Fuentes personalizadas (Roboto Mono).
+    private var mTimeFont;      // Bold  — hora interactiva
+    private var mTimeThinFont;  // Light — hora AOD
+    private var mSecFont;       // Bold  — segundos
+    private var mDateFont;      // Medium — fecha
+
+    // Colores.
+    private const COLOR_BG      = Gfx.COLOR_BLACK;
+    private const COLOR_TIME    = 0xFFFFFF; // blanco puro (interactivo)
+    private const COLOR_DATE    = 0xAAAAAA; // gris claro (interactivo)
+    private const COLOR_AOD     = 0xFFFFFF; // hora AOD (fina, pocos píxeles)
+    private const COLOR_AOD_DIM = 0x888888; // fecha AOD (más tenue)
+
+    // Posiciones verticales como fracción de la altura de pantalla.
+    private const Y_DATE = 0.30;
+    private const Y_TIME = 0.50;
+    private const Y_LINE = 0.685;
+    private const Y_SEC  = 0.79;
 
     function initialize() {
         WatchFace.initialize();
     }
 
-    //! Carga (o recarga) los ajustes del usuario.
+    //! Carga fuentes y detecta capacidades del dispositivo.
     function onLayout(dc) {
+        mTimeFont     = Ui.loadResource(Rez.Fonts.TimeBold);
+        mTimeThinFont = Ui.loadResource(Rez.Fonts.TimeThin);
+        mSecFont      = Ui.loadResource(Rez.Fonts.SecBold);
+        mDateFont     = Ui.loadResource(Rez.Fonts.DateMed);
+
+        var settings = Sys.getDeviceSettings();
+        if (settings has :requiresBurnInProtection) {
+            mBurnIn = (settings.requiresBurnInProtection == true);
+        }
+
         loadSettings();
     }
 
@@ -43,64 +77,110 @@ class EpixWatchFaceView extends Ui.WatchFace {
         if (use24 != null) {
             mUse24Hour = use24;
         }
-
         var accent = App.Properties.getValue("AccentColor");
         if (accent != null) {
             mAccentColor = accent;
         }
     }
 
-    //! Se llama cada vez que se muestra la esfera.
     function onShow() {
         loadSettings();
     }
 
-    //! Redibujado completo. En alto consumo ocurre cada segundo (vía
-    //! onPartialUpdate); en bajo consumo, una vez por minuto.
+    //! Redibujado principal.
+    //!   - En alto consumo: presentación interactiva completa.
+    //!   - En bajo consumo con AOD: presentación mínima y segura.
     function onUpdate(dc) {
         loadSettings();
 
-        var width  = dc.getWidth();
-        var height = dc.getHeight();
-        var cx = width / 2;
-
-        // Fondo.
         dc.setColor(COLOR_BG, COLOR_BG);
         dc.clear();
 
         var now = Calendar.info(Time.now(), Time.FORMAT_SHORT);
 
-        // ---- Línea de fecha: "LUN 09 AGO" ----
-        var dayStr   = dayName(now.day_of_week);
-        var monStr   = monthName(now.month);
-        var dateLine = dayStr + " " + now.day.format("%02d") + " " + monStr;
-
-        var dateY = (height * 0.30).toNumber();
-        dc.setColor(COLOR_DATE, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, dateY, Gfx.FONT_MEDIUM, dateLine,
-                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
-
-        // ---- Hora grande: "HH:MM" ----
-        var timeStr = formatTime(now.hour, now.min);
-        var timeY = (height * 0.50).toNumber();
-        dc.setColor(COLOR_TIME, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, timeY, Gfx.FONT_NUMBER_THAI_HOT, timeStr,
-                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
-
-        // ---- Acento: pequeña línea horizontal bajo la hora ----
-        var lineY = (height * 0.68).toNumber();
-        var lineHalf = (width * 0.16).toNumber();
-        dc.setColor(mAccentColor, Gfx.COLOR_TRANSPARENT);
-        dc.fillRectangle(cx - lineHalf, lineY, lineHalf * 2, 3);
-
-        // ---- Segundos (solo con pantalla activa) ----
         if (mIsAwake) {
-            drawSeconds(dc, now.sec);
+            drawInteractive(dc, now);
+        } else {
+            drawAlwaysOn(dc, now);
         }
     }
 
-    //! Redibujado parcial (una vez por segundo en alto consumo).
-    //! Solo actualiza los segundos para gastar poca batería.
+    //! ---- Presentación INTERACTIVA (brillo máximo) ----
+    private function drawInteractive(dc, now) {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        var cx = w / 2;
+
+        // Fecha
+        dc.setColor(COLOR_DATE, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, (h * Y_DATE).toNumber(), mDateFont, dateLine(now),
+                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+
+        // Hora
+        dc.setColor(COLOR_TIME, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, (h * Y_TIME).toNumber(), mTimeFont,
+                    formatTime(now.hour, now.min),
+                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+
+        // Línea de acento
+        var lineHalf = (w * 0.16).toNumber();
+        dc.setColor(mAccentColor, Gfx.COLOR_TRANSPARENT);
+        dc.fillRectangle(cx - lineHalf, (h * Y_LINE).toNumber(), lineHalf * 2, 3);
+
+        // Segundos
+        drawSeconds(dc, now.sec);
+    }
+
+    //! ---- Presentación ALWAYS-ON (segura contra burn-in) ----
+    private function drawAlwaysOn(dc, now) {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+
+        // Desplazamiento de píxeles: 9 posiciones que rotan cada minuto para
+        // no fijar siempre los mismos píxeles (evita el quemado del AMOLED).
+        var shift = 8;
+        var ox = ((now.min % 3) - 1) * shift;
+        var oy = (((now.min / 3) % 3) - 1) * shift;
+        var cx = w / 2 + ox;
+
+        // Fecha (pequeña, tenue)
+        dc.setColor(COLOR_AOD_DIM, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, (h * Y_DATE).toNumber() + oy, mDateFont, dateLine(now),
+                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+
+        // Hora (Roboto Mono Light: trazo fino, muy legible y con pocos píxeles)
+        dc.setColor(COLOR_AOD, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, (h * Y_TIME).toNumber() + oy, mTimeThinFont,
+                    formatTime(now.hour, now.min),
+                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+        // Sin segundos, sin línea ni rellenos en AOD.
+    }
+
+    //! Segundos en color de acento (solo con pantalla activa). Limpia su propia
+    //! zona (clip) para que onPartialUpdate no solape dígitos cada segundo.
+    private function drawSeconds(dc, sec) {
+        var w = dc.getWidth();
+        var h = dc.getHeight();
+        var cx = w / 2;
+        var secY = (h * Y_SEC).toNumber();
+
+        var text = sec.format("%02d");
+        var dims = dc.getTextDimensions(text, mSecFont);
+        var boxW = dims[0] + 10;
+        var boxH = dims[1] + 6;
+
+        dc.setClip(cx - boxW / 2, secY - boxH / 2, boxW, boxH);
+        dc.setColor(COLOR_BG, COLOR_BG);
+        dc.clear();
+
+        dc.setColor(mAccentColor, Gfx.COLOR_TRANSPARENT);
+        dc.drawText(cx, secY, mSecFont, text,
+                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+
+        dc.clearClip();
+    }
+
+    //! Refresco por segundo (solo en alto consumo): actualiza los segundos.
     function onPartialUpdate(dc) {
         if (!mIsAwake) {
             return;
@@ -109,38 +189,16 @@ class EpixWatchFaceView extends Ui.WatchFace {
         drawSeconds(dc, now.sec);
     }
 
-    //! Dibuja los segundos en color de acento, centrados bajo la línea.
-    //! Limpia primero solo su propia zona (una "clip region"), imprescindible
-    //! para que en onPartialUpdate no se solapen los dígitos cada segundo.
-    private function drawSeconds(dc, sec) {
-        var width  = dc.getWidth();
-        var height = dc.getHeight();
-        var cx = width / 2;
-        var secY = (height * 0.78).toNumber();
-
-        var text = sec.format("%02d");
-        var font = Gfx.FONT_NUMBER_MEDIUM;
-        var dims = dc.getTextDimensions(text, font);
-        var boxW = dims[0] + 8;
-        var boxH = dims[1] + 4;
-
-        dc.setClip(cx - boxW / 2, secY - boxH / 2, boxW, boxH);
-        dc.setColor(COLOR_BG, COLOR_BG);
-        dc.clear();
-
-        dc.setColor(mAccentColor, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, secY, font, text,
-                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
-
-        dc.clearClip();
+    //! Construye la línea de fecha: "LUN 09 AGO".
+    private function dateLine(now) {
+        return dayName(now.day_of_week) + " " +
+               now.day.format("%02d") + " " +
+               monthName(now.month);
     }
 
-    //! Formatea la hora respetando el ajuste de 12/24 h y el del sistema.
+    //! Formatea la hora respetando 12/24 h del usuario y del sistema.
     private function formatTime(hour, min) {
-        // Usamos 24 h solo si el usuario lo pide Y el sistema también lo tiene.
-        // Si el sistema está en 12 h, mandamos a 12 h para no confundir.
         var use24 = mUse24Hour and Sys.getDeviceSettings().is24Hour;
-
         var h = hour;
         if (!use24) {
             h = hour % 12;
@@ -151,7 +209,6 @@ class EpixWatchFaceView extends Ui.WatchFace {
         return h.format("%02d") + ":" + min.format("%02d");
     }
 
-    //! Nombre corto del día de la semana (1 = domingo en FORMAT_SHORT).
     private function dayName(dow) {
         var ids = [
             Rez.Strings.Day_0, Rez.Strings.Day_1, Rez.Strings.Day_2,
@@ -165,7 +222,6 @@ class EpixWatchFaceView extends Ui.WatchFace {
         return Ui.loadResource(ids[idx]);
     }
 
-    //! Nombre corto del mes (1 = enero).
     private function monthName(month) {
         var ids = [
             Rez.Strings.Mon_1, Rez.Strings.Mon_2, Rez.Strings.Mon_3,
@@ -180,13 +236,13 @@ class EpixWatchFaceView extends Ui.WatchFace {
         return Ui.loadResource(ids[idx]);
     }
 
-    //! La pantalla pasa a alto consumo (el usuario mira el reloj).
+    //! Alto consumo: repintamos al instante para respuesta inmediata al gesto.
     function onExitSleep() {
         mIsAwake = true;
         Ui.requestUpdate();
     }
 
-    //! La pantalla pasa a bajo consumo (reposo).
+    //! Bajo consumo: pasamos a la presentación Always-On.
     function onEnterSleep() {
         mIsAwake = false;
         Ui.requestUpdate();

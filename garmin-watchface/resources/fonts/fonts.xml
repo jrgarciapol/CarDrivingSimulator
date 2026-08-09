@@ -2,7 +2,7 @@
 <fonts>
     <!-- Fuentes Roboto Mono rasterizadas a BMFont (.fnt + .png). -->
     <font id="TimeBold" filename="TimeBold.fnt" antialias="true"/>
-    <font id="TimeThin" filename="TimeThin.fnt" antialias="true"/>
+    <font id="TimeAod"  filename="TimeAod.fnt"  antialias="true"/>
     <font id="SecBold"  filename="SecBold.fnt"  antialias="true"/>
     <font id="DateMed"  filename="DateMed.fnt"  antialias="true"/>
 </fonts>

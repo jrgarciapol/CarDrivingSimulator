@@ -5,13 +5,22 @@
         <settingConfig type="boolean"/>
     </setting>
 
-    <!-- Color de acento -->
-    <setting propertyKey="@Properties.AccentColor" title="Color de acento">
+    <!-- Color de acento (modo interactivo) -->
+    <setting propertyKey="@Properties.AccentColor" title="Color de acento (interactivo)">
         <settingConfig type="list">
             <listEntry value="2006015">Azul</listEntry>
             <listEntry value="16726832">Rojo</listEntry>
             <listEntry value="9101876">Verde</listEntry>
             <listEntry value="16749824">Naranja</listEntry>
+            <listEntry value="16777215">Blanco</listEntry>
+        </settingConfig>
+    </setting>
+
+    <!-- Color de la hora en Always-On -->
+    <setting propertyKey="@Properties.AodColor" title="Color hora Always-On">
+        <settingConfig type="list">
+            <listEntry value="65280">Verde</listEntry>
+            <listEntry value="16711680">Rojo</listEntry>
             <listEntry value="16777215">Blanco</listEntry>
         </settingConfig>
     </setting>

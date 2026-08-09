@@ -32,11 +32,12 @@ class EpixWatchFaceView extends Ui.WatchFace {
 
     // Ajustes configurables por el usuario.
     private var mUse24Hour = true;
-    private var mAccentColor = 0x1E9BFF; // azul brillante por defecto
+    private var mAccentColor = 0x1E9BFF; // azul brillante (acento interactivo)
+    private var mAodColor = 0x00FF00;    // verde por defecto (hora en AOD)
 
     // Fuentes personalizadas (Roboto Mono).
-    private var mTimeFont;      // Bold  — hora interactiva
-    private var mTimeThinFont;  // Light — hora AOD
+    private var mTimeFont;      // Bold 130 — hora interactiva
+    private var mAodFont;       // Bold 156 — hora AOD (grande)
     private var mSecFont;       // Bold  — segundos
     private var mDateFont;      // Medium — fecha
 
@@ -44,8 +45,6 @@ class EpixWatchFaceView extends Ui.WatchFace {
     private const COLOR_BG      = Gfx.COLOR_BLACK;
     private const COLOR_TIME    = 0xFFFFFF; // blanco puro (interactivo)
     private const COLOR_DATE    = 0xAAAAAA; // gris claro (interactivo)
-    private const COLOR_AOD     = 0xFFFFFF; // hora AOD (fina, pocos píxeles)
-    private const COLOR_AOD_DIM = 0x888888; // fecha AOD (más tenue)
 
     // Posiciones verticales como fracción de la altura de pantalla.
     private const Y_DATE = 0.30;
@@ -59,10 +58,10 @@ class EpixWatchFaceView extends Ui.WatchFace {
 
     //! Carga fuentes y detecta capacidades del dispositivo.
     function onLayout(dc) {
-        mTimeFont     = Ui.loadResource(Rez.Fonts.TimeBold);
-        mTimeThinFont = Ui.loadResource(Rez.Fonts.TimeThin);
-        mSecFont      = Ui.loadResource(Rez.Fonts.SecBold);
-        mDateFont     = Ui.loadResource(Rez.Fonts.DateMed);
+        mTimeFont = Ui.loadResource(Rez.Fonts.TimeBold);
+        mAodFont  = Ui.loadResource(Rez.Fonts.TimeAod);
+        mSecFont  = Ui.loadResource(Rez.Fonts.SecBold);
+        mDateFont = Ui.loadResource(Rez.Fonts.DateMed);
 
         var settings = Sys.getDeviceSettings();
         if (settings has :requiresBurnInProtection) {
@@ -80,6 +79,10 @@ class EpixWatchFaceView extends Ui.WatchFace {
         var accent = App.Properties.getValue("AccentColor");
         if (accent != null) {
             mAccentColor = accent;
+        }
+        var aod = App.Properties.getValue("AodColor");
+        if (aod != null) {
+            mAodColor = aod;
         }
     }
 
@@ -131,7 +134,11 @@ class EpixWatchFaceView extends Ui.WatchFace {
         drawSeconds(dc, now.sec);
     }
 
-    //! ---- Presentación ALWAYS-ON (segura contra burn-in) ----
+    //! ---- Presentación ALWAYS-ON (solo la hora, grande y legible) ----
+    //! Hora enorme (Roboto Mono Bold 156) en color AOD (verde/rojo/blanco).
+    //! ~9,2% de píxeles encendidos (bajo el límite del 10% de Garmin).
+    //! Se dibuja en tres bloques (HH · : · MM) con el ":" ceñido para poder
+    //! agrandar los dígitos sin salirse de la pantalla.
     private function drawAlwaysOn(dc, now) {
         var w = dc.getWidth();
         var h = dc.getHeight();
@@ -141,19 +148,32 @@ class EpixWatchFaceView extends Ui.WatchFace {
         var shift = 8;
         var ox = ((now.min % 3) - 1) * shift;
         var oy = (((now.min / 3) % 3) - 1) * shift;
-        var cx = w / 2 + ox;
 
-        // Fecha (pequeña, tenue)
-        dc.setColor(COLOR_AOD_DIM, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, (h * Y_DATE).toNumber() + oy, mDateFont, dateLine(now),
-                    Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
+        var timeStr = formatTime(now.hour, now.min);
+        var colonIdx = timeStr.find(":");
+        var hh = timeStr.substring(0, colonIdx);
+        var mm = timeStr.substring(colonIdx + 1, timeStr.length());
 
-        // Hora (Roboto Mono Light: trazo fino, muy legible y con pocos píxeles)
-        dc.setColor(COLOR_AOD, Gfx.COLOR_TRANSPARENT);
-        dc.drawText(cx, (h * Y_TIME).toNumber() + oy, mTimeThinFont,
-                    formatTime(now.hour, now.min),
+        // Anchos: bloque de dos dígitos y hueco ceñido para el ":".
+        var wBlock = dc.getTextDimensions(hh, mAodFont)[0];
+        var wColon = dc.getTextDimensions(":", mAodFont)[0];
+        var colonSlot = (wColon / 2).toNumber();
+        var totalW = wBlock * 2 + colonSlot;
+
+        var x0 = (w - totalW) / 2 + ox;
+        var cy = h / 2 + oy;
+
+        dc.setColor(mAodColor, Gfx.COLOR_TRANSPARENT);
+        // HH (alineado a la izquierda de su bloque)
+        dc.drawText(x0, cy, mAodFont, hh,
+                    Gfx.TEXT_JUSTIFY_LEFT | Gfx.TEXT_JUSTIFY_VCENTER);
+        // ":" centrado en su hueco ceñido
+        dc.drawText(x0 + wBlock + colonSlot / 2, cy, mAodFont, ":",
                     Gfx.TEXT_JUSTIFY_CENTER | Gfx.TEXT_JUSTIFY_VCENTER);
-        // Sin segundos, sin línea ni rellenos en AOD.
+        // MM
+        dc.drawText(x0 + wBlock + colonSlot, cy, mAodFont, mm,
+                    Gfx.TEXT_JUSTIFY_LEFT | Gfx.TEXT_JUSTIFY_VCENTER);
+        // Sin fecha, segundos ni rellenos en AOD.
     }
 
     //! Segundos en color de acento (solo con pantalla activa). Limpia su propia

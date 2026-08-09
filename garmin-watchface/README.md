@@ -21,17 +21,21 @@ La esfera tiene **dos presentaciones** que cambian solas:
 
 ### Modo ALWAYS-ON (reposo, pantalla siempre encendida)
 
-- **Hora `HH:MM`** en **Roboto Mono Light** (trazo fino) → **legible pero
-  seguro**: solo ~4 % de píxeles encendidos (Garmin exige < 10 % en AOD).
-- **Fecha** pequeña y atenuada.
-- **Sin segundos ni rellenos.**
+- **Solo la hora `HH:MM`**, lo más grande y legible posible: **Roboto Mono
+  Bold 156**, dibujada en tres bloques (`HH` · `:` · `MM`) con el `:` ceñido
+  para maximizar el tamaño de los dígitos sin salirse de la pantalla.
+- **Color vivo AMOLED**: Verde (por defecto), Rojo o Blanco.
+- **~9,2 % de píxeles encendidos** — apurando el límite del 10 % que exige
+  Garmin en AOD, pero con margen de seguridad (verificado).
+- **Sin fecha, segundos ni rellenos.**
 - **Desplazamiento de píxeles cada minuto** (± 8 px) para evitar el quemado
   del panel AMOLED (*burn-in protection*).
 
 ### Personalizable desde Garmin Connect
 
 - **Formato 24 horas** (activado por defecto).
-- **Color de acento**: Azul (por defecto), Rojo, Verde, Naranja o Blanco.
+- **Color de acento (interactivo)**: Azul (def.), Rojo, Verde, Naranja o Blanco.
+- **Color de la hora en Always-On**: Verde (def.), Rojo o Blanco.
 
 ## ⚠️ Sobre la sensibilidad del gesto de muñeca / brillo
 

@@ -3,7 +3,10 @@
     <!-- Formato de 24 horas (si el sistema también lo permite). -->
     <property id="Use24Hour" type="boolean">true</property>
 
-    <!-- Color de acento (segundos y línea). Valor RGB de 24 bits. -->
+    <!-- Color de acento interactivo (segundos y línea). RGB 24 bits. -->
     <!-- 0x1E9BFF = azul brillante (por defecto). -->
     <property id="AccentColor" type="number">2006015</property>
+
+    <!-- Color de la hora en Always-On. 0x00FF00 = verde (por defecto). -->
+    <property id="AodColor" type="number">65280</property>
 </properties>

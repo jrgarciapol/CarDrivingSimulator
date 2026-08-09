@@ -6,7 +6,10 @@ con setColor). Empaquetado tipo 'shelf' en un atlas RGBA.
 import os
 from PIL import Image, ImageDraw, ImageFont
 
-FONT_DIR = "/home/user/CarDrivingSimulator/garmin-watchface/resources/fonts"
+import os
+BASE = "/home/user/CarDrivingSimulator/garmin-watchface"
+SRC_DIR = os.path.join(BASE, "fonts-src")        # TTF de origen
+FONT_DIR = os.path.join(BASE, "resources/fonts") # salida .fnt + .png
 
 # (id, archivo ttf, tamaño px, caracteres)
 DIGITS = "0123456789"
@@ -15,7 +18,7 @@ DATE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + DIGITS + " "
 
 JOBS = [
     ("TimeBold", "RobotoMono-Bold.ttf",   130, TIME_CHARS),   # hora interactiva
-    ("TimeThin", "RobotoMono-Light.ttf",  130, TIME_CHARS),   # hora AOD (trazo fino)
+    ("TimeAod",  "RobotoMono-Bold.ttf",   156, TIME_CHARS),   # hora AOD (grande, ~9%)
     ("SecBold",  "RobotoMono-Bold.ttf",    56, DIGITS),       # segundos
     ("DateMed",  "RobotoMono-Medium.ttf",  32, DATE_CHARS),   # fecha
 ]
@@ -25,7 +28,7 @@ PAD = 2  # separación entre glifos en el atlas
 
 def build(job):
     fid, ttf, size, chars = job
-    font = ImageFont.truetype(os.path.join(FONT_DIR, ttf), size)
+    font = ImageFont.truetype(os.path.join(SRC_DIR, ttf), size)
     ascent, descent = font.getmetrics()
     line_height = ascent + descent
     base = ascent

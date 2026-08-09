@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<strings>
+    <string id="AppName">Epix Digital</string>
+
+    <!-- Nombres cortos de los días (fallback en inglés; ver strings-spa para español). -->
+    <string id="Day_0">SUN</string>
+    <string id="Day_1">MON</string>
+    <string id="Day_2">TUE</string>
+    <string id="Day_3">WED</string>
+    <string id="Day_4">THU</string>
+    <string id="Day_5">FRI</string>
+    <string id="Day_6">SAT</string>
+
+    <!-- Nombres cortos de los meses (fallback en inglés). -->
+    <string id="Mon_1">JAN</string>
+    <string id="Mon_2">FEB</string>
+    <string id="Mon_3">MAR</string>
+    <string id="Mon_4">APR</string>
+    <string id="Mon_5">MAY</string>
+    <string id="Mon_6">JUN</string>
+    <string id="Mon_7">JUL</string>
+    <string id="Mon_8">AUG</string>
+    <string id="Mon_9">SEP</string>
+    <string id="Mon_10">OCT</string>
+    <string id="Mon_11">NOV</string>
+    <string id="Mon_12">DEC</string>
+</strings>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings>
+    <!-- Formato de hora -->
+    <setting propertyKey="@Properties.Use24Hour" title="Formato 24 horas">
+        <settingConfig type="boolean"/>
+    </setting>
+
+    <!-- Color de acento -->
+    <setting propertyKey="@Properties.AccentColor" title="Color de acento">
+        <settingConfig type="list">
+            <listEntry value="2006015">Azul</listEntry>
+            <listEntry value="16726832">Rojo</listEntry>
+            <listEntry value="9101876">Verde</listEntry>
+            <listEntry value="16749824">Naranja</listEntry>
+            <listEntry value="16777215">Blanco</listEntry>
+        </settingConfig>
+    </setting>
+</settings>

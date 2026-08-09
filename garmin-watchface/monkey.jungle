@@ -1,0 +1,7 @@
+# Archivo de proyecto de Connect IQ (build).
+# Define de dónde salen las fuentes y los recursos.
+
+project.manifest = manifest.xml
+
+base.sourcePath = source
+base.resourcePath = resources

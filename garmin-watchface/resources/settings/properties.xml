@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<properties>
+    <!-- Formato de 24 horas (si el sistema también lo permite). -->
+    <property id="Use24Hour" type="boolean">true</property>
+
+    <!-- Color de acento (segundos y línea). Valor RGB de 24 bits. -->
+    <!-- 0x1E9BFF = azul brillante (por defecto). -->
+    <property id="AccentColor" type="number">2006015</property>
+</properties>

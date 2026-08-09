@@ -1,0 +1,11 @@
+# Artefactos de build de Connect IQ
+bin/
+*.prg
+*.prg.debug.xml
+*.iq
+gen/
+
+# Clave de desarrollador (¡nunca subir!)
+*.der
+*.pem
+developer_key

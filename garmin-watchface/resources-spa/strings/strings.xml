@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<strings>
+    <string id="AppName">Epix Digital</string>
+
+    <!-- Días de la semana en español (abreviados). -->
+    <string id="Day_0">DOM</string>
+    <string id="Day_1">LUN</string>
+    <string id="Day_2">MAR</string>
+    <string id="Day_3">MIE</string>
+    <string id="Day_4">JUE</string>
+    <string id="Day_5">VIE</string>
+    <string id="Day_6">SAB</string>
+
+    <!-- Meses en español (abreviados). -->
+    <string id="Mon_1">ENE</string>
+    <string id="Mon_2">FEB</string>
+    <string id="Mon_3">MAR</string>
+    <string id="Mon_4">ABR</string>
+    <string id="Mon_5">MAY</string>
+    <string id="Mon_6">JUN</string>
+    <string id="Mon_7">JUL</string>
+    <string id="Mon_8">AGO</string>
+    <string id="Mon_9">SEP</string>
+    <string id="Mon_10">OCT</string>
+    <string id="Mon_11">NOV</string>
+    <string id="Mon_12">DIC</string>
+</strings>

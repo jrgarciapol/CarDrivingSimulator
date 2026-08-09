@@ -187,6 +187,16 @@ class EngineSound:
         buf = samples.tobytes()
         sdl2.SDL_QueueAudio(self.device, buf, len(buf))
 
+    def pause(self):
+        """Silencia el motor (menús) sin cerrar el dispositivo."""
+        if self.ok:
+            sdl2.SDL_ClearQueuedAudio(self.device)
+            sdl2.SDL_PauseAudioDevice(self.device, 1)
+
+    def resume(self):
+        if self.ok:
+            sdl2.SDL_PauseAudioDevice(self.device, 0)
+
     def close(self):
         if self.ok:
             sdl2.SDL_CloseAudioDevice(self.device)

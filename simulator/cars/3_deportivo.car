@@ -6,6 +6,7 @@ CAR_MASS = 1250.0                 # kg, masa total del vehiculo
 CAR_INERTIA_Z = 1900.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 2100.0        # kg*m2, inercia de cabeceo (frenar/acelerar)
 CAR_INERTIA_ROLL = 550.0          # kg*m2, inercia de balanceo (curvas)
+CHASSIS_TORSION_STIFF = 27000.0   # N*m/grado, rigidez torsional (autoportante reforzada)
 WHEELBASE = 2.60                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.546         # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.52              # m, altura del c. de gravedad: mas = mas vuelco

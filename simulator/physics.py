@@ -101,6 +101,7 @@ class CarState:
         self.heave_v = 0.0
         self.pitch_v = 0.0
         self.roll_v = 0.0
+        self.chassis_twist = 0.0  # rad, torsión del bastidor (φ_del − φ_tras)
         # ruedas
         self.omega = [0.0, 0.0, 0.0, 0.0]      # rad/s
         self.fz = [0.0, 0.0, 0.0, 0.0]         # carga vertical (N)
@@ -155,6 +156,7 @@ class Car:
         self._torque_lp = 0.0
         self._auto_dwell = 0.0
         self._fy_tires = 0.0
+        self._fy_front = 0.0      # fuerza lateral del eje delantero (torsión)
         a, b = cfg.CAR_CG_TO_FRONT, cfg.CAR_CG_TO_REAR
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
@@ -178,6 +180,7 @@ class Car:
         self._limiter_cut = False
         self._fx_tires = 0.0
         self._fy_tires = 0.0
+        self._fy_front = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
         self._torque_lp = 0.0
@@ -325,13 +328,45 @@ class Car:
         vcurv = track.vcurv_at(st.s)
         a_road = vcurv * st.vx * st.vx   # aceleración vertical impuesta
         # por la rasante (cresta: vcurv<0 -> el suelo "cae")
+        # --- RIGIDEZ TORSIONAL DEL CHASIS -------------------------------
+        # El bastidor no es infinitamente rígido: el tren delantero y el
+        # trasero balancean ángulos distintos, acoplados por el muelle de
+        # torsión del chasis (K_c). Se resuelve el equilibrio cuasi-estático
+        # (los modos de torsión reales, 20-40 Hz, quedan muy por encima de
+        # la dinámica de conducción):
+        #     K_f·φ_f + K_c·(φ_f − φ_r) = M_f
+        #     K_r·φ_r + K_c·(φ_r − φ_f) = M_r
+        # cuya diferencia es  Δφ = (M_f·K_r − M_r·K_f)/(K_f·K_r + K_c·(K_f+K_r))
+        # con K_f/K_r = rigidez de balanceo de cada eje (muelles + barra) y
+        # M_f/M_r = momento de vuelco generado por cada eje. Con K_c → ∞,
+        # Δφ → 0 (chasis rígido = comportamiento anterior). Un chasis blando
+        # deja que cada eje "vaya por su cuenta": el reparto de transferencia
+        # de carga se acerca al de los momentos y las barras pierden efecto
+        # (por eso un chasis que flexa no se deja reglar).
+        t2c = cfg.CAR_TRACK_WIDTH * cfg.CAR_TRACK_WIDTH / 2.0
+        k_roll_f = (cfg.SUSP_SPRING_FRONT + cfg.ARB_FRONT) * t2c
+        k_roll_r = (cfg.SUSP_SPRING_REAR + cfg.ARB_REAR) * t2c
+        k_c = math.degrees(1.0) * getattr(cfg, "CHASSIS_TORSION_STIFF", 0.0)
+        if k_c > 0.0:
+            m_f = self._fy_front * cfg.CAR_CG_HEIGHT
+            m_r = (self._fy_tires - self._fy_front) * cfg.CAR_CG_HEIGHT
+            twist_t = (m_f * k_roll_r - m_r * k_roll_f) \
+                / (k_roll_f * k_roll_r + k_c * (k_roll_f + k_roll_r))
+            # filtro corto (~50 ms): la torsión sigue a la carga sin vibrar
+            st.chassis_twist += (twist_t - st.chassis_twist) \
+                * min(1.0, dt / 0.05)
+        else:
+            st.chassis_twist = 0.0    # sin dato = bastidor rígido (como antes)
+
         d = [0.0] * 4
         dv = [0.0] * 4
         f_susp = [0.0] * 4
         for i in range(4):
             # convenio: roll positivo = lado derecho ELEVADO (en curva a la
             # derecha el balanceo sale positivo: carga las ruedas izquierdas)
-            corner_h = st.heave + st.pitch * self.X_POS[i] + st.roll * self.Y_POS[i]
+            # el balanceo de CADA EJE es el del chasis rígido ± media torsión
+            roll_i = st.roll + (0.5 if i < 2 else -0.5) * st.chassis_twist
+            corner_h = st.heave + st.pitch * self.X_POS[i] + roll_i * self.Y_POS[i]
             corner_v = st.heave_v + st.pitch_v * self.X_POS[i] + st.roll_v * self.Y_POS[i]
             d[i] = st.zu[i] - corner_h
             dv[i] = st.zu_v[i] - corner_v
@@ -572,21 +607,24 @@ class Car:
 
         fx_total = 0.0
         fy_total = 0.0
+        fy_front = 0.0
         yaw_moment = 0.0
         for i in range(4):
             if i < 2:
                 fx_b = fx_w[i] * cos_d - fy_w[i] * sin_d
                 fy_b = fx_w[i] * sin_d + fy_w[i] * cos_d
+                fy_front += fy_b
             else:
                 fx_b, fy_b = fx_w[i], fy_w[i]
             fx_total += fx_b
             fy_total += fy_b
             yaw_moment += self.X_POS[i] * fy_b - self.Y_POS[i] * fx_b
 
-        # guardar las sumas de fuerzas de neumático para el cabeceo y el
-        # balanceo del siguiente paso (se aplican a nivel del suelo)
+        # guardar las sumas de fuerzas de neumático para el cabeceo, el
+        # balanceo y la torsión del chasis del siguiente paso
         self._fx_tires = fx_total
         self._fy_tires = fy_total
+        self._fy_front = fy_front
 
         # peralte: la gravedad empuja el coche hacia el lado bajo del
         # asfalto (hacia el vértice si el peralte está bien construido:

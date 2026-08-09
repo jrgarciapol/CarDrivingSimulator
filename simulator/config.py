@@ -104,6 +104,14 @@ CAR_INERTIA_Z = 1900.0       # kg·m², inercia de guiñada; más alta = coche
                              # más "perezoso" al girar [1200 .. 4000]
 CAR_INERTIA_PITCH = 2100.0   # kg·m², inercia de cabeceo [1500 .. 4500]
 CAR_INERTIA_ROLL = 550.0     # kg·m², inercia de balanceo [350 .. 1200]
+CHASSIS_TORSION_STIFF = 20000.0  # N·m/°, rigidez torsional del bastidor.
+                             # Turismo 10-25k, GT3 ~40k, monocasco 60k+,
+                             # chasis de largueros ~7k. Un chasis blando
+                             # desacopla los ejes: el reparto de transferencia
+                             # se acerca al de los momentos y las barras
+                             # estabilizadoras pierden autoridad (cambia el
+                             # BALANCE sub/sobrevirador). 0 = rígido ideal
+                             # (comportamiento sin torsión). [0 .. 80000]
 WHEELBASE = 2.60             # m, batalla (distancia entre ejes) [2.2 .. 3.2]
 WEIGHT_DIST_FRONT = 0.546    # fracción del peso sobre el eje delantero,
                              # como en la ficha técnica; 0.5 = 50/50
@@ -330,6 +338,18 @@ GHOST_ENABLED = True         # coche fantasma translúcido reproduciendo tu
 PARTICLES_ENABLED = True     # partículas de humo (derrape en asfalto),
                              # chispas (pianos) y polvo (hierba)
 PARTICLES_MAX = 260          # tope de partículas vivas [60 .. 500]
+
+# ===========================================================================
+# GRAFICOS — realismo atmosferico
+# ===========================================================================
+GFX_FOG_DIST = 600.0         # m, alcance de la bruma atmosférica: lo lejano
+                             # se funde con el cielo (perspectiva aérea, da
+                             # profundidad). 0 desactiva [0 .. 2000]
+GFX_SUN_SHADE = 0.16         # intensidad del sombreado del relieve por el
+                             # sol (cuestas y peraltes cambian de brillo
+                             # según su orientación). 0 = plano [0 .. 0.4]
+GFX_SUN = True               # dibujar el sol y su halo en el cielo (se
+                             # oculta solo con LLUVIA)
 
 # ===========================================================================
 # SONIDO

@@ -47,7 +47,7 @@ def run_menu(renderer):
     i_trk = 0
     i_cnd = 0
     row = 0
-    rows = 4
+    rows = 5
     rect = sdl2.SDL_Rect()
     event = sdl2.SDL_Event()
 
@@ -64,10 +64,14 @@ def run_menu(renderer):
                 elif sym == sdl2.SDLK_DOWN:
                     row = (row + 1) % rows
                 elif sym in (sdl2.SDLK_RETURN, sdl2.SDLK_KP_ENTER):
-                    if row == rows - 1:
+                    if row == 3:            # AJUSTES AVANZADOS
+                        from .tuning import run_tuning
+                        run_tuning(renderer)
+                    elif row == rows - 1:
                         return {"car": cars[i_car], "track": tracks[i_trk],
                                 "cond": conds[i_cnd]}
-                    row = (row + 1) % rows
+                    else:
+                        row = (row + 1) % rows
                 elif sym in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT):
                     step = 1 if sym == sdl2.SDLK_RIGHT else -1
                     if row == 0:
@@ -85,10 +89,11 @@ def run_menu(renderer):
         font.draw_text(renderer, cfg.VERSION, W // 2 - 250, 116, 2,
                        (150, 150, 150, 255))
 
-        labels = ["COCHE", "CIRCUITO", "ASFALTO", "EMPEZAR"]
+        labels = ["COCHE", "CIRCUITO", "ASFALTO", "AJUSTES AVANZADOS",
+                  "EMPEZAR"]
         values = [cars[i_car][0], tracks[i_trk][0],
                   f"{conds[i_cnd]} ({garage.CONDITIONS[conds[i_cnd]]['desc'].upper()})",
-                  ""]
+                  "(ENTER: EDITAR PARAMETROS)", ""]
         y = 210
         for r in range(rows):
             sel = (r == row)
@@ -96,7 +101,7 @@ def run_menu(renderer):
                 _fill(renderer, rect, 120, y - 8, W - 240, 40, (40, 55, 80))
             font.draw_text(renderer, labels[r], 150, y, 2,
                            (255, 200, 60, 255) if sel else (170, 170, 170, 255))
-            font.draw_text(renderer, values[r], 400, y,
+            font.draw_text(renderer, values[r], 400 if r != 3 else 620, y,
                            2, (255, 255, 255, 255) if sel else (190, 190, 190, 255))
             if sel and r < 3:
                 font.draw_text(renderer, "<", 370, y, 2, (255, 200, 60, 255))

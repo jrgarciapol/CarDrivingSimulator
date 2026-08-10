@@ -335,9 +335,45 @@ calentamiento ∝ (205/w)^0.5             (más goma que calentar)
 
 Por eso el eje motriz de un RWD potente monta goma ancha: la transferencia
 al acelerar castiga menos a un neumático ancho. Medido: en apoyo saturado,
-8.15 m/s² con 155 mm frente a 8.79 m/s² con 305 mm. En el menú, la fila
-RUEDAS permite elegir entre las monturas homologadas de cada coche
-(`WHEEL_OPTIONS`) sin editar archivos.
+8.15 m/s² con 155 mm frente a 8.79 m/s² con 305 mm.
+
+### Montaje escalonado (por eje) y transmisión
+
+Cada eje lleva su montura (`WHEEL_SPEC_FRONT` / `WHEEL_SPEC_REAR`) y la
+física trabaja con **radio, inercia y ancho por rueda** (`R_w`, `I_w`). El
+fórmula reproduce el neumático real de F1: **305 delante y 405 detrás con
+el mismo diámetro** (670 mm). Medido al límite, la deriva del eje trasero
+baja monótonamente al ensanchar la goma trasera: 3.5° (205) → 3.2° (225) →
+3.0° (275/305).
+
+Al recalzar, el **desarrollo** cambia (`F = T/R`), así que `apply_wheel`
+reescala `FINAL_DRIVE` en proporción al radio del eje motriz —lo que haría
+un ingeniero al montar otra rueda— salvo que se desactive
+`GEARING_KEEP_ON_WHEEL_CHANGE`. Sin recalzar, el efecto es grande: 16.3 m
+en 3 s recalzado frente a 13.8 m sin recalzar con la misma rueda.
+
+En el menú, las filas **RUEDAS DELANTE / DETRÁS** eligen del catálogo
+(`WHEEL_CATALOG`, con el uso habitual de cada medida: utilitario, GT3,
+fórmula, todoterreno, autobús…) sin editar archivos.
+
+## 5b. Precesión giroscópica de las ruedas
+
+Cada rueda es un giróscopo: su momento angular de giro `L = I·ω` apunta
+según el eje transversal. Cuando ese eje gira —guiñada del coche, y en las
+delanteras también el propio volante— aparece un par de precesión
+perpendicular a ambos, que resulta ser un **momento de balanceo**:
+
+```
+M_balanceo = GYRO_GAIN · [ (Ω_guiñada + δ̇/STEER_RATIO)·L_del + Ω_guiñada·L_tras ]
+M_volante  = GYRO_FFB_GAIN · Ω_balanceo · L_del / STEER_RATIO
+```
+
+Con el convenio de aquí sale positivo en curva a derechas: la precesión
+**suma** al balanceo de la curva. Medido con el deportivo a 160 km/h: 147
+N·m de par giroscópico, que añade 0.06° a los 3.0° de balanceo — real pero
+sutil, como corresponde a un coche (en una moto sería dominante). Con
+rueda mayor crece: 277 N·m con 325/30R21. También llega al volante como el
+"peso vivo" al cambiar de apoyo rápido.
 
 ### Inercia efectiva (acoplamiento con el motor)
 

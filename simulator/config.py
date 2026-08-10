@@ -165,6 +165,11 @@ ENGINE_INERTIA = 0.15            # kg·m², inercia rotacional del motor y
                                  # en 1a cueste más que en 6a [0.05 .. 3]
 GEAR_RATIOS = [3.62, 2.19, 1.51, 1.17, 0.95, 0.81]  # desarrollos 1a..6a
 FINAL_DRIVE = 3.70               # relación del grupo final [3.0 .. 4.5]
+GEARING_KEEP_ON_WHEEL_CHANGE = True  # al calzar otra rueda, reescalar el
+                                 # grupo final para CONSERVAR el desarrollo
+                                 # (lo que haría un ingeniero al recalzar).
+                                 # Desactívalo para notar el efecto puro del
+                                 # cambio de radio sobre el desarrollo.
 REVERSE_RATIO = 3.40             # relación de la marcha atrás
 DRIVELINE_EFF = 0.90             # rendimiento de la transmisión [0.85 .. 0.95]
 
@@ -189,6 +194,13 @@ TIRE_WIDTH_MM = 205.0        # mm, ancho del neumático (lo fija el
                              # WHEEL_SPEC del coche). Más ancho = más huella:
                              # algo más de mu, menos caída por sobrecarga y
                              # calentamiento más lento [125 .. 445]
+GYRO_GAIN = 1.0              # precesión giroscópica de las ruedas: al girar,
+                             # su momento angular genera un par de balanceo
+                             # (1 = físico exacto, 0 = desactivado). En coche
+                             # es sutil; en moto sería dominante [0 .. 3]
+GYRO_FFB_GAIN = 1.0          # reacción giroscópica que llega al volante al
+                             # balancear (peso vivo en cambios de apoyo
+                             # rápidos a alta velocidad) [0 .. 3]
 TIRE_LONG_GRIP_RATIO = 1.10  # elipse de fricción: capacidad longitudinal
                              # extra respecto a la lateral [1.0 .. 1.2]
 TIRE_RELAX_LENGTH = 0.3      # m, retardo de respuesta lateral de la

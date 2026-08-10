@@ -133,6 +133,7 @@ class CarState:
         self.oversteer = 0.0    # 0..1: cuánto se va el tren trasero
         self.alpha_front = 0.0
         self.steer_column_torque = 0.0
+        self.gyro_roll_moment = 0.0   # N·m, precesión de las ruedas
 
     @property
     def speed_kmh(self) -> float:
@@ -164,13 +165,23 @@ class Car:
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
         self.Y_POS = [-t2, t2, -t2, t2]
+        # RUEDAS POR EJE: cada eje puede llevar su montura (staggered), como
+        # un RWD potente con goma mayor detrás. Si el coche no define el eje
+        # trasero, se usa el delantero en las cuatro.
+        rf = cfg.CAR_WHEEL_RADIUS
+        rr = getattr(cfg, "CAR_WHEEL_RADIUS_REAR", None) or rf
+        if_ = cfg.CAR_WHEEL_INERTIA
+        ir = getattr(cfg, "CAR_WHEEL_INERTIA_REAR", None) or if_
+        self.R_w = [rf, rf, rr, rr]
+        self.I_w = [if_, if_, ir, ir]
         # ANCHO del neumático (del WHEEL_SPEC): más huella = menos presión de
         # contacto = algo más de mu, MENOS caída por sobrecarga y goma que se
         # calienta más despacio. Referencia: 205 mm.
-        w_mm = getattr(cfg, "TIRE_WIDTH_MM", 205.0)
-        self._w_mu = (w_mm / 205.0) ** 0.10
-        self._w_ls = (205.0 / w_mm) ** 0.6
-        self._w_heat = (205.0 / w_mm) ** 0.5
+        wf = getattr(cfg, "TIRE_WIDTH_MM", 205.0)
+        wr = getattr(cfg, "TIRE_WIDTH_MM_REAR", None) or wf
+        self._w_mu = [(w / 205.0) ** 0.10 for w in (wf, wf, wr, wr)]
+        self._w_ls = [(205.0 / w) ** 0.6 for w in (wf, wf, wr, wr)]
+        self._w_heat = [(205.0 / w) ** 0.5 for w in (wf, wf, wr, wr)]
         # reparto estático de peso por rueda
         L = a + b
         wf = cfg.CAR_MASS * G * b / L / 2.0
@@ -297,7 +308,8 @@ class Car:
         self._auto_dwell = max(0.0, self._auto_dwell - dt)
 
         m = cfg.CAR_MASS
-        R = cfg.CAR_WHEEL_RADIUS
+        R_w = self.R_w                  # radio POR RUEDA (montura por eje)
+        R = R_w[0]
         wheel_angle = steer_norm * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0)
         delta = wheel_angle / cfg.STEER_RATIO
         cos_d, sin_d = math.cos(delta), math.sin(delta)
@@ -324,7 +336,7 @@ class Car:
             # por abusar del derrape tampoco
             dev = st.tire_temp[i] - cfg.TIRE_TEMP_OPT
             mu *= max(0.72, 1.0 - cfg.TIRE_TEMP_SENS * dev * dev)
-            mu_wheel[i] = mu * self._w_mu     # huella ancha: algo más de mu
+            mu_wheel[i] = mu * self._w_mu[i]  # huella ancha: algo más de mu
             bump[i] = track.bump_at(s_i, n_i, surf)
 
         # --- suspensión: chasis <-> masa no suspendida <-> asfalto ------
@@ -462,6 +474,29 @@ class Car:
         # peralte la carrocería se tumba hacia el lado bajo aunque el coche
         # vaya recto, igual que el cabeceo funciona parado en pendiente
         roll_acc = (sum_my + self._fy_tires * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_ROLL
+        # --- PRECESION GIROSCOPICA de las ruedas -------------------------
+        # Cada rueda es un giróscopo: su momento angular de giro L = I·ω
+        # apunta según su eje (transversal). Al girar ese eje —guiñada del
+        # coche, y en las delanteras también la propia dirección— aparece un
+        # par de precesión perpendicular a ambos: un MOMENTO DE BALANCEO.
+        # Con el convenio de aquí (guiñada + = derecha, balanceo + = lado
+        # derecho elevado) el par sale +yaw_rate·L, o sea que SUMA al
+        # balanceo de la curva. En un coche es un efecto pequeño frente a
+        # las fuerzas del neumático; en moto sería dominante.
+        gyro_g = getattr(cfg, "GYRO_GAIN", 0.0)
+        if gyro_g > 0.0:
+            # las delanteras giran además con el volante: su eje precesa a
+            # (guiñada + velocidad de giro de la dirección)
+            l_front = sum(self.I_w[i] * st.omega[i] for i in (FL, FR))
+            l_rear = sum(self.I_w[i] * st.omega[i] for i in (RL, RR))
+            self._l_front = l_front
+            rate_f = st.yaw_rate + self._steer_rate_lp / cfg.STEER_RATIO
+            m_gyro = gyro_g * (rate_f * l_front + st.yaw_rate * l_rear)
+            st.gyro_roll_moment = m_gyro
+            roll_acc += m_gyro / cfg.CAR_INERTIA_ROLL
+        else:
+            self._l_front = 0.0
+            st.gyro_roll_moment = 0.0
         st.heave_v += heave_acc * dt
         st.pitch_v += pitch_acc * dt
         st.roll_v += roll_acc * dt
@@ -520,8 +555,9 @@ class Car:
 
         # --- par de freno por rueda (con ABS) ---------------------------
         t_brake_max = [0.0] * 4
-        per_front = cfg.BRAKE_FORCE_MAX * cfg.BRAKE_BIAS_FRONT / 2.0 * R
-        per_rear = cfg.BRAKE_FORCE_MAX * (1.0 - cfg.BRAKE_BIAS_FRONT) / 2.0 * R
+        per_front = cfg.BRAKE_FORCE_MAX * cfg.BRAKE_BIAS_FRONT / 2.0 * R_w[0]
+        per_rear = cfg.BRAKE_FORCE_MAX * (1.0 - cfg.BRAKE_BIAS_FRONT) / 2.0 \
+            * R_w[2]
         st.abs_active = False
         for i in range(4):
             base = per_front if i < 2 else per_rear
@@ -552,13 +588,13 @@ class Car:
             else:
                 v_along, v_side = vxi, vyi
             denom = max(abs(v_along), 1.5)
-            slip = (st.omega[i] * R - v_along) / denom
+            slip = (st.omega[i] * R_w[i] - v_along) / denom
             alpha = math.atan2(v_side, max(abs(v_along), 1.5))
             st.slip_ratio[i] = slip
             st.slip_angle[i] = alpha
 
             mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
-                                self._w_ls)
+                                self._w_ls[i])
             # elipse de fricción: más capacidad longitudinal que lateral
             ratio_l = cfg.TIRE_LONG_GRIP_RATIO
             s_n = slip / peak_s
@@ -599,7 +635,7 @@ class Car:
             p_fric = math.hypot(fx, self._fy_state[i]) * v_slip_mag
             # tasa limitada: la masa térmica de la goma no permite subir
             # más de ~6 C/s ni en el derrape más salvaje
-            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric * self._w_heat)
+            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric * self._w_heat[i])
             cool = cfg.TIRE_COOL_COEFF * (2.0 + vx_abs) \
                 * (st.tire_temp[i] - cfg.TIRE_TEMP_AMB)
             st.tire_temp[i] += (heat - cool) * dt
@@ -676,7 +712,7 @@ class Car:
                 v_along = vxi * cos_d + (st.vy + st.yaw_rate * self.X_POS[i]) * sin_d
             else:
                 v_along = vxi
-            omega_free = v_along / R
+            omega_free = v_along / R_w[i]
             denom = max(abs(v_along), 1.5)
             # el freno se opone al giro de la rueda (o al giro inminente)
             if abs(st.omega[i]) > 0.5:
@@ -695,35 +731,35 @@ class Car:
             # al cuadrado (acelerar/retener en 1a cuesta mucho más que en 6a)
             if i in driven and st.engine_on and not clutch_slipping \
                     and ratio != 0.0:
-                i_eff = cfg.CAR_WHEEL_INERTIA \
+                i_eff = self.I_w[i] \
                     + cfg.ENGINE_INERTIA * ratio * ratio / len(driven)
             else:
-                i_eff = cfg.CAR_WHEEL_INERTIA
+                i_eff = self.I_w[i]
             mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
-                                self._w_ls)
+                                self._w_ls[i])
             grip_force = mu_i * st.fz[i] * cfg.TIRE_LONG_GRIP_RATIO
-            slip_now = (st.omega[i] * R - v_along) / denom
+            slip_now = (st.omega[i] * R_w[i] - v_along) / denom
             deep_slip = abs(slip_now) > 0.9 * peak_s \
-                or abs(t_app) / R > 0.9 * grip_force
+                or abs(t_app) / R_w[i] > 0.9 * grip_force
             if not deep_slip and st.fz[i] > 50.0:
                 # régimen de rodadura (fricción estática): relajación
                 # exponencial exacta al deslizamiento de equilibrio, que
                 # transmite el par aplicado al suelo. Incondicionalmente
                 # estable a cualquier dt.
                 k_v = grip_force * cfg.TIRE_C * cfg.TIRE_B / (peak_s * denom)
-                tau = i_eff / (k_v * R * R)
-                omega_eq = (v_along + (t_app / R) / k_v) / R
+                tau = i_eff / (k_v * R_w[i] * R_w[i])
+                omega_eq = (v_along + (t_app / R_w[i]) / k_v) / R_w[i]
                 blend = math.exp(-dt / tau) if tau > 1e-6 else 0.0
                 new_omega = omega_eq + (st.omega[i] - omega_eq) * blend
             else:
                 # deslizamiento profundo (bloqueo o patinaje): integración
                 # explícita con la fuerza de la curva del neumático
-                t_net = t_app - fx_w[i] * R
+                t_net = t_app - fx_w[i] * R_w[i]
                 new_omega = st.omega[i] + t_net / i_eff * dt
                 # si cruza la rodadura libre sin par para seguir deslizando,
                 # vuelve al régimen de rodadura
                 if (st.omega[i] - omega_free) * (new_omega - omega_free) < 0.0 \
-                        and abs(t_app) < grip_force * R:
+                        and abs(t_app) < grip_force * R_w[i]:
                     new_omega = omega_free
                 # bloqueo: la rueda no invierte el sentido por frenar
                 if abs(omega_free) > 0.3 and st.omega[i] * omega_free >= 0.0 \
@@ -792,7 +828,18 @@ class Car:
         self._kick_lp += (kick_raw - self._kick_lp) * min(1.0, 2.0 * dt)
         kick_hp = kick_raw - self._kick_lp
         self._bump_kick += (kick_hp - self._bump_kick) * min(1.0, 25.0 * dt)
-        raw_torque = mz / cfg.STEER_RATIO * 2.0 + self._bump_kick + damping
+        # reacción giroscópica en la DIRECCION: al balancear la carrocería,
+        # el eje de giro de las ruedas delanteras precesa alrededor del eje
+        # longitudinal y devuelve un par alrededor del pivote de dirección
+        # (M = ω_balanceo × L). Es el "peso vivo" que se nota al cambiar de
+        # apoyo rápido a alta velocidad.
+        gyro_ffb = getattr(cfg, "GYRO_FFB_GAIN", 0.0)
+        t_gyro = 0.0
+        if gyro_ffb > 0.0:
+            t_gyro = gyro_ffb * st.roll_v * getattr(self, "_l_front", 0.0) \
+                / cfg.STEER_RATIO
+        raw_torque = mz / cfg.STEER_RATIO * 2.0 + self._bump_kick + damping \
+            + t_gyro
         # suavizado final del par: corta la excitación de alta frecuencia
         # que produce bandazos del volante en recta (FFB_SMOOTHING_S)
         if cfg.FFB_SMOOTHING_S > 1e-4:

@@ -711,19 +711,24 @@ def main():
                          f"ay {ay_n:.2f} -> {ay_w:.2f} m/s2"))
     # el factor termico se comprueba AISLADO (en pista el ancho tambien
     # agarra mas -> mas potencia de friccion, y los efectos se compensan)
-    cfg.TIRE_WIDTH_MM = 155.0
-    h_n = Car()._w_heat
-    cfg.TIRE_WIDTH_MM = 305.0
-    h_w = Car()._w_heat
+    old_wr = getattr(cfg, "TIRE_WIDTH_MM_REAR", None)
+    cfg.TIRE_WIDTH_MM = cfg.TIRE_WIDTH_MM_REAR = 155.0
+    h_n = Car()._w_heat[0]
+    cfg.TIRE_WIDTH_MM = cfg.TIRE_WIDTH_MM_REAR = 305.0
+    h_w = Car()._w_heat[0]
     cfg.TIRE_WIDTH_MM = old_w
+    cfg.TIRE_WIDTH_MM_REAR = old_wr
     results.append(check("neumatico ancho: mas masa termica (calienta menos "
                          "por unidad de trabajo)", h_w < h_n * 0.8,
                          f"factor {h_n:.2f} -> {h_w:.2f}"))
 
     # --- selector de monturas (apply_wheel consistente) ----------------
-    garage.load_car("simulator/cars/3_deportivo.car")
+    DEP = "simulator/cars/3_deportivo.car"
+    garage.load_car(DEP)
     r0, i0, m0 = cfg.CAR_WHEEL_RADIUS, cfg.CAR_WHEEL_INERTIA, cfg.UNSPRUNG_MASS
-    garage.apply_wheel("265/35R19", "simulator/cars/3_deportivo.car")
+    old_keep = cfg.GEARING_KEEP_ON_WHEEL_CHANGE
+    cfg.GEARING_KEEP_ON_WHEEL_CHANGE = False
+    garage.apply_wheel("265/35R19", DEP)
     results.append(check("apply_wheel: radio, inercia y masa cambian juntos",
                          cfg.CAR_WHEEL_RADIUS > r0
                          and cfg.CAR_WHEEL_INERTIA > i0
@@ -732,10 +737,100 @@ def main():
                          f"R {r0:.3f}->{cfg.CAR_WHEEL_RADIUS:.3f} "
                          f"I {i0:.2f}->{cfg.CAR_WHEEL_INERTIA:.2f} "
                          f"m {m0:.1f}->{cfg.UNSPRUNG_MASS:.1f}"))
-    opts = garage.wheel_options("simulator/cars/3_deportivo.car")
-    results.append(check("catalogo del deportivo: serie + 2 monturas",
-                         len(opts) == 3 and "SERIE" in opts[0][1],
-                         f"{[o[1] for o in opts]}"))
+    opts = garage.wheel_options(DEP)
+    results.append(check("catalogo: serie del coche + catalogo general",
+                         len(opts) > 20 and "SERIE" in opts[0][1]
+                         and any("AUTOBUS" in o[1] for o in opts)
+                         and any("FORMULA 1" in o[1] for o in opts),
+                         f"{len(opts)} monturas"))
+
+    # --- ruedas DISTINTAS por eje (staggered) --------------------------
+    garage.load_car(DEP)
+    garage.apply_wheel("225/45R17", DEP, "305/30R20")
+    results.append(check("montura por eje: delante y detras distintas",
+                         cfg.CAR_WHEEL_RADIUS_REAR > cfg.CAR_WHEEL_RADIUS
+                         and cfg.TIRE_WIDTH_MM_REAR > cfg.TIRE_WIDTH_MM,
+                         f"R {cfg.CAR_WHEEL_RADIUS:.3f}/"
+                         f"{cfg.CAR_WHEEL_RADIUS_REAR:.3f} m  ancho "
+                         f"{cfg.TIRE_WIDTH_MM:.0f}/{cfg.TIRE_WIDTH_MM_REAR:.0f}"))
+    c = Car()
+    results.append(check("la fisica usa el radio y la inercia de cada eje",
+                         c.R_w[FL] < c.R_w[RL] and c.I_w[FL] < c.I_w[RL]
+                         and c._w_ls[RL] < c._w_ls[FL],
+                         f"R_w={[round(r,3) for r in c.R_w]}"))
+    # goma mas ancha DETRAS en un RWD: mas agarre trasero, asi que al limite
+    # el eje trasero DERIVA MENOS (es el motivo real del montaje escalonado)
+    def rear_slip(spec_r):
+        garage.load_car(DEP)
+        garage.apply_wheel("225/45R17", DEP, spec_r)
+        cc = Car()
+        settle(cc, flat, 1.0)
+        set_speed(cc, 28.0)
+        for _ in range(int(2.5 / DT)):
+            cc.step(DT, 0.25, 0.30, 0.0, flat)
+        return math.degrees(abs(cc.state.slip_angle[RL]))
+    sl = [(s, rear_slip(s)) for s in
+          ("205/55R16", "225/45R17", "275/35R17", "305/30R20")]
+    monotona = all(sl[i][1] > sl[i + 1][1] for i in range(len(sl) - 1))
+    results.append(check("goma trasera mas ancha -> el eje trasero deriva "
+                         "menos (montaje escalonado)", monotona,
+                         "  ".join(f"{s.split('/')[0]}:{v:.1f}gra"
+                                   for s, v in sl)))
+
+    # el desarrollo: SIN recalzar, la rueda grande alarga y resta empuje
+    def launch(spec_r, keep):
+        garage.load_car(DEP)
+        cfg.GEARING_KEEP_ON_WHEEL_CHANGE = keep
+        garage.apply_wheel("225/45R17", DEP, spec_r)
+        cc = Car()
+        settle(cc, flat, 1.0)
+        d = 0.0
+        for _ in range(int(3.0 / DT)):
+            cc.step(DT, 0.0, 1.0, 0.0, flat)
+            d += cc.state.vx * DT
+        return d
+    d_keep = launch("305/30R20", True)
+    d_sin = launch("305/30R20", False)
+    results.append(check("sin recalzar, la rueda grande alarga el desarrollo",
+                         d_sin < d_keep,
+                         f"{d_keep:.1f} m (recalzado) vs {d_sin:.1f} m (sin)"))
+    # el grupo final compensa el recalzado (conserva el desarrollo)
+    garage.load_car(DEP)
+    fd0 = cfg.FINAL_DRIVE
+    cfg.GEARING_KEEP_ON_WHEEL_CHANGE = True
+    garage.apply_wheel("245/35R18", DEP, "325/30R21")
+    results.append(check("recalzar reescala el grupo final (mismo desarrollo)",
+                         cfg.FINAL_DRIVE > fd0,
+                         f"{fd0:.2f} -> {cfg.FINAL_DRIVE:.2f}"))
+    cfg.GEARING_KEEP_ON_WHEEL_CHANGE = old_keep
+
+    # --- efecto giroscopico de las ruedas ------------------------------
+    print("--- Precesion giroscopica ---")
+    old_gyro = cfg.GYRO_GAIN
+    garage.load_car(DEP)
+
+    def roll_in_turn(gain):
+        cfg.GYRO_GAIN = gain
+        cc = Car()
+        settle(cc, flat, 1.0)
+        set_speed(cc, 45.0)
+        for _ in range(int(2.0 / DT)):
+            cc.step(DT, 0.22, 0.35, 0.0, flat)
+        return cc.state.roll, cc.state.gyro_roll_moment
+    roll_off, m_off = roll_in_turn(0.0)
+    roll_on, m_on = roll_in_turn(1.0)
+    results.append(check("sin giroscopo no hay par de precesion",
+                         abs(m_off) < 1e-12, f"M={m_off:.2e} N*m"))
+    results.append(check("girando a la derecha, la precesion SUMA al balanceo",
+                         m_on > 0.0 and roll_on > roll_off,
+                         f"M={m_on:.0f} N*m, balanceo {math.degrees(roll_off):.3f}"
+                         f" -> {math.degrees(roll_on):.3f} grados"))
+    # con rueda mayor (mas inercia) el par de precesion crece
+    garage.apply_wheel("325/30R21", DEP)
+    _, m_big = roll_in_turn(1.0)
+    results.append(check("rueda mayor -> mas momento angular -> mas precesion",
+                         m_big > m_on, f"{m_on:.0f} -> {m_big:.0f} N*m"))
+    cfg.GYRO_GAIN = old_gyro
 
     # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")

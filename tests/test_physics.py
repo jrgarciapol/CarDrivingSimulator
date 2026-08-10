@@ -687,6 +687,56 @@ def main():
         ok_bad = True
     results.append(check("designacion invalida rechazada con aviso", ok_bad))
 
+    # --- ancho -> agarre (sensibilidad a la carga y termica) ----------
+    from simulator.physics import mu_with_load
+    m_norm = mu_with_load(1.0, 6000.0, 4000.0)           # sobrecargada
+    m_wide = mu_with_load(1.0, 6000.0, 4000.0, 0.66)     # goma ancha
+    results.append(check("neumatico ancho: menos caida de mu al sobrecargar",
+                         m_wide > m_norm,
+                         f"mu {m_norm:.3f} -> {m_wide:.3f}"))
+
+    def lateral_ab(width):
+        cfg.TIRE_WIDTH_MM = width
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 30.0)
+        for _ in range(int(3.0 / DT)):
+            c.step(DT, 0.5, 0.4, 0.0, flat)   # apoyo saturado
+        return abs(c.state.ay), max(c.state.tire_temp)
+    old_w = cfg.TIRE_WIDTH_MM
+    ay_n, tmp_n = lateral_ab(155.0)
+    ay_w, tmp_w = lateral_ab(305.0)
+    results.append(check("neumatico ancho: mas apoyo lateral al limite",
+                         ay_w > ay_n * 1.03,
+                         f"ay {ay_n:.2f} -> {ay_w:.2f} m/s2"))
+    # el factor termico se comprueba AISLADO (en pista el ancho tambien
+    # agarra mas -> mas potencia de friccion, y los efectos se compensan)
+    cfg.TIRE_WIDTH_MM = 155.0
+    h_n = Car()._w_heat
+    cfg.TIRE_WIDTH_MM = 305.0
+    h_w = Car()._w_heat
+    cfg.TIRE_WIDTH_MM = old_w
+    results.append(check("neumatico ancho: mas masa termica (calienta menos "
+                         "por unidad de trabajo)", h_w < h_n * 0.8,
+                         f"factor {h_n:.2f} -> {h_w:.2f}"))
+
+    # --- selector de monturas (apply_wheel consistente) ----------------
+    garage.load_car("simulator/cars/3_deportivo.car")
+    r0, i0, m0 = cfg.CAR_WHEEL_RADIUS, cfg.CAR_WHEEL_INERTIA, cfg.UNSPRUNG_MASS
+    garage.apply_wheel("265/35R19", "simulator/cars/3_deportivo.car")
+    results.append(check("apply_wheel: radio, inercia y masa cambian juntos",
+                         cfg.CAR_WHEEL_RADIUS > r0
+                         and cfg.CAR_WHEEL_INERTIA > i0
+                         and cfg.UNSPRUNG_MASS > m0
+                         and abs(cfg.TIRE_WIDTH_MM - 265.0) < 1e-6,
+                         f"R {r0:.3f}->{cfg.CAR_WHEEL_RADIUS:.3f} "
+                         f"I {i0:.2f}->{cfg.CAR_WHEEL_INERTIA:.2f} "
+                         f"m {m0:.1f}->{cfg.UNSPRUNG_MASS:.1f}"))
+    opts = garage.wheel_options("simulator/cars/3_deportivo.car")
+    results.append(check("catalogo del deportivo: serie + 2 monturas",
+                         len(opts) == 3 and "SERIE" in opts[0][1],
+                         f"{[o[1] for o in opts]}"))
+
     # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS

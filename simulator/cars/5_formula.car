@@ -12,6 +12,7 @@ WEIGHT_DIST_FRONT = 0.45          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.30              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.60            # m, ancho de via entre ruedas
 WHEEL_SPEC = "330/50R13"          # neumatico real: deriva radio, masa e inercia coherentes
+WHEEL_OPTIONS = ["305/55R13", "270/60R13"]# monturas homologadas (menu RUEDAS)
 CAR_WHEEL_INERTIA = 1.1           # llanta de magnesio, masa periferica minima
 UNSPRUNG_MASS = 20.0              # conjunto de competicion ligerisimo
 STEER_RATIO = 8.0                 # desmultiplicacion volante->rueda: mas = suave

@@ -185,6 +185,10 @@ TIRE_PEAK_SLIP_RATIO = 0.12      # deslizamiento longitudinal del pico
 TIRE_LOAD_SENS = 0.10        # caída de mu por unidad de sobrecarga sobre
                              # la carga estática de esa rueda; hace que
                              # transferir peso reste agarre [0 .. 0.2]
+TIRE_WIDTH_MM = 205.0        # mm, ancho del neumático (lo fija el
+                             # WHEEL_SPEC del coche). Más ancho = más huella:
+                             # algo más de mu, menos caída por sobrecarga y
+                             # calentamiento más lento [125 .. 445]
 TIRE_LONG_GRIP_RATIO = 1.10  # elipse de fricción: capacidad longitudinal
                              # extra respecto a la lateral [1.0 .. 1.2]
 TIRE_RELAX_LENGTH = 0.3      # m, retardo de respuesta lateral de la

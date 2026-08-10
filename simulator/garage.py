@@ -23,6 +23,7 @@ CAR_KEYS = {
     "NAME", "DESC", "CAR_COLOR", "CAMERA_HEIGHT", "CAMERA_FORWARD",
     "CAR_MASS", "CAR_INERTIA_Z", "CAR_INERTIA_PITCH", "CAR_INERTIA_ROLL",
     "CHASSIS_TORSION_STIFF", "WHEEL_SPEC", "UNSPRUNG_HUB_MASS",
+    "WHEEL_OPTIONS", "TIRE_WIDTH_MM",
     "WHEELBASE", "WEIGHT_DIST_FRONT", "CAR_CG_HEIGHT", "CAR_TRACK_WIDTH",
     "CAR_WHEEL_RADIUS", "CAR_WHEEL_INERTIA", "STEER_RATIO",
     "STEER_SCRUB_RADIUS",
@@ -87,7 +88,7 @@ def parse_wheel_spec(spec):
     inertia = 0.92 * tire_m * (0.94 * radius) ** 2 \
         + 0.55 * rim_m * r_rim ** 2
     return {"radius": radius, "mass": tire_m + rim_m, "inertia": inertia,
-            "rim_m": rim_m, "tire_m": tire_m}
+            "rim_m": rim_m, "tire_m": tire_m, "width": w}
 
 
 def parse_car_file(path):
@@ -128,7 +129,8 @@ def load_car(path):
     """Aplica el coche sobre la configuración global. Devuelve su nombre."""
     data = parse_car_file(path)
     for key, val in data.items():
-        if key in ("NAME", "DESC", "WHEEL_SPEC", "UNSPRUNG_HUB_MASS"):
+        if key in ("NAME", "DESC", "WHEEL_SPEC", "UNSPRUNG_HUB_MASS",
+                   "WHEEL_OPTIONS"):
             continue
         setattr(cfg, key, val)
     # RUEDAS por designación de neumático (WHEEL_SPEC): deriva radio, inercia
@@ -140,6 +142,8 @@ def load_car(path):
             cfg.CAR_WHEEL_RADIUS = ws["radius"]
         if "CAR_WHEEL_INERTIA" not in data:
             cfg.CAR_WHEEL_INERTIA = ws["inertia"]
+        if "TIRE_WIDTH_MM" not in data:
+            cfg.TIRE_WIDTH_MM = ws["width"]
         # masa no suspendida = mangueta/freno/suspensión (hub) + rueda entera
         if "UNSPRUNG_HUB_MASS" in data and "UNSPRUNG_MASS" not in data:
             cfg.UNSPRUNG_MASS = data["UNSPRUNG_HUB_MASS"] + ws["mass"]
@@ -156,6 +160,50 @@ def load_car(path):
     if "CL" in data and "FRONTAL_AREA" in data:
         cfg.AERO_DOWNFORCE = 0.5 * rho * data["CL"] * data["FRONTAL_AREA"]
     return data.get("NAME", os.path.basename(path))
+
+
+def wheel_options(path):
+    """Monturas homologadas del coche: la de serie (WHEEL_SPEC) primero y
+    después las WHEEL_OPTIONS del .car. [(spec, etiqueta)]."""
+    try:
+        data = parse_car_file(path)
+    except (ValueError, SyntaxError, OSError):
+        return []
+    opts = []
+    serie = data.get("WHEEL_SPEC")
+    if serie:
+        opts.append(serie)
+    for o in data.get("WHEEL_OPTIONS", []):
+        if o not in opts:
+            opts.append(o)
+    out = []
+    for i, o in enumerate(opts):
+        try:
+            ws = parse_wheel_spec(o)
+        except ValueError:
+            continue
+        tag = "SERIE" if (serie and o == serie) else f"{ws['radius']*2000:.0f} MM"
+        out.append((o, f"{o} ({tag})"))
+    return out
+
+
+def apply_wheel(spec, car_path):
+    """Monta otra rueda del catálogo sobre el coche YA cargado: rehace radio,
+    inercia, ancho y masa no suspendida de forma consistente. Llamar DESPUÉS
+    de load_car."""
+    ws = parse_wheel_spec(spec)
+    data = parse_car_file(car_path)
+    cfg.CAR_WHEEL_RADIUS = ws["radius"]
+    cfg.CAR_WHEEL_INERTIA = ws["inertia"]
+    cfg.TIRE_WIDTH_MM = ws["width"]
+    hub = data.get("UNSPRUNG_HUB_MASS")
+    if hub is None:
+        # deducir la mangueta restando la rueda de serie de la masa total
+        serie = data.get("WHEEL_SPEC")
+        base = parse_wheel_spec(serie)["mass"] if serie else ws["mass"]
+        hub = max(2.0, getattr(cfg, "UNSPRUNG_MASS", 35.0) - base)
+    cfg.UNSPRUNG_MASS = hub + ws["mass"]
+    return ws
 
 
 def apply_condition(cond):

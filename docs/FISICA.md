@@ -322,6 +322,23 @@ perezosos (más `I`, también reflejada del motor), y peor contacto sobre
 bache (más masa no suspendida). Medido con el deportivo: 0–100 en 6.78 s
 con 205/50R15 frente a 7.40 s con 285/30R21.
 
+El **ancho** además compra agarre — no por el Coulomb de escuela (área
+irrelevante) sino por la **sensibilidad a la carga**: más huella = menos
+presión de contacto = el μ cae menos al sobrecargar. Con el ancho `w` del
+`WHEEL_SPEC` (referencia 205 mm):
+
+```
+μ_ef        = μ · (w/205)^0.10          (huella: algo más de agarre)
+sens_carga  = LS · (205/w)^0.6          (ancho: menos caída al cargar)
+calentamiento ∝ (205/w)^0.5             (más goma que calentar)
+```
+
+Por eso el eje motriz de un RWD potente monta goma ancha: la transferencia
+al acelerar castiga menos a un neumático ancho. Medido: en apoyo saturado,
+8.15 m/s² con 155 mm frente a 8.79 m/s² con 305 mm. En el menú, la fila
+RUEDAS permite elegir entre las monturas homologadas de cada coche
+(`WHEEL_OPTIONS`) sin editar archivos.
+
 ### Inercia efectiva (acoplamiento con el motor)
 
 Con el embrague acoplado, la rueda motriz arrastra la inercia rotacional

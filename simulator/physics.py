@@ -65,11 +65,14 @@ def tire_force_magnitude(rho: float, mu: float, fz: float) -> float:
     return mu * fz * math.sin(cfg.TIRE_C * math.atan(cfg.TIRE_B * rho))
 
 
-def mu_with_load(mu_base: float, fz: float, fz_ref: float) -> float:
+def mu_with_load(mu_base: float, fz: float, fz_ref: float,
+                 ls_scale: float = 1.0) -> float:
     """Sensibilidad a la carga: el mu cae al sobrecargar la rueda respecto
     a SU carga estática (que depende del reparto de pesos del vehículo).
-    Esto hace que transferir peso reduzca el agarre total del eje."""
-    factor = 1.0 - cfg.TIRE_LOAD_SENS * (fz - fz_ref) / fz_ref
+    Esto hace que transferir peso reduzca el agarre total del eje.
+    ls_scale la modula: un neumático ANCHO reparte la carga en más huella
+    (menos presión de contacto), así que su mu cae menos al sobrecargar."""
+    factor = 1.0 - cfg.TIRE_LOAD_SENS * ls_scale * (fz - fz_ref) / fz_ref
     return mu_base * max(0.6, min(1.3, factor))
 
 
@@ -161,6 +164,13 @@ class Car:
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
         self.Y_POS = [-t2, t2, -t2, t2]
+        # ANCHO del neumático (del WHEEL_SPEC): más huella = menos presión de
+        # contacto = algo más de mu, MENOS caída por sobrecarga y goma que se
+        # calienta más despacio. Referencia: 205 mm.
+        w_mm = getattr(cfg, "TIRE_WIDTH_MM", 205.0)
+        self._w_mu = (w_mm / 205.0) ** 0.10
+        self._w_ls = (205.0 / w_mm) ** 0.6
+        self._w_heat = (205.0 / w_mm) ** 0.5
         # reparto estático de peso por rueda
         L = a + b
         wf = cfg.CAR_MASS * G * b / L / 2.0
@@ -314,7 +324,7 @@ class Car:
             # por abusar del derrape tampoco
             dev = st.tire_temp[i] - cfg.TIRE_TEMP_OPT
             mu *= max(0.72, 1.0 - cfg.TIRE_TEMP_SENS * dev * dev)
-            mu_wheel[i] = mu
+            mu_wheel[i] = mu * self._w_mu     # huella ancha: algo más de mu
             bump[i] = track.bump_at(s_i, n_i, surf)
 
         # --- suspensión: chasis <-> masa no suspendida <-> asfalto ------
@@ -547,7 +557,8 @@ class Car:
             st.slip_ratio[i] = slip
             st.slip_angle[i] = alpha
 
-            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
+            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
+                                self._w_ls)
             # elipse de fricción: más capacidad longitudinal que lateral
             ratio_l = cfg.TIRE_LONG_GRIP_RATIO
             s_n = slip / peak_s
@@ -588,7 +599,7 @@ class Car:
             p_fric = math.hypot(fx, self._fy_state[i]) * v_slip_mag
             # tasa limitada: la masa térmica de la goma no permite subir
             # más de ~6 C/s ni en el derrape más salvaje
-            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric)
+            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric * self._w_heat)
             cool = cfg.TIRE_COOL_COEFF * (2.0 + vx_abs) \
                 * (st.tire_temp[i] - cfg.TIRE_TEMP_AMB)
             st.tire_temp[i] += (heat - cool) * dt
@@ -688,7 +699,8 @@ class Car:
                     + cfg.ENGINE_INERTIA * ratio * ratio / len(driven)
             else:
                 i_eff = cfg.CAR_WHEEL_INERTIA
-            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
+            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
+                                self._w_ls)
             grip_force = mu_i * st.fz[i] * cfg.TIRE_LONG_GRIP_RATIO
             slip_now = (st.omega[i] * R - v_along) / denom
             deep_slip = abs(slip_now) > 0.9 * peak_s \

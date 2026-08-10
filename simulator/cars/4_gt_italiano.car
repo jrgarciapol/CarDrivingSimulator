@@ -12,6 +12,7 @@ WEIGHT_DIST_FRONT = 0.46          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.44              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.67            # m, ancho de via entre ruedas
 WHEEL_SPEC = "295/30R19"          # neumatico real: deriva radio, masa e inercia coherentes
+WHEEL_OPTIONS = ["285/35R18", "305/30R20"]# monturas homologadas (menu RUEDAS)
 UNSPRUNG_HUB_MASS = 8.0           # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 11.0                # desmultiplicacion volante->rueda: mas = suave
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total

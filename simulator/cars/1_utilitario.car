@@ -11,8 +11,8 @@ WHEELBASE = 2.45                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.62          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.55              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.45            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.28           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 0.9           # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "165/70R13"          # neumatico real: deriva radio, masa e inercia coherentes
+UNSPRUNG_HUB_MASS = 17.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 15.0                # desmultiplicacion volante->rueda: mas = suave
 DRIVE_TYPE = "FWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "open"                # diferencial: open, lsd (autoblocante) o locked
@@ -35,6 +35,5 @@ CL = 0.000                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 9500.0          # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.74           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.40              # m, ojo del conductor: alto y erguido
-UNSPRUNG_MASS = 28.0              # kg por rueda, llanta pequena
 SUSP_CAMBER_GAIN = 0.5            # geometria sencilla McPherson
 CAMERA_FORWARD = 0.55             # m, ojo del conductor adelantado (coche corto)

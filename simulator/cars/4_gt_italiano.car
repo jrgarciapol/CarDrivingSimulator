@@ -11,8 +11,8 @@ WHEELBASE = 2.65                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.46          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.44              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.67            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.33           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 1.5           # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "295/30R19"          # neumatico real: deriva radio, masa e inercia coherentes
+UNSPRUNG_HUB_MASS = 8.0           # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 11.0                # desmultiplicacion volante->rueda: mas = suave
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
@@ -38,7 +38,6 @@ AERO_DF_FRONT_SHARE = 0.44        # fraccion de carga aero en el eje delantero
 BRAKE_FORCE_MAX = 26000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.05              # m, ojo del conductor: casi tumbado
-UNSPRUNG_MASS = 28.0              # kg por rueda, llanta forjada
 SUSP_CAMBER_GAIN = 1.2            # geometria de circuito
 TIRE_TEMP_OPT = 95.0              # goma semislick: pide temperatura
 CAMERA_FORWARD = 0.40             # m, motor central: piloto algo adelantado

@@ -300,6 +300,28 @@ Cada rueda integra su velocidad angular con la EDO:
 I_ef·ω̇ = T_aplicado − fx·R          T_aplicado = T_tracción + T_freno
 ```
 
+### Tamaño de rueda: el catálogo (`WHEEL_SPEC`)
+
+El radio `R`, la inercia `I` y la masa de la rueda deben ser COHERENTES
+entre sí (una rueda mayor pesa y "vuela" más). En vez de tres números
+sueltos, cada coche declara su neumático con la designación real
+`ANCHO/PERFIL R LLANTA` (p.ej. `245/35R18`) y el garaje deriva:
+
+```
+R = llanta/2 + ancho·perfil                       (exacto, por definición)
+m_cubierta ≈ 9.5·(ancho/205)·(R/0.316)²           (empírica)
+m_llanta   ≈ 8.0·(llanta/16)²                     (aleación)
+I ≈ 0.92·m_cub·(0.94·R)² + 0.55·m_lla·r_lla²      (anillo + disco)
+UNSPRUNG_MASS = UNSPRUNG_HUB_MASS + rueda completa
+```
+
+Un valor explícito en el `.car` gana al derivado (llanta de magnesio del
+fórmula, gemelas del autobús). Efectos emergentes de montar rueda mayor:
+desarrollo más largo (menos empuje, `F = T/R`), arranque y frenada más
+perezosos (más `I`, también reflejada del motor), y peor contacto sobre
+bache (más masa no suspendida). Medido con el deportivo: 0–100 en 6.78 s
+con 205/50R15 frente a 7.40 s con 285/30R21.
+
 ### Inercia efectiva (acoplamiento con el motor)
 
 Con el embrague acoplado, la rueda motriz arrastra la inercia rotacional

@@ -11,8 +11,9 @@ WHEELBASE = 3.40                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.45          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.30              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.60            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.33           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 1.1           # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "330/50R13"          # neumatico real: deriva radio, masa e inercia coherentes
+CAR_WHEEL_INERTIA = 1.1           # llanta de magnesio, masa periferica minima
+UNSPRUNG_MASS = 20.0              # conjunto de competicion ligerisimo
 STEER_RATIO = 8.0                 # desmultiplicacion volante->rueda: mas = suave
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
@@ -44,7 +45,6 @@ ABS_ENABLED = False               # True con ABS, False sin el (bloqueos reales)
 ENGINE_INERTIA = 0.08             # kg*m2, volante motor: retencion al reducir
 SUSP_ANTI_PITCH = 0.45            # geometria anti-hundimiento al frenar/acelerar
 CAMERA_HEIGHT = 0.80              # m, ojo del conductor: a ras de asfalto
-UNSPRUNG_MASS = 20.0              # kg por rueda, todo magnesio
 TIRE_VERT_STIFF = 350000.0        # N/m, carcasa rigida de slick
 TIRE_VERT_DAMP = 1200.0           # N*s/m
 SUSP_CAMBER_GAIN = 1.5            # geometria de competicion

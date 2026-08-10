@@ -666,8 +666,29 @@ def main():
     cfg.CHASSIS_TORSION_STIFF = old_kc
 
     # ------------------------------------------------------------------
-    print("--- Garaje: los 8 coches ---")
+    print("--- Catalogo de ruedas (WHEEL_SPEC) ---")
     from simulator import garage
+    ws = garage.parse_wheel_spec("205/55R16")
+    # radio por definición: 16·25.4/2 + 205·0.55 = 203.2 + 112.75 = 315.95 mm
+    results.append(check("radio exacto desde la designacion (205/55R16)",
+                         abs(ws["radius"] - 0.31595) < 1e-4,
+                         f"R={ws['radius']*1000:.1f} mm"))
+    ws_big = garage.parse_wheel_spec("315/30R19")
+    results.append(check("rueda mayor -> mas radio, masa e inercia",
+                         ws_big["radius"] > ws["radius"]
+                         and ws_big["mass"] > ws["mass"]
+                         and ws_big["inertia"] > ws["inertia"],
+                         f"I {ws['inertia']:.2f} -> {ws_big['inertia']:.2f} "
+                         f"kg*m2"))
+    ok_bad = False
+    try:
+        garage.parse_wheel_spec("gigante")
+    except ValueError:
+        ok_bad = True
+    results.append(check("designacion invalida rechazada con aviso", ok_bad))
+
+    # ------------------------------------------------------------------
+    print("--- Garaje: los 8 coches ---")
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS
                 if hasattr(cfg, k)}
     snapshot["CAR_CG_TO_FRONT"] = cfg.CAR_CG_TO_FRONT

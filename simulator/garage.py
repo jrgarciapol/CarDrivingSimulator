@@ -11,6 +11,7 @@
 import ast
 import json
 import os
+import re
 
 from . import config as cfg
 
@@ -21,7 +22,7 @@ RECORDS_PATH = os.path.join(os.path.dirname(__file__), "..", "records.json")
 CAR_KEYS = {
     "NAME", "DESC", "CAR_COLOR", "CAMERA_HEIGHT", "CAMERA_FORWARD",
     "CAR_MASS", "CAR_INERTIA_Z", "CAR_INERTIA_PITCH", "CAR_INERTIA_ROLL",
-    "CHASSIS_TORSION_STIFF",
+    "CHASSIS_TORSION_STIFF", "WHEEL_SPEC", "UNSPRUNG_HUB_MASS",
     "WHEELBASE", "WEIGHT_DIST_FRONT", "CAR_CG_HEIGHT", "CAR_TRACK_WIDTH",
     "CAR_WHEEL_RADIUS", "CAR_WHEEL_INERTIA", "STEER_RATIO",
     "STEER_SCRUB_RADIUS",
@@ -54,6 +55,39 @@ CONDITIONS = {
                  "desc": "asfalto mojado"},
 }
 CONDITION_ORDER = ["SECO", "HORMIGON", "ARENA", "LLUVIA"]
+
+
+_TIRE_RE = re.compile(r"^\s*(\d{3})\s*/\s*(\d{2,3})\s*R\s*(\d{2}(?:\.5)?)\s*$",
+                      re.IGNORECASE)
+
+
+def parse_wheel_spec(spec):
+    """Interpreta una designación real de neumático 'ANCHO/PERFIL R LLANTA'
+    (p.ej. '205/55R16', '295/80R22.5') y deriva la geometría y las masas de
+    la rueda COMPLETA (llanta + cubierta), de forma que radio, masa e
+    inercia sean CONSISTENTES entre sí:
+
+      radio  = llanta/2 + ancho·perfil          (exacto, por definición)
+      masas  = estimación empírica (cubierta crece con ancho y diámetro²;
+               llanta de aleación con el diámetro²)
+      inercia = anillo de la cubierta (~0.94·R) + disco de la llanta
+
+    Devuelve {'radius','mass','inertia','rim_m','tire_m'} (m, kg, kg·m²)."""
+    m = _TIRE_RE.match(str(spec))
+    if not m:
+        raise ValueError(f"designacion de rueda invalida: {spec!r} "
+                         "(formato ANCHO/PERFIL R LLANTA, p.ej. 205/55R16)")
+    w = float(m.group(1))          # ancho (mm)
+    a = float(m.group(2))          # perfil (% del ancho)
+    d = float(m.group(3))          # llanta (pulgadas)
+    r_rim = d * 25.4 / 2000.0
+    radius = r_rim + w * a / 100.0 / 1000.0
+    tire_m = 9.5 * (w / 205.0) * (radius / 0.316) ** 2
+    rim_m = 8.0 * (d / 16.0) ** 2
+    inertia = 0.92 * tire_m * (0.94 * radius) ** 2 \
+        + 0.55 * rim_m * r_rim ** 2
+    return {"radius": radius, "mass": tire_m + rim_m, "inertia": inertia,
+            "rim_m": rim_m, "tire_m": tire_m}
 
 
 def parse_car_file(path):
@@ -94,9 +128,21 @@ def load_car(path):
     """Aplica el coche sobre la configuración global. Devuelve su nombre."""
     data = parse_car_file(path)
     for key, val in data.items():
-        if key in ("NAME", "DESC"):
+        if key in ("NAME", "DESC", "WHEEL_SPEC", "UNSPRUNG_HUB_MASS"):
             continue
         setattr(cfg, key, val)
+    # RUEDAS por designación de neumático (WHEEL_SPEC): deriva radio, inercia
+    # y masa CONSISTENTES entre sí. Un valor explícito en el .car siempre
+    # gana sobre el derivado (p.ej. llanta de magnesio con menos inercia).
+    if "WHEEL_SPEC" in data:
+        ws = parse_wheel_spec(data["WHEEL_SPEC"])
+        if "CAR_WHEEL_RADIUS" not in data:
+            cfg.CAR_WHEEL_RADIUS = ws["radius"]
+        if "CAR_WHEEL_INERTIA" not in data:
+            cfg.CAR_WHEEL_INERTIA = ws["inertia"]
+        # masa no suspendida = mangueta/freno/suspensión (hub) + rueda entera
+        if "UNSPRUNG_HUB_MASS" in data and "UNSPRUNG_MASS" not in data:
+            cfg.UNSPRUNG_MASS = data["UNSPRUNG_HUB_MASS"] + ws["mass"]
     # recalcular derivados de la geometría
     cfg.CAR_CG_TO_FRONT = cfg.WHEELBASE * (1.0 - cfg.WEIGHT_DIST_FRONT)
     cfg.CAR_CG_TO_REAR = cfg.WHEELBASE * cfg.WEIGHT_DIST_FRONT

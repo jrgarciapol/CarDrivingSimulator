@@ -184,6 +184,19 @@ STEER_TRAIL_OFFSET = 0.0     # m, desplazamiento longitudinal del eje de
                              # NEGATIVO: mucho caster para ganar caída,
                              # pero el eje retrasado para que el volante
                              # no sea imposible [-0.05 .. 0.03]
+TOE_FRONT_DEG = 0.05         # grados de CONVERGENCIA estática por rueda del
+                             # eje delantero. POSITIVA = las ruedas apuntan
+                             # hacia dentro (convergen). Convergencia da
+                             # estabilidad en recta; DIVERGENCIA (negativa)
+                             # afila la entrada en curva porque la rueda
+                             # exterior ya llega girada. Siempre cuesta
+                             # arrastre y desgaste: las dos ruedas tiran una
+                             # contra otra. Turismo +0.05, circuito -0.1 a
+                             # -0.3 [-0.5 .. 0.5]
+TOE_REAR_DEG = 0.15          # ídem eje trasero. Casi siempre CONVERGENTE y
+                             # más que el delantero: es lo que evita que la
+                             # cola se mueva sola al levantar el pie
+                             # [-0.3 .. 0.5]
 CASTER_CAMBER_GAIN = 1.0     # cuánta de la caída por caster llega a la rueda
                              # (1 = geometría ideal, 0 = desactivado). Bajarlo
                              # simula una geometría que la desperdicia [0 .. 1.5]
@@ -199,10 +212,40 @@ DRIVE_TYPE = "RWD"           # "RWD" propulsión trasera | "FWD" delantera |
                              # "AWD" total
 AWD_FRONT_SPLIT = 0.40       # en AWD, fracción del par al eje delantero
                              # [0.2 .. 0.6]
-DIFF_TYPE = "lsd"            # diferencial del eje motriz: "open" abierto
-                             # (pierde tracción por la rueda interior),
-                             # "lsd" autoblocante, "locked" bloqueado
-DIFF_LSD_COEFF = 18.0        # Nm·s/rad de acoplamiento del autoblocante
+DIFF_TYPE = "lsd"            # diferencial del eje motriz:
+                             #   "open"    abierto (pierde tracción por la
+                             #             rueda interior descargada)
+                             #   "lsd"     autoblocante de DISCOS con rampas
+                             #             y precarga (el de los deportivos
+                             #             y los coches de competición)
+                             #   "viscous" acoplamiento viscoso, sensible a
+                             #             la DIFERENCIA DE VELOCIDAD y no
+                             #             al par: reacciona DESPUES de que
+                             #             la rueda patine (tipo Ferguson)
+                             #   "locked"  bloqueado
+# --- autoblocante de discos ("lsd") ---------------------------------------
+# El paquete de embragues se aprieta por dos vías, y de ahí salen los tres
+# parámetros. Un LSD real es SENSIBLE AL PAR: bloquea en cuanto pasa par,
+# antes de que la rueda llegue a patinar.
+DIFF_PRELOAD = 60.0          # N·m de bloqueo que hay SIEMPRE, aunque no se
+                             # pise nada: lo dan unos muelles Belleville que
+                             # aprietan los discos. Manda en el punto de
+                             # inflexión de la curva, con el coche soltado.
+                             # Subirlo hace el coche más estable y más
+                             # perezoso al girar [0 .. 200]
+DIFF_RAMP_POWER = 0.45       # fracción del par que se convierte en bloqueo
+                             # ACELERANDO. Alto = tracción a la salida, pero
+                             # subvira al abrir gas [0 .. 0.9]
+DIFF_RAMP_COAST = 0.20       # ídem RETENIENDO (pie levantado o frenando con
+                             # marcha metida). Suele ser bastante menor: un
+                             # bloqueo alto en retención deja el coche
+                             # estable pero perezoso para entrar en curva
+                             # [0 .. 0.9]
+DIFF_LOCK_BAND = 0.5         # rad/s de diferencia de giro en que el bloqueo
+                             # pasa de cero a su tope. Es la anchura de la
+                             # transición del rozamiento seco de los discos;
+                             # bajarlo lo hace más brusco [0.1 .. 2.0]
+DIFF_LSD_COEFF = 18.0        # Nm·s/rad, solo para DIFF_TYPE = "viscous"
                              # [5 .. 40]
 
 # ===========================================================================
@@ -347,7 +390,37 @@ TIRE_COOL_COEFF = 0.0019     # refrigeracion por el aire, proporcional a
 # ===========================================================================
 SUSP_SPRING_FRONT = 50000.0  # N/m por rueda delantera [15000 .. 60000]
 SUSP_SPRING_REAR = 44000.0   # N/m por rueda trasera [15000 .. 60000]
-SUSP_DAMPER = 4300.0         # N·s/m por rueda [2000 .. 8000]
+SUSP_DAMPER = 4300.0         # N·s/m por rueda. Valor de RESERVA: solo se
+                             # usa si un coche no define los cuatro de abajo,
+                             # y entonces se reparte 0.6 en compresión y 1.3
+                             # en extensión [2000 .. 8000]
+# AMORTIGUACION separada. Un amortiguador real NO opone lo mismo al
+# comprimirse que al extenderse: la EXTENSION suele ser 2-3 veces más dura.
+# La razón es que en compresión el amortiguador pelea contra el muelle (que
+# ya sostiene el coche) mientras que en extensión controla la energía que el
+# muelle devuelve, que es lo que hace rebotar al coche.
+#
+# Es el reglaje que gobierna el comportamiento TRANSITORIO —cómo entra el
+# coche en curva y cómo se asienta al salir— frente a muelles y barras, que
+# mandan en el estacionario. Regla práctica: subir la extensión de un eje
+# hace que ese eje "aguante" la carga más tiempo, retrasando la transferencia.
+SUSP_DAMPER_BUMP_F = 2600.0  # N·s/m, COMPRESION delantera [800 .. 6000]
+SUSP_DAMPER_REB_F = 5600.0   # N·s/m, EXTENSION delantera [1500 .. 12000]
+SUSP_DAMPER_BUMP_R = 2300.0  # N·s/m, COMPRESION trasera [800 .. 6000]
+SUSP_DAMPER_REB_R = 4900.0   # N·s/m, EXTENSION trasera [1500 .. 12000]
+# TOPES DE RECORRIDO (bump stops). La suspensión no se puede comprimir sin
+# fin: al agotar el recorrido apoya en un tope de poliuretano y la rigidez
+# se dispara. Sirven para proteger de baches y aterrizajes, pero también
+# como REGLAJE: un coche con mucha carga aerodinámica se sienta en los topes
+# en recta rápida, manteniendo la altura constante (que es lo que la aero
+# necesita) sin muelles durísimos que arruinarían la curva lenta.
+SUSP_BUMP_GAP_F = 0.070      # m de recorrido libre delante antes de tocar
+                             # el tope [0.02 .. 0.15]
+SUSP_BUMP_GAP_R = 0.080      # m ídem detrás [0.02 .. 0.15]
+SUSP_BUMP_STIFF = 2.0e7      # N/m², rigidez CUADRATICA del tope:
+                             # F = STIFF · exceso². A 10 mm de penetración
+                             # son 2 000 N; a 20 mm, 8 000 N; a 30 mm,
+                             # 18 000 N. 0 desactiva los topes [0 .. 8e7]
 ARB_FRONT = 23000.0          # estabilizadora delantera (N/m de diferencia
                              # entre lados). MÁS dura delante = más
                              # subviraje [0 .. 40000]

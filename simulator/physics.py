@@ -11,8 +11,13 @@ Componentes simulados:
     amortiguador por rueda y barras estabilizadoras por eje. De aquí
     salen las cargas por rueda (transferencia longitudinal Y lateral,
     baches, pianos y aligeramiento en los cambios de rasante).
-  - Tracción configurable (RWD/FWD/AWD) con diferencial por eje
-    (abierto / autoblocante viscoso / bloqueado).
+  - Suspensión con amortiguación separada por eje y por sentido
+    (compresión / extensión) y TOPES DE RECORRIDO cuadráticos.
+  - Geometría de tren completa: avance (caster), caída estática,
+    convergencia y sus efectos acoplados.
+  - Tracción configurable (RWD/FWD/AWD) con diferencial por eje: abierto,
+    autoblocante de DISCOS con rampas y precarga (sensible al par),
+    viscoso (sensible a la velocidad) o bloqueado.
   - Motor con curva de par, freno motor, limitador y caja de 6 marchas.
   - Pendientes: la gravedad frena en subida y empuja en bajada; las
     crestas descargan la suspensión (y los baches la sacuden).
@@ -160,6 +165,7 @@ class CarState:
         self.susp_def = [0.0, 0.0, 0.0, 0.0]   # deflexión muelle (m, + comprimido)
         self.slip_ratio = [0.0, 0.0, 0.0, 0.0]
         self.slip_angle = [0.0, 0.0, 0.0, 0.0]
+        self.on_bump_stop = [False] * 4        # apoyada en el tope de recorrido
         self.camber = [0.0, 0.0, 0.0, 0.0]     # rad, caída CONTRA EL ASFALTO
                                                # (estática + balanceo + gain
                                                # + caster); 0 = apoya plana
@@ -333,19 +339,69 @@ class Car:
             return cfg.AWD_FRONT_SPLIT, 1.0 - cfg.AWD_FRONT_SPLIT
         return 0.0, 1.0
 
-    def _diff_torques(self, t_axle, om_left, om_right):
-        """Reparto del par de un eje entre sus dos ruedas según el
-        tipo de diferencial."""
-        if cfg.DIFF_TYPE == "open":
-            return t_axle / 2.0, t_axle / 2.0
-        if cfg.DIFF_TYPE == "lsd":
-            k, cap = cfg.DIFF_LSD_COEFF, 250.0
-        else:  # locked
-            k, cap = 5.0 * cfg.DIFF_LSD_COEFF, 450.0
-        # acoplamiento viscoso: transfiere par de la rueda rápida a la lenta
-        transfer = k * (om_left - om_right)
-        transfer = max(-cap, min(cap, transfer))
-        return t_axle / 2.0 - transfer, t_axle / 2.0 + transfer
+    def _diff_torques(self, t_axle, om_left, om_right, dt=1/480.0,
+                      inercia=1.4):
+        """Reparto del par de un eje entre sus dos ruedas según el tipo de
+        diferencial.
+
+        El AUTOBLOCANTE DE DISCOS ("lsd") es sensible al PAR, no a la
+        velocidad: unos discos de embrague se aprietan por dos vías y de ahí
+        sale el par máximo que puede transferir de una rueda a la otra:
+
+            T_bloqueo = PRECARGA + rampa · |par del eje|
+
+          - PRECARGA: unos muelles Belleville aprietan los discos SIEMPRE,
+            incluso con el motor parado. Manda con el coche soltado, en el
+            punto de inflexión de la curva.
+          - RAMPAS: unas cuñas convierten el par que pasa en fuerza axial
+            sobre los discos. Hay DOS con ángulos distintos, y ahí está la
+            gracia del reglaje: la de ACELERACION suele bloquear mucho (da
+            tracción a la salida, a costa de subvirar al abrir gas) y la de
+            RETENCION bastante menos (si bloquea de más, el coche entra
+            perezoso en curva).
+
+        Alcanzado ese tope, los discos deslizan: es rozamiento SECO, no
+        viscoso. Se satura con una tangente hiperbólica en vez de un corte
+        en seco para que no oscile numéricamente cuando las dos ruedas van
+        casi igual de rápido.
+
+        La diferencia práctica frente al viscoso que había antes: el de
+        discos bloquea EN CUANTO PASA PAR, mientras que el viscoso tiene que
+        esperar a que la rueda ya esté patinando para reaccionar.
+        """
+        mitad = t_axle / 2.0
+        tipo = cfg.DIFF_TYPE
+        if tipo == "open":
+            return mitad, mitad
+        if tipo == "viscous":
+            # modelo antiguo: acoplamiento proporcional a la DIFERENCIA DE
+            # VELOCIDAD (tipo Ferguson). Se conserva porque es lo que monta
+            # un turismo con tracción total permanente.
+            transfer = cfg.DIFF_LSD_COEFF * (om_left - om_right)
+            transfer = max(-250.0, min(250.0, transfer))
+            return mitad - transfer, mitad + transfer
+        if tipo == "locked":
+            t_lock = 1.0e4
+        else:                                  # "lsd": rampas + precarga
+            rampa = (cfg.DIFF_RAMP_POWER if t_axle >= 0.0
+                     else cfg.DIFF_RAMP_COAST)
+            # Las rampas se dan en PORCENTAJE DE BLOQUEO, que es como se
+            # especifican en la realidad ("un 45/20"):
+            #     bloqueo % = (T_rueda_alta − T_rueda_baja) / T_total
+            # Como aquí se reparte ±transfer sobre la mitad de cada lado, la
+            # diferencia entre ruedas es 2·transfer: de ahí el factor 0.5.
+            # Sin él, un "45 %" bloquearía en realidad el 90 %.
+            t_lock = 0.5 * (cfg.DIFF_PRELOAD + rampa * abs(t_axle))
+        # La banda de transición no puede ser más estrecha de lo que el paso
+        # de integración es capaz de resolver: si un solo paso puede cambiar
+        # la diferencia de giro más de lo que mide la banda, el bloqueo
+        # oscila de un extremo a otro (chattering) y el eje nunca se
+        # estabiliza. Se ensancha lo justo para que eso no ocurra, lo que
+        # deja la RIGIDEZ efectiva acotada sin recortar el par de bloqueo.
+        banda = max(1e-3, cfg.DIFF_LOCK_BAND,
+                    2.0 * t_lock * dt / max(0.05, inercia))
+        transfer = t_lock * math.tanh((om_left - om_right) / banda)
+        return mitad - transfer, mitad + transfer
 
     # ------------------------------------------------------------------
     def step(self, dt: float, steer_norm: float, throttle: float, brake: float,
@@ -360,6 +416,23 @@ class Car:
         wheel_angle = steer_norm * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0)
         delta = wheel_angle / cfg.STEER_RATIO
         cos_d, sin_d = math.cos(delta), math.sin(delta)
+        # ANGULO REAL DE CADA RUEDA = dirección (solo el eje directriz) más
+        # su CONVERGENCIA estática, que es de reglaje y va en sentido
+        # opuesto en cada lado. Convergencia (+) = las ruedas apuntan hacia
+        # dentro; da estabilidad en recta a costa de arrastre, porque las
+        # dos tiran una contra otra. Divergencia (−) afila la entrada en
+        # curva: la rueda exterior llega ya girada hacia la curva.
+        # Nota: la lleva TAMBIEN el eje trasero, y ahí es lo que evita que
+        # la cola se mueva sola al levantar el pie.
+        toe_f = math.radians(getattr(cfg, "TOE_FRONT_DEG", 0.0))
+        toe_r = math.radians(getattr(cfg, "TOE_REAR_DEG", 0.0))
+        d_w = [0.0] * 4
+        for _i in range(4):
+            _side = 1.0 if self.Y_POS[_i] > 0.0 else -1.0
+            d_w[_i] = (delta if _i < 2 else 0.0) \
+                - _side * (toe_f if _i < 2 else toe_r)
+        cos_w = [math.cos(a) for a in d_w]
+        sin_w = [math.sin(a) for a in d_w]
 
         # --- peralte del tramo (inclinación transversal del asfalto) ----
         # bank > 0 = borde izquierdo elevado (peralte de curva a derechas).
@@ -427,6 +500,21 @@ class Car:
         else:
             st.chassis_twist = 0.0    # sin dato = bastidor rígido (como antes)
 
+        # AMORTIGUACION por eje y por SENTIDO. Un amortiguador real no opone
+        # lo mismo comprimiéndose que extendiéndose: la extensión suele ser
+        # 2-3 veces más dura, porque en compresión pelea contra el muelle
+        # (que ya sostiene el coche) mientras que en extensión controla la
+        # energía que el muelle devuelve, que es lo que hace rebotar.
+        # Si el coche no define los cuatro, se derivan del valor único.
+        _dmp = getattr(cfg, "SUSP_DAMPER", 4300.0)
+        c_bf = getattr(cfg, "SUSP_DAMPER_BUMP_F", None) or _dmp * 0.6
+        c_rf = getattr(cfg, "SUSP_DAMPER_REB_F", None) or _dmp * 1.3
+        c_br = getattr(cfg, "SUSP_DAMPER_BUMP_R", None) or _dmp * 0.6
+        c_rr = getattr(cfg, "SUSP_DAMPER_REB_R", None) or _dmp * 1.3
+        gap_f = getattr(cfg, "SUSP_BUMP_GAP_F", 0.07)
+        gap_r = getattr(cfg, "SUSP_BUMP_GAP_R", 0.08)
+        k_tope = getattr(cfg, "SUSP_BUMP_STIFF", 0.0)
+
         d = [0.0] * 4
         dv = [0.0] * 4
         f_susp = [0.0] * 4
@@ -440,7 +528,23 @@ class Car:
             d[i] = st.zu[i] - corner_h
             dv[i] = st.zu_v[i] - corner_v
             k = cfg.SUSP_SPRING_FRONT if i < 2 else cfg.SUSP_SPRING_REAR
-            f_susp[i] = k * d[i] + cfg.SUSP_DAMPER * dv[i]
+            # dv > 0 = la rueda sube respecto al chasis = COMPRESION
+            if dv[i] > 0.0:
+                c = c_bf if i < 2 else c_br
+            else:
+                c = c_rf if i < 2 else c_rr
+            f_susp[i] = k * d[i] + c * dv[i]
+            # TOPE DE RECORRIDO: agotado el hueco libre, la suspensión deja
+            # de ser un muelle y se vuelve casi rígida. Es CUADRATICO, como
+            # un tope de poliuretano: los primeros milímetros apenas se
+            # notan y luego se dispara.
+            if k_tope > 0.0:
+                exceso = d[i] - (gap_f if i < 2 else gap_r)
+                if exceso > 0.0:
+                    f_susp[i] += k_tope * exceso * exceso
+                    st.on_bump_stop[i] = True
+                else:
+                    st.on_bump_stop[i] = False
             st.susp_def[i] = d[i]
 
         # barras estabilizadoras: fuerza según diferencia izda/dcha por eje
@@ -593,9 +697,11 @@ class Car:
         t_wheel_total = t_engine * ratio * cfg.DRIVELINE_EFF
         split_f, split_r = self._axle_torque_split()
         t_fl, t_fr = self._diff_torques(t_wheel_total * split_f,
-                                        st.omega[FL], st.omega[FR])
+                                        st.omega[FL], st.omega[FR],
+                                        dt, self.I_w[FL])
         t_rl, t_rr = self._diff_torques(t_wheel_total * split_r,
-                                        st.omega[RL], st.omega[RR])
+                                        st.omega[RL], st.omega[RR],
+                                        dt, self.I_w[RL])
         t_drive = [t_fl, t_fr, t_rl, t_rr]
         if ratio == 0.0:
             t_drive = [0.0] * 4
@@ -629,11 +735,10 @@ class Car:
             # velocidad del punto de contacto (chasis)
             vxi = st.vx - st.yaw_rate * self.Y_POS[i]
             vyi = st.vy + st.yaw_rate * self.X_POS[i]
-            if i < 2:  # ruedas delanteras giradas
-                v_along = vxi * cos_d + vyi * sin_d
-                v_side = -vxi * sin_d + vyi * cos_d
-            else:
-                v_along, v_side = vxi, vyi
+            # todas las ruedas pueden ir giradas: las delanteras por la
+            # dirección y las cuatro por su convergencia
+            v_along = vxi * cos_w[i] + vyi * sin_w[i]
+            v_side = -vxi * sin_w[i] + vyi * cos_w[i]
             denom = max(abs(v_along), 1.5)
             slip = (st.omega[i] * R_w[i] - v_along) / denom
             alpha = math.atan2(v_side, max(abs(v_along), 1.5))
@@ -745,12 +850,10 @@ class Car:
         fy_front = 0.0
         yaw_moment = 0.0
         for i in range(4):
+            fx_b = fx_w[i] * cos_w[i] - fy_w[i] * sin_w[i]
+            fy_b = fx_w[i] * sin_w[i] + fy_w[i] * cos_w[i]
             if i < 2:
-                fx_b = fx_w[i] * cos_d - fy_w[i] * sin_d
-                fy_b = fx_w[i] * sin_d + fy_w[i] * cos_d
                 fy_front += fy_b
-            else:
-                fx_b, fy_b = fx_w[i], fy_w[i]
             fx_total += fx_b
             fy_total += fy_b
             yaw_moment += self.X_POS[i] * fy_b - self.Y_POS[i] * fx_b
@@ -796,10 +899,8 @@ class Car:
         st.wheelspin = False
         for i in range(4):
             vxi = st.vx - st.yaw_rate * self.Y_POS[i]
-            if i < 2:
-                v_along = vxi * cos_d + (st.vy + st.yaw_rate * self.X_POS[i]) * sin_d
-            else:
-                v_along = vxi
+            v_along = vxi * cos_w[i] \
+                + (st.vy + st.yaw_rate * self.X_POS[i]) * sin_w[i]
             omega_free = v_along / R_w[i]
             denom = max(abs(v_along), 1.5)
             # el freno se opone al giro de la rueda (o al giro inminente)

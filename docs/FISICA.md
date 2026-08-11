@@ -104,7 +104,9 @@ mangueta y el asfalto:
 
 ```
 d_i = zu_i − (h + θ·X_i + φ·Y_i)               (+ = muelle comprimido)
-F_susp,i = k_i·d_i + c·ḋ_i                      (± estabilizadoras)
+c_i = COMPRESION si ḋ_i > 0, si no EXTENSION   (por eje y por sentido)
+F_susp,i = k_i·d_i + c_i·ḋ_i + F_tope,i         (± estabilizadoras)
+F_tope,i = SUSP_BUMP_STIFF·(d_i − hueco_i)²     si d_i > hueco_i, si no 0
 q_i = z_bache,i − zu_i                          (compresión de la goma)
 F_neum,i = K_t·q_i + C_t·q̇_i
 m_u·z̈u_i = F_neum,i − F_susp,i − a_rasante
@@ -121,6 +123,24 @@ piano con el chasis moviéndose ~11 mm). El chasis (`h`, `θ`, `φ`) siente
 solo `F_susp`, filtrada por la suspensión, como en un coche real. A 480 Hz
 el modo de wheel hop está sobradamente resuelto (ω·dt ≈ 0.2) y el
 amortiguamiento conjunto lo deja en ζ ≈ 0.6–0.7.
+
+La **amortiguación va separada por eje y por sentido**: un amortiguador
+real no opone lo mismo comprimiéndose que extendiéndose, y la extensión
+suele ser 2-3 veces más dura. La razón es que en compresión pelea contra
+el muelle (que ya sostiene el coche) mientras que en extensión controla la
+energía que el muelle devuelve, que es lo que hace **rebotar**. Es el
+reglaje que gobierna el comportamiento **transitorio** —cómo entra el
+coche en curva y cómo se asienta al salir— frente a muelles y barras, que
+mandan en el estacionario.
+
+Los **topes de recorrido** impiden que la suspensión se comprima sin fin.
+Son **cuadráticos**, como un tope de poliuretano: los primeros milímetros
+apenas se notan y luego se dispara. Sin ellos, una hondonada fuerte
+comprimía la suspensión **317 mm**, más recorrido del que tiene un coche
+entero; con topes se queda en 109 mm. Aparte de proteger, son un
+**reglaje**: un coche con mucha carga aerodinámica se sienta en los topes
+en recta rápida, manteniendo la altura constante —que es lo que la aero
+necesita— sin muelles durísimos que arruinarían la curva lenta.
 
 Las **barras estabilizadoras** añaden un término proporcional a la
 diferencia de deflexión izquierda–derecha de cada eje:
@@ -539,11 +559,42 @@ régimen de ralentí equivalente patina (75 % del par, sin freno motor).
 
 **Transmisión**: `T_rueda = T_motor·ratio·grupo·η`, repartido entre ejes
 según `DRIVE_TYPE` (`AWD_FRONT_SPLIT` configurable) y dentro de cada eje por
-el **diferencial**: abierto (50/50), autoblocante o bloqueado, modelados
-como acoplamiento viscoso `T_transfer = clamp( k·(ω_izda − ω_dcha), ±tope )`
-con `k` y tope según el tipo (250 N·m para LSD, 450 N·m bloqueado). No es
-un Salisbury con precarga/rampas, pero reproduce lo esencial: el abierto
-pierde tracción con cargas asimétricas y el bloqueado empuja recto.
+el **diferencial**, con cuatro tipos:
+
+```
+"lsd"      T_bloqueo = ½·( PRECARGA + rampa·|T_eje| )        <- SENSIBLE AL PAR
+"viscous"  T_transfer = clamp( k·(ω_izda − ω_dcha), ±250 )   <- a la VELOCIDAD
+"open"     50/50
+"locked"   T_bloqueo enorme
+T_transfer = T_bloqueo · tanh( (ω_izda − ω_dcha) / banda )
+```
+
+El **autoblocante de discos** (`"lsd"`) es el de los deportivos y los
+coches de competición, y es **sensible al par**: bloquea en cuanto pasa
+par, sin esperar a que la rueda patine. Su capacidad tiene dos orígenes,
+que son dos reglajes distintos:
+
+- **`DIFF_PRELOAD`**: unos muelles Belleville aprietan los discos
+  **siempre**, aun sin par. Manda con el coche soltado, en el punto de
+  inflexión de la curva.
+- **Rampas**, con **ángulos distintos** para cada sentido:
+  `DIFF_RAMP_POWER` acelerando (tracción a la salida, a costa de subvirar
+  al abrir gas) y `DIFF_RAMP_COAST` reteniendo (bloquear de más deja el
+  coche perezoso al entrar). Se dan en **porcentaje de bloqueo**, como en
+  la realidad: `(T_alta − T_baja) / T_total`.
+
+El `tanh` reproduce el rozamiento **seco** de los discos (satura, no crece
+sin fin) sin el corte en seco que haría oscilar la integración. Su
+**banda** se ensancha con el par de bloqueo: si un solo paso pudiera
+cambiar la diferencia de giro más de lo que mide la banda, el bloqueo
+oscilaría de un extremo a otro y las ruedas nunca se estabilizarían.
+
+El acoplamiento **viscoso** (`"viscous"`) es el modelo anterior y se
+conserva porque es lo que monta un turismo de tracción total permanente:
+reacciona a la diferencia de velocidad, es decir **después** de que la
+rueda ya esté patinando. La diferencia medida es enorme: en una salida a
+fondo en 2.ª, el viscoso deja que la rueda interior se dispare a 59 rad/s
+de diferencia mientras el de discos la mantiene en 0,4.
 
 **Cambio automático** (conmutable en carrera): sube cerca del corte si no
 hay patinaje, baja a bajas vueltas o por kick-down (nunca a 1ª), con tiempo

@@ -7,6 +7,12 @@ parámetros citados (`CAR_MASS`, `TIRE_MU`…) están documentados uno a uno en
 `simulator/config.py`, y cada coche del garaje los redefine en su
 `simulator/cars/*.car`.
 
+> **¿Buscas el porqué en vez del cómo?** [`NEUMATICO.md`](NEUMATICO.md)
+> explica desde cero la física del contacto neumático-asfalto —deriva, modelo
+> de cepillo, curva de Pacejka, par autoalineante, elipse de fricción y
+> transferencia de carga—, con figuras y con el mapa de qué está modelizado y
+> dónde. Este documento describe el modelo; aquél, los fundamentos.
+
 Contenido:
 
 1. [Convenios y variables de estado](#1-convenios-y-variables-de-estado)

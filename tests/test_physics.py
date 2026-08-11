@@ -1073,6 +1073,88 @@ def main():
     cfg.TIRE_CAMBER_PATCH = old_patch
 
     # ------------------------------------------------------------------
+    print("--- Cronometraje de vueltas ---")
+    from simulator.timing import LapTimer
+    L = 1000.0
+
+    def rodar(t, metros, v=40.0, psi=0.0, paso=1.0):
+        """Recorre 'metros' (negativos = hacia atras) devolviendo la lista
+        de vueltas que el cronometro da por buenas."""
+        vueltas = []
+        s = t_pos[0]
+        n = int(abs(metros) / paso)
+        signo = 1.0 if metros >= 0 else -1.0
+        for _ in range(n):
+            prev = s
+            s += signo * paso
+            r = t.update(paso / v, prev, s, v, psi)
+            if r is not None:
+                vueltas.append(r)
+        t_pos[0] = s
+        return vueltas
+
+    # 1) la PRIMERA vuelta es parcial y NO se cronometra
+    t_pos = [400.0]
+    t = LapTimer(L)
+    v1 = rodar(t, 600.0)               # llega a la meta desde la mitad
+    results.append(check("la primera vuelta (parcial) no se cronometra",
+                         v1 == [] and t.valid,
+                         f"vueltas={len(v1)}, ya valida={t.valid}"))
+
+    # 2) la SEGUNDA, dando la vuelta entera, si
+    v2 = rodar(t, 1000.0)
+    results.append(check("una vuelta completa si se cronometra",
+                         len(v2) == 1 and 24.0 < v2[0] < 26.0,
+                         f"{len(v2)} vuelta(s), t={v2[0]:.1f} s" if v2 else "ninguna"))
+
+    # 3) EL FALLO QUE MOTIVO ESTO: recorrer el circuito EN SENTIDO CONTRARIO
+    #    hacia que la condicion antigua se cumpliera en cada paso de fisica,
+    #    registrando una vuelta cada 2 ms con tiempos absurdos
+    t_pos = [900.0]
+    t = LapTimer(L)
+    t.valid = True                      # ya habia cronometrado antes
+    v3 = rodar(t, -800.0)               # 800 m del reves, cruzando la meta
+    results.append(check("ir en sentido contrario NO registra vueltas",
+                         v3 == [], f"registradas {len(v3)}"))
+
+    # 4) cruzar la meta sin haber dado la vuelta tampoco cuenta: es lo que
+    #    pasaba al recolocar el coche o al dar media vuelta antes de meta
+    t_pos = [990.0]
+    t = LapTimer(L)
+    t.valid = True
+    v4 = rodar(t, 20.0)                 # solo 20 m, pero cruza la linea
+    results.append(check("cruzar la meta sin dar la vuelta no cuenta",
+                         v4 == [], f"registradas {len(v4)}"))
+
+    # 5) recolocar el coche INVALIDA la vuelta en curso
+    t_pos = [100.0]
+    t = LapTimer(L)
+    t.valid = True
+    rodar(t, 500.0)
+    t.invalidate()
+    v5 = rodar(t, 400.0)                # completa el trazado, pero invalidada
+    results.append(check("recolocar el coche invalida la vuelta",
+                         v5 == [], f"registradas {len(v5)}"))
+
+    # 6) el aviso de SENTIDO CONTRARIO se enciende y se apaga con histeresis
+    t = LapTimer(L)
+    t.update(0.01, 0.0, 0.4, 40.0, math.radians(170.0))
+    encendido = t.wrong_way
+    t.update(0.01, 0.4, 0.8, 40.0, math.radians(10.0))
+    apagado = not t.wrong_way
+    t.update(0.01, 0.8, 1.2, 40.0, math.radians(95.0))
+    sin_parpadeo = not t.wrong_way      # 95 grados aun no lo enciende
+    results.append(check("el aviso de sentido contrario tiene histeresis",
+                         encendido and apagado and sin_parpadeo,
+                         f"170deg={encendido} 10deg={apagado} 95deg={sin_parpadeo}"))
+
+    # 7) parado no debe avisar aunque el coche mire hacia atras (trompo)
+    t = LapTimer(L)
+    t.update(0.01, 0.0, 0.0, 0.2, math.radians(180.0))
+    results.append(check("parado no avisa de sentido contrario",
+                         not t.wrong_way))
+
+    # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS
                 if hasattr(cfg, k)}

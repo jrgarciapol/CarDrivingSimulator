@@ -415,6 +415,27 @@ class Renderer:
             # huecos toman el color del asfalto que tienen debajo
             rl_c = np.where(dash[:, None], rl_c, road_c)
 
+        # --- LINEA DE META ------------------------------------------------
+        # Banda de un segmento (4 m) en s=0. Se pinta en DAMERO aprovechando
+        # que cada zona lateral (hierba / piano / calzada) lleva su propio
+        # color: blanco-negro-blanco-negro-blanco de lado a lado. Sin ella no
+        # hay forma de saber dónde empieza y acaba la vuelta.
+        sm = seg_idx % n_segs
+        meta_a, meta_b = sm == 0, sm == 1        # dos segmentos = 8 m
+        meta = meta_a | meta_b
+        if meta.any():
+            blanco = np.array((240, 240, 240), dtype=float)
+            negro = np.array((22, 22, 22), dtype=float)
+            # banda blanca continua en la calzada: la línea propiamente dicha
+            road_c = np.where(meta[:, None], blanco, road_c)
+            edge_c = np.where(meta[:, None], blanco, edge_c)
+            # ...y DAMERO a los lados, alternando el color entre los dos
+            # segmentos: es lo que la hace reconocible de lejos y en diagonal
+            kerb_c = np.where(meta_a[:, None], negro, kerb_c)
+            kerb_c = np.where(meta_b[:, None], blanco, kerb_c)
+            grass_c = np.where(meta_a[:, None], blanco, grass_c)
+            grass_c = np.where(meta_b[:, None], negro, grass_c)
+
         # --- iluminación: sombreado solar del relieve + bruma ------------
         # sombreado: las cuestas y peraltes cambian de brillo según su
         # orientación (cuesta abajo mira al sol -> más clara; el peralte
@@ -892,7 +913,7 @@ class Hud:
 
     def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name,
              auto_gear=False, time_scale=1.0, track=None, car_name="",
-             condition=""):
+             condition="", wrong_way=False, lap_valid=True):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
 
@@ -964,11 +985,38 @@ class Hud:
                            by + 26, 4, col)
 
         # tiempos
-        self._fill(W - 320, 20, 300, 92, (0, 0, 0, 160))
+        self._fill(W - 320, 20, 300, 116, (0, 0, 0, 160))
         font.draw_text(self.r, f"VUELTA {lap_count}", W - 300, 32, 2)
         font.draw_text(self.r, f"TIEMPO {_fmt_time(lap_time)}", W - 300, 56, 2)
         best_txt = _fmt_time(best_lap) if best_lap else "--:--.-"
         font.draw_text(self.r, f"MEJOR  {best_txt}", W - 300, 80, 2, (255, 200, 60, 255))
+        # queda claro cuándo la vuelta NO se va a cronometrar (la primera,
+        # o tras recolocar el coche): así no se persigue un tiempo que no
+        # va a contar, ni se guardan récords que no se han hecho rodando
+        if not lap_valid:
+            font.draw_text(self.r, "VUELTA NO CRONOMETRADA", W - 300, 104, 2,
+                           (255, 150, 60, 255))
+
+        # ------- AVISO DE SENTIDO CONTRARIO -------------------------------
+        # Con decorados tan sobrios es facilísimo desorientarse tras una
+        # salida de pista y no saber por dónde se venía. Parpadea para que
+        # llame la atención sin tapar la conducción.
+        if wrong_way:
+            if int(st.s * 0.5) % 2 == 0:
+                msg = "SENTIDO CONTRARIO"
+                wmsg = font.text_width(msg, 4)
+                bxc = W // 2
+                wy = H // 2 + int(camera_pitch_px(st)) - 190
+                self._fill(bxc - wmsg // 2 - 20, wy, wmsg + 40, 46,
+                           (150, 20, 15, 220))
+                font.draw_text(self.r, msg, bxc - wmsg // 2, wy + 9, 4,
+                               (255, 230, 120, 255))
+                # flechas apuntando hacia atrás a ambos lados del cartel
+                for sgn in (-1, 1):
+                    ax = bxc + sgn * (wmsg // 2 + 62)
+                    for k in range(9):
+                        self._fill(ax - 14 + k * 3, wy + 22 - k, 3, 2 + k * 2,
+                                   (255, 230, 120, 220))
 
         # abajo: LO ELEGIDO en la configuración (coche, circuito, asfalto),
         # para no olvidarlo a mitad de vuelta. Sustituye a los datos del
@@ -1147,11 +1195,16 @@ class Hud:
         k_dot = min(1.0, dt / 0.30) if dt > 0 else 0.0
         k_ang = min(1.0, dt / 0.30) if dt > 0 else 0.0
 
-        # CENTRADA horizontalmente y en la mitad superior, para tenerla
-        # delante de los ojos sin mirar a una esquina
-        box_w, box_h = 300, 508
-        box_x, box_y = (W - box_w) // 2, 96
-        self._fill(box_x, box_y, box_w, box_h, (0, 0, 0, 190))
+        # DOS PANELES QUE FLANQUEAN EL CENTRO. Antes era un único panel
+        # centrado de 508 px de alto, que tapaba el indicador de radio de
+        # curva (que va justo encima del horizonte, también centrado).
+        # Repartiéndolo en dos columnas simétricas se sigue teniendo todo
+        # delante de los ojos y el centro queda libre para el radio.
+        box_w = 300
+        hueco = 200                      # media anchura del pasillo central
+        box_x = W // 2 - hueco - box_w   # panel IZQUIERDO: fricción y temp.
+        box_y = 96
+        self._fill(box_x, box_y, box_w, 344, (0, 0, 0, 190))
         font.draw_text(self.r, "F2: FRICCION Y TEMP.", box_x + 12, box_y + 10, 2)
         names = ("DI", "DD", "TI", "TD")
         radius = 52
@@ -1217,7 +1270,7 @@ class Hud:
             # y el valor exacto, compacto, del color del aro
             font.draw_text(self.r, f"{tt:3.0f}C", cx + radius - 26,
                            cy - radius - 4, 2, tcol)
-        font.draw_text(self.r, "PUNTO GRANDE = MAS CARGA",
+        font.draw_text(self.r, "PUNTO GRANDE: MAS CARGA",
                        box_x + 12, box_y + 322, 2, (170, 170, 170, 255))
 
         # ---- coche cenital: deriva del chasis frente a la trayectoria --
@@ -1225,9 +1278,13 @@ class Hud:
         # gravedad; el coche dibujado encima muestra hacia dónde apunta el
         # chasis (derrapando, el coche "cruza" sobre la línea) y las
         # ruedas delanteras giran con el volante
-        comp_y = box_y + 348
+        # Va en el panel DERECHO, al otro lado del pasillo central: es la
+        # parte que antes se superponía al indicador de radio.
+        box_x = W // 2 + hueco
+        comp_y = box_y + 34
+        self._fill(box_x, box_y, box_w, 210, (0, 0, 0, 190))
         font.draw_text(self.r, "CHASIS Y TRAYECTORIA",
-                       box_x + 12, comp_y, 2)
+                       box_x + 12, box_y + 10, 2)
         ccx, ccy = box_x + 84, comp_y + 96
         st = car_state
         if abs(st.vx) > 2.0:

@@ -984,38 +984,68 @@ con su física propia y sus referencias verificadas en la tabla.
 
 ## 13. Qué NO está modelizado
 
-Honestidad sobre los límites del modelo:
+Honestidad sobre los límites del modelo.
 
-1. **Inclinación del eje de dirección (KPI/SAI) y efecto de gato.** El
+### Auditoría de reglaje: qué se puede tocar y qué no
+
+Comparando con lo que se ajusta de verdad en un banco de reglaje:
+
+| Familia | Modelizado | **Falta** |
+|---|---|---|
+| **Alineación** | Avance (caster) y su offset, caída estática por eje, camber gain, radio de pivotamiento, desmultiplicación | **Convergencia (toe)**, KPI/SAI, bump steer, Ackermann |
+| **Suspensión** | Muelles por eje, barras estabilizadoras por eje, anti-dive/anti-squat, rigidez torsional | **Amortiguación separada** (hoy un único valor para las 4 ruedas: ni delante/detrás ni compresión/extensión), **altura libre y rake**, topes de recorrido, altura del centro de balanceo |
+| **Neumático** | μ, picos de deriva y deslizamiento, sensibilidad a la carga, ancho, relajación, avances, caída y huella, térmico, rigidez vertical | **Presión de inflado**, desgaste acumulado |
+| **Transmisión** | Desarrollos, grupo final, tipo de diferencial, coeficiente LSD, reparto AWD | **Rampas de LSD separadas** (aceleración / retención) y precarga |
+| **Aerodinámica** | Cd, Cl, área frontal, reparto de carga entre ejes | Sensibilidad a la altura y al rake |
+| **Frenos** | Fuerza máxima, reparto delantero, ABS | Temperatura y *fading* |
+| **Masas** | Masa, inercias, altura del CG, reparto por eje, vía, batalla | **Combustible** (masa que baja durante la tanda), reparto diagonal |
+
+Las tres que más se notarían al conducir, por orden:
+
+1. **Amortiguación separada** — hoy `SUSP_DAMPER` es **un solo valor para
+   las cuatro ruedas**. Los amortiguadores gobiernan el balance
+   *transitorio* (cómo entra el coche en curva y cómo se asienta al salir),
+   que es justo lo que no se puede ajustar ahora mismo.
+2. **Presión de inflado** — el reglaje más accesible en la realidad.
+3. **Convergencia (toe)** — la pata que falta de la mesa de alineación.
+
+### Detalle
+
+1. **Convergencia (*toe*) estática.** Ya están el avance (§5) y la caída
+   (§6), pero no la convergencia. En la realidad precarga los neumáticos, da
+   estabilidad en recta y afina la entrada en curva, a costa de arrastre y
+   desgaste.
+
+2. **Amortiguación por rueda y por sentido.** Un único coeficiente para
+   las cuatro esquinas y para compresión y extensión por igual.
+
+3. **Presión de inflado.** Hoy es implícita. Afectaría a rigidez de deriva,
+   huella, sensibilidad a la carga y temperatura de forma acoplada.
+
+4. **Altura libre y rake.** No existen como parámetro: la altura del CG se
+   fija a mano y no responde a bajar el coche.
+
+5. **Inclinación del eje de dirección (KPI/SAI) y efecto de gato.** El
    caster ya está separado (§5.5), pero falta el **otro** ángulo del eje de
    dirección: su inclinación vista de frente. Genera autocentrado por peso
    (el coche se «levanta» al girar) y contribuye también a la caída al
    girar. Sería el siguiente paso natural en geometría de dirección.
 
-2. **Presión de inflado.** Hoy es implícita. Una presión variable afectaría
-   a rigidez de deriva, huella, sensibilidad a la carga y temperatura de
-   forma acoplada — es un buen candidato a futuro porque es el reglaje más
-   accesible en la realidad.
 
-3. **Convergencia (*toe*) estática.** Es la pata que falta de la mesa de
-   alineación: ya están el avance (§5) y la caída (§6), pero no la
-   convergencia. En la realidad precarga los neumáticos, da estabilidad en
-   recta y afina la respuesta al entrar en curva, a costa de arrastre y
-   desgaste. *Es la mejora más clara pendiente en geometría de tren.*
 
-4. **Desgaste del neumático.** El modelo térmico existe, pero no hay
+6. **Desgaste del neumático.** El modelo térmico existe, pero no hay
    degradación acumulada que reduzca μ a lo largo de una tanda.
 
-5. **Modelo de cepillo explícito.** Se usa la Magic Formula, que resume el
+7. **Modelo de cepillo explícito.** Se usa la Magic Formula, que resume el
    comportamiento empíricamente. Un modelo de cepillo discretizado daría el
    avance neumático y su caída *automáticamente* en lugar de con la rampa
    lineal de `pneumatic_trail()`, pero cuesta bastante más cálculo.
 
-6. **Flexibilidad de la carcasa en el plano.** El neumático se trata como
+8. **Flexibilidad de la carcasa en el plano.** El neumático se trata como
    rígido en su plano salvo por la relajación; no hay dinámica de la banda
    de rodadura ni resonancias.
 
-7. **Efectos térmicos en el asfalto** (temperatura de pista, goma
+9. **Efectos térmicos en el asfalto** (temperatura de pista, goma
    depositada, trazada engomada).
 
 ---

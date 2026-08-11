@@ -33,6 +33,7 @@ from . import garage
 from . import render as render_mod
 from .audio import EngineSound
 from .menu import run_menu
+from .timing import LapTimer
 from .physics import Car
 from .render import Hud, Renderer
 from .track import Track
@@ -169,16 +170,14 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     physics_dt = 1.0 / cfg.PHYSICS_HZ
     accumulator = 0.0
 
-    lap_time = 0.0
-    best_lap = garage.record_get(track.name, car_name, condition)
-    lap_count = 1
+    timer = LapTimer(track.length,
+                     garage.record_get(track.name, car_name, condition))
     record_banner_until = -1.0
     # fantasma de la mejor vuelta de la sesión + partículas
     particles = render_mod.Particles()
     ghost_rec = []        # vuelta en curso: (t, s, n, psi) cada 50 ms
     ghost_best = None     # mejor vuelta grabada de la sesión
     ghost_next = 0.0
-    lap_valid = False     # la primera vuelta (parcial) no se graba
     show_debug = False
     show_telemetry = False
     show_line = cfg.RACING_LINE
@@ -221,6 +220,10 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                     show_minimap = not show_minimap
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
+                    # recolocar el coche INVALIDA la vuelta en curso: si no,
+                    # se podria "arreglar" una salida de pista y cronometrar
+                    # igual, que es de donde salian tiempos irreales
+                    timer.invalidate()
                 elif sym == sdl2.SDLK_a:
                     if car.shift_up():
                         ffb.notify_gear_shift()
@@ -248,6 +251,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
         if wheel.button_pressed_edge(cfg.BUTTON_RESET):
             car.reset(car.state.s)
+            timer.invalidate()         # igual que la tecla R
 
         # cambio automático (las levas siguen funcionando en manual)
         if auto_gear and car.auto_shift(wheel.throttle):
@@ -268,31 +272,27 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             prev_s = st.s
             car.step(physics_dt, wheel.steering, wheel.throttle, wheel.brake,
                      track)
-            # cronometraje de vueltas
-            lap_time += physics_dt
+            # cronometraje de vueltas (reglas de validez en timing.py)
             sim_time += physics_dt
             # grabación del fantasma: estado curvilíneo cada ~50 ms
-            if cfg.GHOST_ENABLED and lap_valid and lap_time >= ghost_next:
-                ghost_rec.append((lap_time, st.s % track.length, st.n,
+            if (cfg.GHOST_ENABLED and timer.valid
+                    and timer.lap_time >= ghost_next):
+                ghost_rec.append((timer.lap_time, st.s % track.length, st.n,
                                   st.psi))
-                ghost_next = lap_time + 0.05
-            if prev_s % track.length > st.s % track.length and st.vx > 1.0:
-                new_best = best_lap is None or lap_time < best_lap
-                if new_best:
-                    best_lap = lap_time
-                    if garage.record_save(track.name, car_name, condition,
-                                          lap_time):
-                        record_banner_until = sim_time + 5.0
+                ghost_next = timer.lap_time + 0.05
+            vuelta = timer.update(physics_dt, prev_s, st.s, st.vx, st.psi)
+            if vuelta is not None and timer.last_was_best:
+                if garage.record_save(track.name, car_name, condition,
+                                      vuelta):
+                    record_banner_until = sim_time + 5.0
                 # el fantasma pasa a reproducir la vuelta recién batida
-                if lap_valid and new_best and len(ghost_rec) > 4:
-                    ghost_rec.append((lap_time, st.s % track.length,
+                if len(ghost_rec) > 4:
+                    ghost_rec.append((vuelta, st.s % track.length,
                                       st.n, st.psi))
                     ghost_best = ghost_rec
+            if vuelta is not None or timer.lap_time < physics_dt * 1.5:
                 ghost_rec = []
                 ghost_next = 0.0
-                lap_valid = True
-                lap_time = 0.0
-                lap_count += 1
             accumulator -= physics_dt
 
         # ------------------------------------------------ force feedback
@@ -349,7 +349,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                         cam_fwd)
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
-            g = ghost_sample(ghost_best, lap_time, track.length)
+            g = ghost_sample(ghost_best, timer.lap_time, track.length)
             if g is not None:
                 scene.draw_ghost(track, g[0], g[1], g[2])
         if view_mode == 1:
@@ -380,8 +380,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             font_mod.draw_text(renderer, txt,
                                cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 4) // 2,
                                150, 4, (120, 255, 120, 255))
-        hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
-                 auto_gear, time_scale, track, car_name, condition)
+        hud.draw(car.state, timer.lap_time, timer.best, timer.lap_count,
+                 ffb.ok, wheel.name, auto_gear, time_scale, track, car_name,
+                 condition, timer.wrong_way, timer.valid)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:

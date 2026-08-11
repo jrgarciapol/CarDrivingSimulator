@@ -406,6 +406,15 @@ TELEM_DOT_LOAD_GAIN = 8.0    # F2: cuánto crece el diámetro del punto del
                              # (radio px = 1 + ganancia x carga/estática);
                              # sube para hacer más patentes las
                              # transferencias de peso [3 .. 14]
+LAP_MIN_FRACTION = 0.9       # fracción del circuito que hay que recorrer
+                             # HACIA DELANTE para que la vuelta cuente. Evita
+                             # cronometrar cruces de meta que no son vueltas
+                             # (dar media vuelta antes de la línea, recolocar
+                             # el coche...) [0.5 .. 1.0]
+WRONG_WAY_DEG = 105.0        # grados de rumbo respecto al eje de la carretera
+                             # a partir de los cuales se avisa de SENTIDO
+                             # CONTRARIO. Se apaga 30 grados antes, para no
+                             # parpadear en un trompo [95 .. 150]
 GHOST_ENABLED = True         # coche fantasma translúcido reproduciendo tu
                              # mejor vuelta de la sesión (aparece al
                              # completar una vuelta cronometrada)

@@ -200,7 +200,8 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `C` | Cambiar vista: interior / trasera / coche completo |
 | `E` | Arrancar / parar el motor |
 | `T` | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
-| `M` | Mostrar/ocultar el plano del circuito |
+| `M` | Mostrar/ocultar el plano del circuito **completo** (visión de conjunto) |
+| `N` | Mostrar/ocultar la **planta del tramo que viene** (1 km, con los radios) |
 | `ESC` | Salir |
 
 | Mando (Steam Deck, XBox, PlayStation) | Acción |
@@ -216,6 +217,25 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | Select / View | Cámara lenta |
 
 El mando se detecta solo. Un volante reconocido siempre tiene prioridad.
+
+## Ayudas en pantalla
+
+- **Plano del circuito completo** (tecla `M`, arriba a la izquierda): dónde
+  estás dentro de la vuelta. Da la **visión de conjunto**.
+- **Planta del tramo que viene** (tecla `N`, abajo a la derecha): el
+  kilómetro siguiente en planta, con el coche abajo y el trazado
+  desenrollándose por delante, como las notas de un copiloto. Tres capas
+  de lectura:
+  - **la forma**, para anticipar si una curva encadena con otra o da a una
+    recta;
+  - **el color** de cada punto según su radio (rojo < 80 m, ámbar < 200 m,
+    verde por encima), así que la severidad se lee sin mirar números;
+  - **el radio en metros** de las curvas más cerradas, que es el dato duro
+    para **comparar circuitos** entre sí.
+
+  El panel es semitransparente para no tapar la carretera, y la escala se
+  ajusta en saltos discretos (nunca de forma continua, que haría el dibujo
+  ilegible) con una regla de referencia abajo.
 
 ## Jugar en Steam Deck
 

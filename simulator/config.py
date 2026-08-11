@@ -503,9 +503,36 @@ CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
                              # perceptible al derrapar o girar [1.0 .. 2.5]
 RACING_LINE = True           # trazada ideal (tecla L): verde = margen,
                              # ámbar = al límite, rojo = no llegas a frenar
-MINIMAP = True               # plano del circuito arriba a la izquierda
-                             # (tecla M) con el coche recorriéndolo y el
-                             # tramo que viene resaltado
+MINIMAP = True               # plano del circuito COMPLETO arriba a la
+                             # izquierda (tecla M): da la visión de conjunto,
+                             # dónde estás dentro de la vuelta
+# --- PLANTA DEL TRAMO QUE VIENE (abajo a la derecha, tecla N) -------------
+# Vista egocéntrica: el coche abajo mirando hacia arriba y el trazado que
+# viene desenrollándose. Sustituye al antiguo indicador de "radio a 50 m",
+# que daba un número sin contexto: aquí se ve la SECUENCIA de curvas, que
+# es lo que permite anticipar y frenar a tiempo.
+MAP_AHEAD = True             # mostrarla al arrancar
+MAP_AHEAD_M = 1000.0         # m de circuito por delante que se dibujan
+                             # [300 .. 2500]
+MAP_AHEAD_PX_PER_M = 0.30    # px por metro. FIJO a propósito: con escala
+                             # constante las curvas de dos circuitos se
+                             # pueden comparar de un vistazo, cosa que una
+                             # escala automática impediría [0.1 .. 0.8]
+MAP_AHEAD_W = 430            # px de ancho del panel [240 .. 700]
+MAP_AHEAD_H = 360            # px de alto del panel [180 .. 600]
+MAP_AHEAD_ALPHA = 115        # transparencia del fondo (0 = invisible,
+                             # 255 = opaco). Bajo a propósito: deja ver la
+                             # carretera por debajo [0 .. 255]
+MAP_AHEAD_LABELS = 5         # cuántas curvas se etiquetan con su radio; se
+                             # eligen las MAS CERRADAS, que son las que
+                             # obligan a frenar [0 .. 10]
+MAP_AHEAD_R_MAX = 400.0      # m; por encima de este radio no se considera
+                             # curva (no se etiqueta) [200 .. 2000]
+MAP_AHEAD_SMOOTH_M = 18.0    # m de suavizado de la curvatura al detectar
+                             # curvas. Los trazados importados vienen de un
+                             # eje medido por GPS y su curvatura tiene picos
+                             # de ruido: sin esto, un pico aislado se toma
+                             # por una curva cerradísima [0 .. 60]
 TRACK_POLES = False           # balizas de colores en los bordes (amarillo =
                              # izquierda, azul = derecha)
 CAR_BODY_MOTION_EXAG = 5.0   # exageración visual del cabeceo/balanceo de la
@@ -579,7 +606,3 @@ ADAS_UNDERSTEER_TONE = 620.0 # Hz del aviso de subviraje (grave, "te vas
 ADAS_OVERSTEER_TONE = 1050.0 # Hz del aviso de sobreviraje (agudo y urgente,
                              # "se va la cola") [900 .. 1400]
 
-# ---- indicador de radio de curva (HUD) ---------------------------------
-HUD_RADIUS_LOOKAHEAD_M = 50.0  # distancia por delante del coche a la que se
-                               # mide el radio de la alineacion (m)
-HUD_RADIUS_STRAIGHT_M = 3000.0 # por encima de este radio se muestra "RECTA"

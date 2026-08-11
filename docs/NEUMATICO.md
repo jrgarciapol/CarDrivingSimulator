@@ -339,38 +339,114 @@ la fuerza lateral**. Traducido a tus manos:
 4. Cuando el eje ya se ha ido, sólo queda el avance mecánico: el volante
    queda ligero pero no muerto.
 
+Medido en el simulador con el DEPORTIVO de serie: **el par pica a 3,9° de
+deriva, cuando el agarre pica a 7°**, y cae un 35 % hasta la saturación. El
+aviso llega, por tanto, con casi la mitad del recorrido de deriva por
+delante — tiempo de sobra para corregir.
+
 Los buenos pilotos conducen escuchando exactamente ese punto. Y un
 simulador que no reproduzca este detalle se siente «sordo» aunque las
 fuerzas sean correctas.
 
-### 5.4 Cómo está en el simulador
+### 5.4 Caída ganada al girar (*caster camber gain*)
 
-En `simulator/physics.py:79-85`:
+El caster tiene un **segundo efecto**, y es la verdadera razón de que los
+coches de competición monten tanto: al pivotar la rueda sobre un eje
+**inclinado hacia atrás**, girar el volante **inclina la rueda**.
+
+Y lo hace en el sentido bueno: la rueda **exterior** de la curva (la que
+lleva la carga) gana **caída negativa**, es decir se tumba **hacia dentro**
+de la curva, empujando a favor del giro. La interior, que apenas está
+cargada, se tumba hacia fuera.
+
+```
+Δcaída ≈ ∓ sin(caster) · δ        (− para la rueda exterior)
+```
+
+Es **caída negativa gratis justo cuando hace falta**, sin penalizar la
+huella en recta —al contrario que la caída estática, que desgasta el
+neumático por dentro y reduce la tracción en línea recta—. Esa es la
+diferencia clave, y por eso un fórmula monta 10-14° de avance mientras un
+utilitario se conforma con 2-3°.
+
+El compromiso: **más caster = volante más pesado**, porque el brazo de
+palanca crece. En un coche sin dirección asistida es el límite práctico.
+
+### 5.5 Cómo está en el simulador
+
+Los dos avances son **independientes**, cada uno con su propia función.
+
+**Avance neumático** (`simulator/physics.py`, `pneumatic_trail`) — nace de la
+deformación, cae con la deriva y llega a hacerse negativo:
 
 ```python
 def pneumatic_trail(alpha):
-    sat = math.radians(cfg.TIRE_TRAIL_SAT_DEG)      # 7,0 grados
-    falloff = max(0.0, 1.0 - abs(alpha) / sat)
-    return cfg.TIRE_TRAIL * (0.15 + 0.85 * falloff) # TIRE_TRAIL = 0,045 m
+    sat = math.radians(cfg.TIRE_TRAIL_SAT_DEG)          # 7,0 grados
+    t = cfg.TIRE_TRAIL * (1.0 - abs(alpha) / sat)       # TIRE_TRAIL = 30 mm
+    return max(-cfg.TIRE_TRAIL_NEG_FRAC * cfg.TIRE_TRAIL, t)
 ```
 
-**Los dos avances están reproducidos, pero fundidos en un solo parámetro**:
+**Avance mecánico** (`mechanical_trail`) — geometría pura del caster,
+constante con la deriva:
 
-- El **`0.15` fijo es el avance mecánico**: el suelo que nunca desaparece.
-  Con `TIRE_TRAIL = 45 mm`, son ≈ 6,75 mm residuales.
-- El **`0.85 · falloff` es el avance neumático**, que cae linealmente hasta
-  anularse en `TIRE_TRAIL_SAT_DEG = 7°` de deriva.
+```python
+def mechanical_trail(radius):
+    return radius * math.tan(math.radians(cfg.CASTER_ANGLE_DEG)) \
+        + cfg.STEER_TRAIL_OFFSET
+```
 
-El comportamiento resultante es el correcto (el volante se aligera al
-saturar pero nunca queda inerte), pero **no hay una geometría de caster
-independiente**: no existe un parámetro `CASTER_ANGLE` del que se derive el
-avance mecánico. Están los dos en `TIRE_TRAIL` con un reparto 15/85 fijo.
+**Caída ganada al girar** (`caster_camber`), que entra en el mismo término de
+empuje por caída que el balanceo:
 
-> **Mejora pendiente identificada.** Separarlos permitiría usar el ángulo de
-> avance como parámetro de reglaje real (más caster = más peso en el volante
-> y más camber ganado en curva). Ver §12.
+```python
+def caster_camber(delta, side):
+    return -side * math.sin(math.radians(cfg.CASTER_ANGLE_DEG)) * delta \
+        * cfg.CASTER_CAMBER_GAIN
+```
 
-### 5.5 Radio de pivotamiento (*scrub radius*)
+Y se suman en el par de columna:
+
+```python
+for i in (FL, FR):
+    trail = pneumatic_trail(st.slip_angle[i]) + mechanical_trail(R_w[i])
+    mz += -fy_w[i] * trail
+```
+
+Tres consecuencias de que `t_mec` dependa del **radio**:
+
+1. El **catálogo de ruedas queda acoplado a la dirección**: montar una rueda
+   más grande alarga el brazo y **endurece el volante**. Es real y ahora sale
+   solo, sin ningún parámetro añadido.
+2. Con ruedas **escalonadas** (*staggered*), sólo cuenta el radio delantero,
+   que es el correcto.
+3. El caster es ya un **parámetro de reglaje por coche** (`CASTER_ANGLE_DEG`
+   en cada `.car`), no una constante global.
+
+#### Valores resultantes con el reglaje de serie del DEPORTIVO
+
+Caster 6°, rueda 225/40R18 (R = 318 mm) → `t_mec` = 33,6 mm:
+
+| Deriva | t_neumático | t_mecánico | **Total** |
+|---:|---:|---:|---:|
+| 0° | 30,0 mm | 33,6 mm | **63,6 mm** |
+| 3° | 17,1 mm | 33,6 mm | **50,7 mm** |
+| 5° | 8,6 mm | 33,6 mm | **42,2 mm** |
+| 7° (pico de agarre) | 0,0 mm | 33,6 mm | **33,6 mm** |
+| 12° (saturado) | −5,4 mm | 33,6 mm | **28,2 mm** |
+
+Medido en el simulador con un barrido de volante real, el par de columna
+**pica a 3,9° de deriva** (el agarre pica a 7°) y **cae un 35 %** hasta la
+saturación. Antes de separar los avances caía un 71 %: era el doble de
+dramático que un coche real, porque el avance mecánico estaba puesto en
+6,75 mm cuando el valor físico son 20-40 mm.
+
+> **Nota de calibración.** Al hacerlo físico, el par de columna que entrega
+> la física subió un ~88 %. Para que el volante siga sintiéndose igual de
+> duro, `FFB_MAX_TORQUE_NM` pasó de 35 a **66 N·m**: la relación
+> pico/saturación se mantiene en 0,73, exactamente la de antes. Lo que
+> cambia no es el peso del volante, sino **la forma de la curva**.
+
+### 5.6 Radio de pivotamiento (*scrub radius*)
 
 Lo que sí está modelizado aparte es el **radio de pivotamiento**: la
 distancia lateral entre el eje de dirección y el centro de la huella. Hace
@@ -727,9 +803,15 @@ simplificado · ❌ ausente.
 | Elipse de fricción / deslizamiento combinado | ✅ | `physics.py:598-611` |
 | Sensibilidad a la carga (μ cae con F_z) | ✅ | `physics.py:68-76` |
 | Longitud de relajación | ✅ | `physics.py:626-628` |
-| Avance neumático (cae con la deriva) | ✅ | `physics.py:79-85` |
-| Avance mecánico (efecto carrito) | 🟡 | `physics.py:85`, fundido como el 15 % fijo de `TIRE_TRAIL`; **sin geometría de caster propia** |
-| Radio de pivotamiento (*scrub radius*) | ✅ | `physics.py:815` |
+| Avance neumático (cae con la deriva) | ✅ | `pneumatic_trail()` |
+| Avance neumático **negativo** pasado el pico | ✅ | `TIRE_TRAIL_NEG_FRAC` |
+| Avance mecánico (efecto carrito) | ✅ | `mechanical_trail()`, geometría propia desde `CASTER_ANGLE_DEG` |
+| Ángulo de avance (caster) reglable por coche | ✅ | `CASTER_ANGLE_DEG` en cada `.car` |
+| Aislamiento de reglajes entre coches | ✅ | `garage.py`, `_car_defaults()` |
+| Offset del eje de dirección | ✅ | `STEER_TRAIL_OFFSET` |
+| Caída ganada al girar (*caster camber gain*) | ✅ | `caster_camber()` |
+| Acoplamiento tamaño de rueda → peso del volante | ✅ | `mechanical_trail(R_w[i])` |
+| Radio de pivotamiento (*scrub radius*) | ✅ | `physics.py`, `STEER_SCRUB_RADIUS` |
 | Empuje por caída (*camber thrust*) | ✅ | `physics.py:612-625` |
 | Ganancia de caída con la compresión | ✅ | `SUSP_CAMBER_GAIN` |
 | Modelo térmico de la goma | ✅ | `physics.py:631-644` |
@@ -761,9 +843,8 @@ simplificado · ❌ ausente.
 | Par en la columna para force feedback | ✅ | `physics.py:807-850` |
 
 **Respuesta corta a «¿estamos modelizando todos estos comportamientos?»:
-sí, todos los descritos en este documento están en el simulador**, con una
-única salvedad relevante — el avance mecánico existe en su efecto pero no
-como geometría de caster independiente (§5.4).
+sí, todos los descritos en este documento están en el simulador**, cada uno
+con su física propia y sus referencias verificadas en la tabla.
 
 ---
 
@@ -771,10 +852,11 @@ como geometría de caster independiente (§5.4).
 
 Honestidad sobre los límites del modelo:
 
-1. **Caster como geometría independiente.** El avance mecánico está fundido
-   en `TIRE_TRAIL` con reparto fijo 15/85. Separarlo permitiría reglar el
-   ángulo de avance y obtener su efecto secundario real (ganancia de camber
-   al girar). *Es la mejora más clara pendiente en la parte de neumático.*
+1. **Inclinación del eje de dirección (KPI/SAI) y efecto de gato.** El
+   caster ya está separado (§5.5), pero falta el **otro** ángulo del eje de
+   dirección: su inclinación vista de frente. Genera autocentrado por peso
+   (el coche se «levanta» al girar) y contribuye también a la caída al
+   girar. Sería el siguiente paso natural en geometría de dirección.
 
 2. **Presión de inflado.** Hoy es implícita. Una presión variable afectaría
    a rigidez de deriva, huella, sensibilidad a la carga y temperatura de
@@ -816,8 +898,12 @@ Todos editables en vivo desde **AJUSTES AVANZADOS** (menú principal), o en
 | `TIRE_LONG_GRIP_RATIO` | 1.10 | Excentricidad de la elipse de fricción |
 | `TIRE_LOAD_SENS` | 0.10 | Caída de μ por sobrecarga → coste de transferir peso |
 | `TIRE_RELAX_LENGTH` | 0.3 m | Retardo espacial de la respuesta lateral |
-| `TIRE_TRAIL` | 0.045 m | Escala del par autoalineante (mecánico + neumático) |
-| `TIRE_TRAIL_SAT_DEG` | 7.0 | Deriva a la que se derrumba el avance neumático |
+| `TIRE_TRAIL` | 0.030 m | Avance **neumático** con deriva cero |
+| `TIRE_TRAIL_SAT_DEG` | 7.0 | Deriva a la que se anula el avance neumático |
+| `TIRE_TRAIL_NEG_FRAC` | 0.18 | Cuánto se hace negativo pasado el pico |
+| `CASTER_ANGLE_DEG` | 4.5 (por coche) | **Ángulo de avance**: de él sale el avance mecánico y la caída ganada al girar |
+| `STEER_TRAIL_OFFSET` | 0.0 m | Ajusta el avance mecánico sin tocar el caster |
+| `CASTER_CAMBER_GAIN` | 1.0 | Cuánta caída por caster llega a la rueda |
 | `TIRE_CAMBER_THRUST` | 0.6 | Empuje lateral por radián de inclinación de la rueda |
 | `TIRE_WIDTH_MM` | 205 | Ancho de referencia; acopla μ, sensibilidad y calor |
 | `STEER_SCRUB_RADIUS` | 0.04 m | Cuánto tiran del volante las fuerzas longitudinales |
@@ -836,6 +922,14 @@ Para *sentir* la teoría, mejor que leerla:
   barras estabilizadoras.
 - **Baja `TIRE_TRAIL_SAT_DEG` a 3.0**: el volante se aligera muchísimo antes
   del límite. El aviso de subviraje se vuelve escandaloso.
+- **Compara `CASTER_ANGLE_DEG` a 2 y a 12** con el mismo coche: a 2° el
+  volante es ligero y el aviso de subviraje muy marcado (queda poco avance
+  mecánico bajo el neumático); a 12° pesa mucho más, gira algo mejor en
+  curva lenta (caída ganada) pero el aviso se difumina. Es exactamente el
+  compromiso que se negocia en un reglaje real.
+- **Pon `CASTER_CAMBER_GAIN` a 0 y a 1.5** en una horquilla cerrada: se
+  aísla la caída ganada al girar, que es lo que hace que un fórmula clave el
+  morro en curva lenta.
 - **Sube `TIRE_RELAX_LENGTH` a 1.5 m**: el coche responde con un retraso muy
   perceptible en las chicanes. Se entiende de golpe para qué sirve σ.
 - **Baja `CAR_CG_HEIGHT` a 0.25 m**: comportamiento tipo fórmula, con las

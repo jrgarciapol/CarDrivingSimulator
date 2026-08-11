@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from simulator import config as cfg
+from simulator import physics
 from simulator.physics import Car, FL, FR, RL, RR
 from simulator.track import Track
 
@@ -437,6 +438,11 @@ def main():
     def steady_yaw(camber):
         old = cfg.TIRE_CAMBER_THRUST
         cfg.TIRE_CAMBER_THRUST = camber
+        # aisla la caida por BALANCEO: sin esto, la caida ganada al girar por
+        # el caster (que va en sentido contrario, a favor de la curva)
+        # compensaria parte del efecto y la prueba mediria la suma de ambos
+        old_cc = cfg.CASTER_CAMBER_GAIN
+        cfg.CASTER_CAMBER_GAIN = 0.0
         c = Car()
         settle(c, flat, 1.0)
         set_speed(c, 25.0)
@@ -447,6 +453,7 @@ def main():
                 acc += abs(c.state.yaw_rate)
                 steps += 1
         cfg.TIRE_CAMBER_THRUST = old
+        cfg.CASTER_CAMBER_GAIN = old_cc
         return acc / steps
 
     yaw_no_camber = steady_yaw(0.0)
@@ -831,6 +838,123 @@ def main():
     results.append(check("rueda mayor -> mas momento angular -> mas precesion",
                          m_big > m_on, f"{m_on:.0f} -> {m_big:.0f} N*m"))
     cfg.GYRO_GAIN = old_gyro
+
+    # ------------------------------------------------------------------
+    print("--- Angulo de avance (caster) ---")
+    garage.load_car(DEP)
+    old_caster = cfg.CASTER_ANGLE_DEG
+    old_off = cfg.STEER_TRAIL_OFFSET
+    old_ccg = cfg.CASTER_CAMBER_GAIN
+
+    # el avance MECANICO es geometria pura: NO depende de la deriva
+    t_mec = [physics.mechanical_trail(0.32) for _ in range(3)]
+    a_ext = [0.0, math.radians(5.0), math.radians(20.0)]
+    results.append(check("el avance mecanico no cae con la deriva",
+                         len(set(t_mec)) == 1 and t_mec[0] > 0.0,
+                         f"{t_mec[0]*1000:.1f} mm constante"))
+
+    # ...mientras que el NEUMATICO se derrumba y llega a hacerse negativo
+    t_pn = [physics.pneumatic_trail(a) for a in a_ext]
+    results.append(check("el avance neumatico se derrumba y se hace negativo",
+                         t_pn[0] > t_pn[1] > 0.0 > t_pn[2],
+                         f"{t_pn[0]*1000:.1f} -> {t_pn[1]*1000:.1f} -> "
+                         f"{t_pn[2]*1000:.1f} mm"))
+
+    # geometria: t = R*tan(caster) + offset
+    cfg.CASTER_ANGLE_DEG, cfg.STEER_TRAIL_OFFSET = 6.0, 0.0
+    esperado = 0.32 * math.tan(math.radians(6.0))
+    results.append(check("t_mecanico = R*tan(caster)",
+                         abs(physics.mechanical_trail(0.32) - esperado) < 1e-9,
+                         f"{physics.mechanical_trail(0.32)*1000:.2f} mm "
+                         f"= {esperado*1000:.2f} mm"))
+
+    # mas caster -> mas brazo -> volante mas pesado
+    def par_en_apoyo(caster):
+        cfg.CASTER_ANGLE_DEG = caster
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 28.0)
+        acc, n = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.30, 0.30, 0.0, flat)
+            if k > int(1.5 / DT):
+                acc += abs(c.state.steer_column_torque)
+                n += 1
+        return acc / n
+
+    par_poco, par_mucho = par_en_apoyo(2.0), par_en_apoyo(10.0)
+    results.append(check("mas avance -> volante mas pesado",
+                         par_mucho > par_poco * 1.3,
+                         f"{par_poco:.1f} -> {par_mucho:.1f} N*m"))
+
+    # el offset ajusta el avance mecanico SIN tocar el caster (ni la caida)
+    cfg.CASTER_ANGLE_DEG = 6.0
+    cfg.STEER_TRAIL_OFFSET = 0.02
+    t_con_off = physics.mechanical_trail(0.32)
+    cfg.STEER_TRAIL_OFFSET = 0.0
+    results.append(check("el offset mueve el avance sin tocar el caster",
+                         abs(t_con_off - esperado - 0.02) < 1e-9,
+                         f"{esperado*1000:.1f} -> {t_con_off*1000:.1f} mm"))
+
+    # CAIDA GANADA AL GIRAR: la rueda EXTERIOR se tumba hacia dentro de la
+    # curva (signo + con el convenio de balanceo) y la interior hacia fuera
+    cfg.CASTER_ANGLE_DEG, cfg.CASTER_CAMBER_GAIN = 8.0, 1.0
+    delta = math.radians(10.0)          # giro a la DERECHA
+    lean_izq = physics.caster_camber(delta, -1.0)   # exterior de la curva
+    lean_dch = physics.caster_camber(delta, +1.0)   # interior
+    results.append(check("el caster inclina la rueda exterior hacia la curva",
+                         lean_izq > 0.0 > lean_dch,
+                         f"ext {math.degrees(lean_izq):+.2f} deg, "
+                         f"int {math.degrees(lean_dch):+.2f} deg"))
+
+    # ...y eso se traduce en MAS giro real con el mismo volante
+    def yaw_con_caster(ccg):
+        cfg.CASTER_CAMBER_GAIN = ccg
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 22.0)
+        acc, n = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.45, 0.30, 0.0, flat)
+            if k > int(1.5 / DT):
+                acc += abs(c.state.yaw_rate)
+                n += 1
+        return acc / n
+
+    yaw_sin, yaw_con = yaw_con_caster(0.0), yaw_con_caster(1.0)
+    results.append(check("la caida ganada por caster hace girar mas",
+                         yaw_con > yaw_sin,
+                         f"yaw {yaw_sin:.4f} -> {yaw_con:.4f} rad/s"))
+
+    # rueda mas grande = brazo mas largo (acopla el catalogo con la direccion)
+    cfg.CASTER_ANGLE_DEG = 6.0
+    results.append(check("rueda mayor -> mas avance mecanico",
+                         physics.mechanical_trail(0.36)
+                         > physics.mechanical_trail(0.28) * 1.2,
+                         f"{physics.mechanical_trail(0.28)*1000:.1f} -> "
+                         f"{physics.mechanical_trail(0.36)*1000:.1f} mm"))
+
+    cfg.CASTER_ANGLE_DEG = old_caster
+    cfg.STEER_TRAIL_OFFSET = old_off
+    cfg.CASTER_CAMBER_GAIN = old_ccg
+
+    # un coche debe comportarse IGUAL se haya conducido lo que se haya
+    # conducido antes: los parametros que solo declaran algunos .car no
+    # pueden quedarse pegados del vehiculo anterior
+    def ficha():
+        return tuple(getattr(cfg, k) for k in (
+            "TIRE_PEAK_SLIP_ANGLE_DEG", "ABS_ENABLED", "SUSP_ANTI_PITCH",
+            "STEER_TRAIL_OFFSET", "ENGINE_IDLE_RPM", "TIRE_RELAX_LENGTH",
+            "STEER_SCRUB_RADIUS", "TIRE_TEMP_OPT", "AERO_DF_FRONT_SHARE"))
+
+    garage.load_car(DEP)
+    ficha_limpia = ficha()
+    for _n, p, _d in garage.list_cars():     # pasa por TODOS los coches
+        garage.load_car(p)
+    garage.load_car(DEP)
+    results.append(check("el coche no hereda reglajes del anterior",
+                         ficha() == ficha_limpia,
+                         "ficha identica tras cargar los 8 coches"))
 
     # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")

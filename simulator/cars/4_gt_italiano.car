@@ -16,6 +16,7 @@ WHEEL_SPEC_REAR = "305/30R20"     # trasero MAS ANCHO: es el eje motriz
 WHEEL_OPTIONS = ["285/35R18", "305/30R20"]# monturas homologadas (menu RUEDAS)
 UNSPRUNG_HUB_MASS = 8.0           # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 11.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 6.5          # grados, angulo de avance: GT: mucho avance, volante pesado y preciso
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
 DIFF_LSD_COEFF = 28.0             # Nm*s, dureza del autoblocante

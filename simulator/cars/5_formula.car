@@ -17,6 +17,10 @@ WHEEL_OPTIONS = ["305/55R13", "270/60R13"]# monturas homologadas (menu RUEDAS)
 CAR_WHEEL_INERTIA = 1.1           # llanta de magnesio, masa periferica minima
 UNSPRUNG_MASS = 20.0              # conjunto de competicion ligerisimo
 STEER_RATIO = 8.0                 # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 12.0         # grados, angulo de avance: formula: avance extremo = caida gratis en curva
+STEER_TRAIL_OFFSET = -0.032       # m, eje adelantado: recorta el avance mecanico
+                                  # que daria un caster de 12 grados, sin perder
+                                  # la caida que se gana al girar
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
 DIFF_LSD_COEFF = 32.0             # Nm*s, dureza del autoblocante

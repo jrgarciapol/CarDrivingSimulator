@@ -77,12 +77,56 @@ def mu_with_load(mu_base: float, fz: float, fz_ref: float,
 
 
 def pneumatic_trail(alpha: float) -> float:
-    """El avance neumático cae con la deriva (el volante se aligera al
-    saturar el tren delantero); el avance mecánico (~15 %) permanece.
-    El contraste alto hace el aviso de subviraje claramente perceptible."""
+    """AVANCE NEUMATICO: nace de la DEFORMACION de la huella. Como la zona
+    delantera agarra y la trasera desliza, la resultante de la fuerza lateral
+    queda retrasada respecto al centro de la huella; esa distancia es el
+    brazo de palanca. Al crecer la deriva la parte trasera deja de agarrar,
+    la resultante se ADELANTA y el avance se derrumba: por eso el volante se
+    aligera justo antes de que el tren delantero se vaya.
+
+    Pasado el pico llega a hacerse ligeramente NEGATIVO (la resultante se
+    adelanta al centro de la huella), lo que acentúa el aviso.
+    Existe solo porque la goma se deforma: una rueda rígida no lo tendría."""
     sat = math.radians(cfg.TIRE_TRAIL_SAT_DEG)
-    falloff = max(0.0, 1.0 - abs(alpha) / sat)
-    return cfg.TIRE_TRAIL * (0.15 + 0.85 * falloff)
+    t = cfg.TIRE_TRAIL * (1.0 - abs(alpha) / sat)
+    return max(-cfg.TIRE_TRAIL_NEG_FRAC * cfg.TIRE_TRAIL, t)
+
+
+def mechanical_trail(radius: float) -> float:
+    """AVANCE MECANICO: GEOMETRIA PURA, nada que ver con la deformación.
+    El eje de dirección (la línea entre las rótulas de la mangueta) está
+    inclinado hacia atrás el ángulo de AVANCE o caster; al prolongarlo corta
+    el suelo POR DELANTE del punto de contacto. Como la fuerza lateral tira
+    por DETRAS del pivote, aparece un par que alinea la rueda con el avance:
+    es el mismo efecto que las ruedas locas de un carrito de la compra.
+
+        t_mec = R · tan(caster) + offset
+
+    Existe aunque la rueda fuese perfectamente rígida, y NO cae con la
+    deriva: es el suelo que queda en el volante cuando el tren delantero ya
+    ha saturado y el avance neumático se ha derrumbado.
+
+    Que dependa del RADIO acopla el catálogo de ruedas con la dirección:
+    montar rueda más grande alarga el brazo y endurece el volante."""
+    return radius * math.tan(math.radians(cfg.CASTER_ANGLE_DEG)) \
+        + cfg.STEER_TRAIL_OFFSET
+
+
+def caster_camber(delta: float, side: float) -> float:
+    """Caída ganada al girar por tener el eje de dirección inclinado
+    (caster camber gain). Al pivotar sobre un eje tumbado hacia atrás, la
+    rueda EXTERIOR de la curva se inclina HACIA DENTRO (caída negativa, que
+    es la buena: empuja hacia el centro de la curva) mientras la interior se
+    tumba hacia fuera. Es la razón de que los coches de competición monten
+    mucho avance: caída negativa gratis justo cuando hace falta, sin
+    penalizar la huella en recta.
+
+    delta = giro de la rueda (rad, + = a la derecha)
+    side  = -1 rueda izquierda, +1 rueda derecha
+    Devuelve el incremento de inclinación en el mismo convenio que el
+    balanceo: + = la rueda se tumba hacia la derecha."""
+    return -side * math.sin(math.radians(cfg.CASTER_ANGLE_DEG)) * delta \
+        * cfg.CASTER_CAMBER_GAIN
 
 
 class CarState:
@@ -622,6 +666,13 @@ class Car:
             # la rueda izquierda hacia la derecha y viceversa.
             side = 1.0 if self.Y_POS[i] > 0.0 else -1.0
             lean = -st.roll - side * cfg.SUSP_CAMBER_GAIN * st.susp_def[i]
+            # ...y en el EJE DIRECTRIZ, la caída que se gana al girar por
+            # tener el eje de dirección inclinado (caster camber gain): la
+            # rueda exterior se tumba hacia dentro de la curva y empuja a
+            # favor. Compensa en parte el balanceo, y crece con el ángulo de
+            # volante, así que se nota sobre todo en curva lenta y cerrada.
+            if i < 2:
+                lean += caster_camber(delta, side)
             fy_ss += cfg.TIRE_CAMBER_THRUST * lean * st.fz[i]
             # retardo de respuesta lateral (relaxation length)
             blend = min(1.0, (vx_abs + 0.5) * dt / cfg.TIRE_RELAX_LENGTH)
@@ -805,9 +856,16 @@ class Car:
             st.oversteer = 0.0
 
         # --- par en la columna para el force feedback -------------------
+        # El brazo de palanca son DOS avances independientes que se suman:
+        # el NEUMATICO (nace de la deformación, se derrumba con la deriva) y
+        # el MECANICO (geometría del caster, constante). Que el primero caiga
+        # y el segundo no es lo que hace que el par de autoalineado alcance su
+        # máximo ANTES que la fuerza lateral: el volante se aligera como aviso
+        # anticipado de subviraje, pero nunca queda muerto.
         mz = 0.0
         for i in (FL, FR):
-            mz += -fy_w[i] * pneumatic_trail(st.slip_angle[i])
+            trail = pneumatic_trail(st.slip_angle[i]) + mechanical_trail(R_w[i])
+            mz += -fy_w[i] * trail
         # radio de pivotamiento (scrub radius): la diferencia de fuerza
         # longitudinal entre las ruedas delanteras tira del volante
         # (torque steer en FWD, tirón al frenar con media pista de hierba,

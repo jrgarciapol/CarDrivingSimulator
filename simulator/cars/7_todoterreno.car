@@ -15,6 +15,7 @@ WHEEL_SPEC = "245/75R16"          # neumatico real: deriva radio, masa e inercia
 WHEEL_OPTIONS = ["235/85R16", "265/70R17", "285/75R16"]# monturas homologadas (menu RUEDAS)
 UNSPRUNG_HUB_MASS = 40.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 17.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 3.5          # grados, angulo de avance: poco avance: volante manejable fuera de asfalto
 DRIVE_TYPE = "AWD"                # traccion: FWD delantera, RWD trasera, AWD total
 AWD_FRONT_SPLIT = 0.42            # fraccion del par al eje delantero (solo AWD)
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked

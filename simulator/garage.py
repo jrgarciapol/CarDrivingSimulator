@@ -36,7 +36,9 @@ CAR_KEYS = {
     "TIRE_MU", "TIRE_MU_GRASS", "TIRE_PEAK_SLIP_ANGLE_DEG",
     "TIRE_PEAK_SLIP_RATIO", "TIRE_LOAD_SENS", "TIRE_LONG_GRIP_RATIO",
     "TIRE_RELAX_LENGTH", "TIRE_REAR_GRIP_FACTOR", "TIRE_TRAIL",
-    "TIRE_TRAIL_SAT_DEG", "TIRE_CAMBER_THRUST", "TIRE_TEMP_OPT",
+    "TIRE_TRAIL_SAT_DEG", "TIRE_TRAIL_NEG_FRAC", "CASTER_ANGLE_DEG",
+    "STEER_TRAIL_OFFSET", "CASTER_CAMBER_GAIN",
+    "TIRE_CAMBER_THRUST", "TIRE_TEMP_OPT",
     "TIRE_VERT_STIFF", "TIRE_VERT_DAMP", "UNSPRUNG_MASS",
     "SUSP_SPRING_FRONT", "SUSP_SPRING_REAR", "SUSP_DAMPER",
     "ARB_FRONT", "ARB_REAR", "SUSP_CAMBER_GAIN",
@@ -175,9 +177,29 @@ def list_cars():
     return cars
 
 
+def _car_defaults():
+    """Foto de los valores de fábrica de config.py para todas las claves que
+    un .car puede sobrescribir. Se toma UNA vez, antes de cargar ningún
+    coche, y sirve de base limpia en cada cambio de vehículo."""
+    global _DEFAULTS
+    if _DEFAULTS is None:
+        _DEFAULTS = {k: getattr(cfg, k) for k in CAR_KEYS if hasattr(cfg, k)}
+    return _DEFAULTS
+
+
+_DEFAULTS = None
+
+
 def load_car(path):
     """Aplica el coche sobre la configuración global. Devuelve su nombre."""
     data = parse_car_file(path)
+    # PARTIR SIEMPRE DE LOS VALORES DE FABRICA. Sin esto, un parámetro que
+    # solo declaran ALGUNOS coches se quedaría pegado del vehículo anterior:
+    # elegir el fórmula y luego el deportivo le dejaba a este el reglaje de
+    # neumático, el anti-dive y hasta el ABS del fórmula. Cada coche debe
+    # comportarse igual sea cual sea el que se condujo antes.
+    for key, val in _car_defaults().items():
+        setattr(cfg, key, val)
     for key, val in data.items():
         if key in ("NAME", "DESC", "WHEEL_SPEC", "UNSPRUNG_HUB_MASS",
                    "WHEEL_OPTIONS", "WHEEL_SPEC_FRONT", "WHEEL_SPEC_REAR"):

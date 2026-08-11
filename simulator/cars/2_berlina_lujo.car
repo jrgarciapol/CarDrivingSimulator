@@ -16,6 +16,7 @@ WHEEL_SPEC_REAR = "275/35R19"     # trasero MAS ANCHO: es el eje motriz
 WHEEL_OPTIONS = ["225/50R17", "245/45R18"]# monturas homologadas (menu RUEDAS)
 UNSPRUNG_HUB_MASS = 21.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 15.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 5.0          # grados, angulo de avance: estabilidad en autopista, volante con peso
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "open"                # diferencial: open, lsd (autoblocante) o locked
 ENGINE_MAX_TORQUE_NM = 480.0      # Nm, par maximo del motor

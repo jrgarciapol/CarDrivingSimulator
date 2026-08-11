@@ -545,13 +545,30 @@ la misma presión bloquea con facilidad — como en la realidad.
 El par que se envía al volante se construye enteramente desde la física:
 
 ```
-M_z = Σ_delanteras [ −fy_i · t(α_i) ]  +  (fx_FL − fx_FR)·scrub_radius
-t(α) = TIRE_TRAIL · (0.15 + 0.85·max(0, 1 − |α|/α_sat))
+M_z = Σ_delanteras [ −fy_i · (t_neum(α_i) + t_mec(R_i)) ]
+      + (fx_FL − fx_FR)·scrub_radius
+
+t_neum(α) = max( −f_neg·TIRE_TRAIL,  TIRE_TRAIL·(1 − |α|/α_sat) )
+t_mec(R)  = R·tan(CASTER_ANGLE_DEG) + STEER_TRAIL_OFFSET
 ```
 
-- El **par de autoalineado** usa un avance neumático que cae con la deriva
-  (el volante se aligera al saturar el tren delantero — el aviso clásico de
-  subviraje) más un 15 % de avance mecánico residual que nunca desaparece.
+- El **par de autoalineado** suma **dos avances independientes**, cada uno
+  con su propia física (detalle completo en [`NEUMATICO.md`](NEUMATICO.md)):
+  - **Avance neumático** `t_neum`: nace de la **deformación** de la huella
+    (la resultante de la fuerza lateral queda retrasada). **Se derrumba con
+    la deriva** y pasado el pico llega a hacerse ligeramente **negativo**.
+  - **Avance mecánico** `t_mec`: **geometría pura** del ángulo de avance
+    (*caster*), el efecto «carrito de la compra». **Constante** con la
+    deriva, y existiría aunque la rueda fuese rígida. Depende del **radio**,
+    así que montar rueda mayor endurece el volante.
+- Que uno caiga y el otro no es lo que hace que **M_z alcance su máximo
+  ANTES que la fuerza lateral**: con el reglaje de serie, el par pica a ~3,9°
+  de deriva cuando el agarre pica a 7°, y cae un **35 %** hasta la saturación.
+  El volante se aligera como **aviso anticipado de subviraje**, pero nunca
+  queda muerto porque el avance mecánico permanece.
+- El **caster** además genera **caída al girar** (*caster camber gain*): la
+  rueda exterior se tumba hacia dentro de la curva y empuja a favor. Es la
+  razón de que los coches de competición monten mucho avance.
 - El término de **scrub radius** transmite la diferencia de fuerzas
   longitudinales entre las dos ruedas delanteras: torque-steer en FWD,
   tirón al frenar con medio coche en la hierba, pulsación del ABS.

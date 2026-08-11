@@ -15,6 +15,7 @@ WHEEL_SPEC = "165/70R13"          # neumatico real: deriva radio, masa e inercia
 WHEEL_OPTIONS = ["175/65R14", "185/55R15"]# monturas homologadas (menu RUEDAS)
 UNSPRUNG_HUB_MASS = 17.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 15.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 2.5          # grados, angulo de avance: urbano: direccion ligera para aparcar
 DRIVE_TYPE = "FWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "open"                # diferencial: open, lsd (autoblocante) o locked
 ENGINE_MAX_TORQUE_NM = 118.0      # Nm, par maximo del motor

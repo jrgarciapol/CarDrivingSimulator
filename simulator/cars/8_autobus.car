@@ -16,6 +16,7 @@ WHEEL_OPTIONS = ["275/70R22.5", "315/70R22.5"]# monturas homologadas (menu RUEDA
 CAR_WHEEL_INERTIA = 12.0          # ruedas GEMELAS detras: inercia doble
 UNSPRUNG_MASS = 320.0             # eje rigido + gemelas
 STEER_RATIO = 22.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 2.0          # grados, angulo de avance: minimo: con esa masa el volante ya pesa bastante
 STEER_SCRUB_RADIUS = 0.06         # m, radio de pivote: tirones al frenar/traccionar
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "locked"              # diferencial: open, lsd (autoblocante) o locked

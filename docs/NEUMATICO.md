@@ -21,7 +21,7 @@ conducción entera.
 3. [Por qué la deriva genera fuerza: el modelo de cepillo](#3-por-qué-la-deriva-genera-fuerza-el-modelo-de-cepillo)
 4. [La curva de Pacejka: pico y caída](#4-la-curva-de-pacejka-pico-y-caída)
 5. [El par autoalineante y los dos avances](#5-el-par-autoalineante-y-los-dos-avances)
-6. [La caída (camber): el ángulo que se pierde al tumbarse](#6-la-caída-camber-el-ángulo-que-se-pierde-al-tumbarse)
+6. [La caída (camber) y la convergencia (toe)](#6-la-caída-camber-el-ángulo-que-se-pierde-al-tumbarse)
 7. [La longitud de relajación: el agarre llega con retraso](#7-la-longitud-de-relajación-el-agarre-llega-con-retraso)
 8. [El deslizamiento longitudinal](#8-el-deslizamiento-longitudinal)
 9. [El agarre combinado: la elipse de fricción](#9-el-agarre-combinado-la-elipse-de-fricción)
@@ -609,6 +609,45 @@ menos», es que **su goma vuelve a apoyar plana**.
 > de 0,5-0,8°/pulgada ≈ 0,55 rad/m). Sin caída estática con la que
 > compararlos, el desajuste no se notaba. Están recalibrados.
 
+### 6.6 Convergencia (*toe*): el tercer ángulo de la alineación
+
+Con el avance (§5) y la caída (§6) queda el tercero de la mesa de
+alineación. La **convergencia** es cuánto apunta cada rueda hacia dentro o
+hacia fuera, vista desde arriba:
+
+- **Convergencia** (*toe-in*, positiva): las ruedas apuntan **hacia
+  dentro**. Da estabilidad en recta.
+- **Divergencia** (*toe-out*, negativa): apuntan hacia fuera. **Afila la
+  entrada en curva**, porque la rueda exterior llega ya girada hacia ella.
+
+El mecanismo es directo: cada rueda arranca con una deriva de partida, de
+signo opuesto en cada lado. Medido en el simulador con 0,4° de
+convergencia delantera, en recta: **rueda izquierda −0,40°, derecha
++0,40°**. Las dos generan fuerza lateral hacia dentro y **se anulan**.
+
+De ahí sale todo lo demás:
+
+| | Efecto |
+|---|---|
+| **En recta** | Las dos fuerzas se cancelan, pero el **arrastre no**: cuesta velocidad punta y desgasta la goma |
+| **Ante una perturbación** | Si el coche se desvía, una rueda gana carga y su fuerza deja de estar compensada: aparece una fuerza **restauradora**. Eso es la estabilidad |
+| **Al entrar en curva** | Con divergencia, la rueda exterior (la que va a cargarse) ya apunta a la curva: el coche gira antes |
+| **Convergencia trasera** | Es lo que **impide que la cola se mueva sola** al levantar el pie. Medido: pasar de −0,3° a +0,4° reduce el pico de guiñada al soltar gas |
+
+Por eso un turismo lleva convergencia en los dos ejes (estabilidad y
+seguridad) y un coche de circuito suele llevar **divergencia delante** y
+**convergencia detrás**: entra afilado pero con la cola sujeta.
+
+En el simulador, `TOE_FRONT_DEG` y `TOE_REAR_DEG` entran en el ángulo real
+de cada rueda, junto con la dirección:
+
+```python
+d_w[i] = (delta si es eje directriz, si no 0) − lado · convergencia
+```
+
+Nótese que **las cuatro ruedas** pueden ir giradas: antes solo las
+delanteras tenían ángulo propio.
+
 ---
 
 ## 7. La longitud de relajación: el agarre llega con retraso
@@ -938,6 +977,11 @@ simplificado · ❌ ausente.
 | Avance mecánico (efecto carrito) | ✅ | `mechanical_trail()`, geometría propia desde `CASTER_ANGLE_DEG` |
 | Ángulo de avance (caster) reglable por coche | ✅ | `CASTER_ANGLE_DEG` en cada `.car` |
 | Aislamiento de reglajes entre coches | ✅ | `garage.py`, `_car_defaults()` |
+| **Convergencia (toe)** estática por eje | ✅ | `TOE_FRONT_DEG` / `TOE_REAR_DEG` |
+| **Amortiguación** por eje y por sentido | ✅ | `SUSP_DAMPER_BUMP_*` / `_REB_*` |
+| **Topes de recorrido** cuadráticos | ✅ | `SUSP_BUMP_GAP_*`, `SUSP_BUMP_STIFF` |
+| **LSD de discos**: rampas separadas y precarga | ✅ | `DIFF_PRELOAD`, `DIFF_RAMP_POWER` / `_COAST` |
+| Diferencial viscoso (sensible a la velocidad) | ✅ | `DIFF_TYPE = "viscous"` |
 | Offset del eje de dirección | ✅ | `STEER_TRAIL_OFFSET` |
 | Caída ganada al girar (*caster camber gain*) | ✅ | `caster_camber()` |
 | Acoplamiento tamaño de rueda → peso del volante | ✅ | `mechanical_trail(R_w[i])` |
@@ -984,24 +1028,45 @@ con su física propia y sus referencias verificadas en la tabla.
 
 ## 13. Qué NO está modelizado
 
-Honestidad sobre los límites del modelo:
+Honestidad sobre los límites del modelo.
 
-1. **Inclinación del eje de dirección (KPI/SAI) y efecto de gato.** El
+### Auditoría de reglaje: qué se puede tocar y qué no
+
+Comparando con lo que se ajusta de verdad en un banco de reglaje:
+
+| Familia | Modelizado | **Falta** |
+|---|---|---|
+| **Alineación** | Avance (caster) y su offset, **convergencia por eje**, caída estática por eje, camber gain, radio de pivotamiento, desmultiplicación | KPI/SAI, bump steer, Ackermann |
+| **Suspensión** | Muelles por eje, **amortiguación por eje y por sentido**, **topes de recorrido**, barras estabilizadoras, anti-dive/anti-squat, rigidez torsional | **Altura libre y rake**, altura del centro de balanceo |
+| **Neumático** | μ, picos de deriva y deslizamiento, sensibilidad a la carga, ancho, relajación, avances, caída y huella, térmico, rigidez vertical | **Presión de inflado**, desgaste acumulado |
+| **Transmisión** | Desarrollos, grupo final, **LSD de discos con rampas separadas y precarga**, viscoso, bloqueado, reparto AWD | Bloqueo variable electrónico |
+| **Aerodinámica** | Cd, Cl, área frontal, reparto de carga entre ejes | Sensibilidad a la altura y al rake |
+| **Frenos** | Fuerza máxima, reparto delantero, ABS | Temperatura y *fading* |
+| **Masas** | Masa, inercias, altura del CG, reparto por eje, vía, batalla | **Combustible** (masa que baja durante la tanda), reparto diagonal |
+
+Las dos que más se notarían ahora, por orden:
+
+1. **Presión de inflado** — el reglaje más accesible en la realidad, y el
+   único hueco importante que queda en el neumático.
+2. **Altura libre y rake** — el más «de sistema»: hay que acoplar altura →
+   centro de gravedad → aerodinámica → geometría, no vale como número
+   suelto.
+
+### Detalle
+
+1. **Presión de inflado.** Hoy es implícita. Afectaría a rigidez de deriva,
+   huella, sensibilidad a la carga y temperatura de forma acoplada.
+
+2. **Altura libre y rake.** No existen como parámetro: la altura del CG se
+   fija a mano y no responde a bajar el coche.
+
+3. **Inclinación del eje de dirección (KPI/SAI) y efecto de gato.** El
    caster ya está separado (§5.5), pero falta el **otro** ángulo del eje de
    dirección: su inclinación vista de frente. Genera autocentrado por peso
    (el coche se «levanta» al girar) y contribuye también a la caída al
    girar. Sería el siguiente paso natural en geometría de dirección.
 
-2. **Presión de inflado.** Hoy es implícita. Una presión variable afectaría
-   a rigidez de deriva, huella, sensibilidad a la carga y temperatura de
-   forma acoplada — es un buen candidato a futuro porque es el reglaje más
-   accesible en la realidad.
 
-3. **Convergencia (*toe*) estática.** Es la pata que falta de la mesa de
-   alineación: ya están el avance (§5) y la caída (§6), pero no la
-   convergencia. En la realidad precarga los neumáticos, da estabilidad en
-   recta y afina la respuesta al entrar en curva, a costa de arrastre y
-   desgaste. *Es la mejora más clara pendiente en geometría de tren.*
 
 4. **Desgaste del neumático.** El modelo térmico existe, pero no hay
    degradación acumulada que reduzca μ a lo largo de una tanda.
@@ -1046,6 +1111,14 @@ Todos editables en vivo desde **AJUSTES AVANZADOS** (menú principal), o en
 | `TIRE_CAMBER_PATCH` | 18.0 | Pérdida de huella por rad² de inclinación (CUADRÁTICA) |
 | `TIRE_CAMBER_HEAT` | 3.0 | Calentamiento extra del hombro cargado |
 | `SUSP_CAMBER_GAIN` | 0.40 (por coche) | Caída recuperada por metro de compresión |
+| `TOE_FRONT_DEG` / `_REAR_DEG` | +0.05 / +0.15 (por coche) | **Convergencia**: + converge (estable), − diverge (afila la entrada) |
+| `SUSP_DAMPER_BUMP_F` / `_R` | 2600 / 2300 (por coche) | Amortiguación en **compresión** |
+| `SUSP_DAMPER_REB_F` / `_R` | 5600 / 4900 (por coche) | Amortiguación en **extensión** (controla el rebote) |
+| `SUSP_BUMP_GAP_F` / `_R` | 0.070 / 0.080 (por coche) | Recorrido libre antes del tope |
+| `SUSP_BUMP_STIFF` | 2.0e7 | Rigidez cuadrática del tope (N/m²) |
+| `DIFF_PRELOAD` | 60 N·m (por coche) | Bloqueo permanente del autoblocante |
+| `DIFF_RAMP_POWER` / `_COAST` | 0.45 / 0.20 (por coche) | % de bloqueo acelerando / reteniendo |
+| `DIFF_LOCK_BAND` | 0.5 rad/s | Anchura de la saturación del rozamiento seco |
 | `TIRE_WIDTH_MM` | 205 | Ancho de referencia; acopla μ, sensibilidad y calor |
 | `STEER_SCRUB_RADIUS` | 0.04 m | Cuánto tiran del volante las fuerzas longitudinales |
 | `CAR_CG_HEIGHT` | 0.52 m | Altura del CG → cuánta carga se transfiere |
@@ -1071,6 +1144,17 @@ Para *sentir* la teoría, mejor que leerla:
 - **Barre `STATIC_CAMBER_FRONT_DEG` de 0 a −5** en el DEPORTIVO y cronometra
   frenada y curva por separado: verás las dos ramas del compromiso cruzarse.
   A −4° la frenada 100-0 pasa de 35,1 a 41,3 m.
+- **Cambia `DIFF_TYPE` entre `open`, `viscous` y `lsd`** y sal a fondo de
+  una horquilla en 2.ª: con abierto la rueda interior se dispara a 65 rad/s
+  de diferencia, con el viscoso a 59 y con el de discos a 0,4. Se sale
+  ~8 km/h más rápido con el autoblocante.
+- **Sube `DIFF_RAMP_COAST` a 0.8**: el coche se vuelve muy estable al
+  levantar el pie, y muy perezoso para entrar en curva. Es el compromiso
+  clásico del reglaje de diferencial.
+- **Baja `SUSP_BUMP_STIFF` a 0** y pasa por una hondonada rápida: la
+  suspensión se comprime 317 mm, más recorrido del que tiene un coche.
+- **Pon `TOE_REAR_DEG` a −0.3** (divergencia trasera) y levanta el pie en
+  curva: la cola se mueve sola. A +0.4 el coche se queda clavado.
 - **Pon `TIRE_CAMBER_PATCH` a 0** y repite: desaparece el óptimo y más caída
   es siempre mejor. Es la forma más rápida de ver por qué hace falta ese
   término.

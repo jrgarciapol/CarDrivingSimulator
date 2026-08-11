@@ -588,10 +588,16 @@ def main():
                          0.05 < u_appr < 0.35,
                          f"U={u_appr:.2f} (grip ~0.9, aun sin subvirar)"))
 
-    # RWD a fondo en 2a con algo de volante: el trasero patina -> sobreviraje
+    # RWD a fondo en 2a con algo de volante: el trasero patina -> sobreviraje.
+    # Se hace con diferencial ABIERTO a proposito: con el autoblocante de
+    # discos el coche engancha y NO patina, que es justamente para lo que
+    # esta el autoblocante (se comprueba mas abajo, en su propia seccion).
+    _dt_old = cfg.DIFF_TYPE
+    cfg.DIFF_TYPE = "open"
     u_pow, o_pow = balance_at(0.15, 1.0, 14.0, gear=2)
+    cfg.DIFF_TYPE = _dt_old
     results.append(check("el sobreviraje se marca al patinar el trasero",
-                         o_pow > 0.3, f"O={o_pow:.2f}"))
+                         o_pow > 0.3, f"O={o_pow:.2f} (diferencial abierto)"))
 
     # acelerar en linea RECTA (sin volante) no debe marcar balance: es
     # patinaje, no perdida de eje
@@ -1071,6 +1077,335 @@ def main():
 
     cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG = old_f, old_r
     cfg.TIRE_CAMBER_PATCH = old_patch
+
+    # ------------------------------------------------------------------
+    print("--- Cronometraje de vueltas ---")
+    from simulator.timing import LapTimer
+    L = 1000.0
+
+    def rodar(t, metros, v=40.0, psi=0.0, paso=1.0):
+        """Recorre 'metros' (negativos = hacia atras) devolviendo la lista
+        de vueltas que el cronometro da por buenas."""
+        vueltas = []
+        s = t_pos[0]
+        n = int(abs(metros) / paso)
+        signo = 1.0 if metros >= 0 else -1.0
+        for _ in range(n):
+            prev = s
+            s += signo * paso
+            r = t.update(paso / v, prev, s, v, psi)
+            if r is not None:
+                vueltas.append(r)
+        t_pos[0] = s
+        return vueltas
+
+    # 1) la PRIMERA vuelta es parcial y NO se cronometra
+    t_pos = [400.0]
+    t = LapTimer(L)
+    v1 = rodar(t, 600.0)               # llega a la meta desde la mitad
+    results.append(check("la primera vuelta (parcial) no se cronometra",
+                         v1 == [] and t.valid,
+                         f"vueltas={len(v1)}, ya valida={t.valid}"))
+
+    # 2) la SEGUNDA, dando la vuelta entera, si
+    v2 = rodar(t, 1000.0)
+    results.append(check("una vuelta completa si se cronometra",
+                         len(v2) == 1 and 24.0 < v2[0] < 26.0,
+                         f"{len(v2)} vuelta(s), t={v2[0]:.1f} s" if v2 else "ninguna"))
+
+    # 3) EL FALLO QUE MOTIVO ESTO: recorrer el circuito EN SENTIDO CONTRARIO
+    #    hacia que la condicion antigua se cumpliera en cada paso de fisica,
+    #    registrando una vuelta cada 2 ms con tiempos absurdos
+    t_pos = [900.0]
+    t = LapTimer(L)
+    t.valid = True                      # ya habia cronometrado antes
+    v3 = rodar(t, -800.0)               # 800 m del reves, cruzando la meta
+    results.append(check("ir en sentido contrario NO registra vueltas",
+                         v3 == [], f"registradas {len(v3)}"))
+
+    # 4) cruzar la meta sin haber dado la vuelta tampoco cuenta: es lo que
+    #    pasaba al recolocar el coche o al dar media vuelta antes de meta
+    t_pos = [990.0]
+    t = LapTimer(L)
+    t.valid = True
+    v4 = rodar(t, 20.0)                 # solo 20 m, pero cruza la linea
+    results.append(check("cruzar la meta sin dar la vuelta no cuenta",
+                         v4 == [], f"registradas {len(v4)}"))
+
+    # 5) recolocar el coche INVALIDA la vuelta en curso
+    t_pos = [100.0]
+    t = LapTimer(L)
+    t.valid = True
+    rodar(t, 500.0)
+    t.invalidate()
+    v5 = rodar(t, 400.0)                # completa el trazado, pero invalidada
+    results.append(check("recolocar el coche invalida la vuelta",
+                         v5 == [], f"registradas {len(v5)}"))
+
+    # 6) el aviso de SENTIDO CONTRARIO se enciende y se apaga con histeresis
+    t = LapTimer(L)
+    t.update(0.01, 0.0, 0.4, 40.0, math.radians(170.0))
+    encendido = t.wrong_way
+    t.update(0.01, 0.4, 0.8, 40.0, math.radians(10.0))
+    apagado = not t.wrong_way
+    t.update(0.01, 0.8, 1.2, 40.0, math.radians(95.0))
+    sin_parpadeo = not t.wrong_way      # 95 grados aun no lo enciende
+    results.append(check("el aviso de sentido contrario tiene histeresis",
+                         encendido and apagado and sin_parpadeo,
+                         f"170deg={encendido} 10deg={apagado} 95deg={sin_parpadeo}"))
+
+    # 7) parado no debe avisar aunque el coche mire hacia atras (trompo)
+    t = LapTimer(L)
+    t.update(0.01, 0.0, 0.0, 0.2, math.radians(180.0))
+    results.append(check("parado no avisa de sentido contrario",
+                         not t.wrong_way))
+
+    # ------------------------------------------------------------------
+    print("--- Direccion con mando (Steam Deck) ---")
+    from simulator.wheel import curva_direccion, _zona_muerta
+
+    def asentar(bruto, kmh, pasos=200, dt=1 / 60.0):
+        """Deja que el filtro de velocidad de giro llegue al regimen."""
+        v = 0.0
+        for _ in range(pasos):
+            v = curva_direccion(bruto, kmh, v, dt)
+        return v
+
+    # la zona muerta se RECORTA pero se REESCALA: al fondo del stick sigue
+    # habiendo tope completo, no se pierde recorrido
+    results.append(check("la zona muerta no come recorrido util",
+                         _zona_muerta(0.05, 0.12) == 0.0
+                         and abs(_zona_muerta(1.0, 0.12) - 1.0) < 1e-9,
+                         "centro=0, tope=1"))
+
+    # curva progresiva: a medio stick da MENOS de medio volante
+    medio = asentar(0.5, 0.0)
+    tope = asentar(1.0, 0.0)
+    results.append(check("la curva del stick es progresiva",
+                         medio < 0.5 * tope * 0.95,
+                         f"medio stick = {medio:.3f}, tope = {tope:.3f}"))
+
+    # ...pero al fondo sigue dando TODO el tope disponible
+    results.append(check("a fondo el stick da todo el tope",
+                         abs(tope - cfg.PAD_STEER_MAX) < 0.02,
+                         f"{tope:.3f} vs PAD_STEER_MAX={cfg.PAD_STEER_MAX}"))
+
+    # el tope se CIERRA con la velocidad: es lo que evita el trompo al
+    # menor toque en recta rapida
+    parado, rapido = asentar(1.0, 0.0), asentar(1.0, 250.0)
+    results.append(check("el tope de direccion se cierra con la velocidad",
+                         rapido < parado * 0.5,
+                         f"parado {parado:.3f} -> a 250 km/h {rapido:.3f}"))
+
+    # velocidad de giro limitada: de centro a tope no puede ser instantaneo
+    un_paso = curva_direccion(1.0, 0.0, 0.0, 1 / 60.0)
+    results.append(check("el volante no salta de tope a tope al instante",
+                         un_paso < 0.2,
+                         f"tras 1/60 s: {un_paso:.3f} (max {cfg.PAD_STEER_RATE/60:.3f})"))
+
+    # simetria: el stick a izquierda y derecha debe dar lo mismo
+    izq, der = asentar(-0.7, 60.0), asentar(0.7, 60.0)
+    results.append(check("la direccion del mando es simetrica",
+                         abs(izq + der) < 1e-6, f"{izq:.4f} / {der:.4f}"))
+
+    # ------------------------------------------------------------------
+    print("--- Diferencial autoblocante de discos ---")
+    garage.load_car(DEP)
+    _dif = (cfg.DIFF_TYPE, cfg.DIFF_PRELOAD, cfg.DIFF_RAMP_POWER,
+            cfg.DIFF_RAMP_COAST)
+
+    def salida(tipo, seg=1.5, v=14.0, steer=0.15):
+        """Salida a fondo en 2a con algo de volante: el caso en que el
+        diferencial decide si el coche engancha o hace patinar la interior."""
+        cfg.DIFF_TYPE = tipo
+        c = Car()
+        settle(c, flat, 0.5)
+        set_speed(c, v)
+        c.state.gear = 2
+        for _ in range(int(seg / DT)):
+            c.step(DT, steer, 1.0, 0.0, flat)
+        st = c.state
+        return abs(st.omega[RL] - st.omega[RR]), st.vx, st.oversteer
+
+    d_open, v_open, _ = salida("open")
+    d_lsd, v_lsd, _ = salida("lsd")
+    d_visc, v_visc, _ = salida("viscous")
+    cfg.DIFF_TYPE = _dif[0]
+
+    # LO QUE HACE UN AUTOBLOCANTE: impedir que la rueda descargada se
+    # dispare. Es su razon de ser.
+    results.append(check("el autoblocante evita que patine la interior",
+                         d_lsd < d_open * 0.1,
+                         f"dOmega abierto {d_open:.1f} -> lsd {d_lsd:.1f} rad/s"))
+    # ...y por eso saca mas velocidad de la curva
+    results.append(check("con autoblocante se sale mas rapido de curva",
+                         v_lsd > v_open * 1.05,
+                         f"{v_open*3.6:.0f} -> {v_lsd*3.6:.0f} km/h"))
+    # el VISCOSO reacciona a la velocidad, no al par: tiene que esperar a
+    # que la rueda YA patine, asi que se queda a medio camino
+    results.append(check("el viscoso reacciona tarde (tras el patinaje)",
+                         d_visc > d_lsd * 5.0,
+                         f"viscoso {d_visc:.1f} vs discos {d_lsd:.1f} rad/s"))
+
+    # ESTABILIDAD NUMERICA: con un par de bloqueo enorme (diferencial
+    # BLOQUEADO) la banda de transicion fija era mas estrecha de lo que el
+    # paso de integracion puede resolver y el bloqueo oscilaba de un extremo
+    # a otro, dejando las ruedas descompensadas justo cuando deberian ir
+    # solidarias. La banda se ensancha ahora con el par de bloqueo.
+    d_lock, _, _ = salida("locked")
+    cfg.DIFF_TYPE = _dif[0]
+    results.append(check("el diferencial bloqueado no oscila",
+                         d_lock < 2.0,
+                         f"dOmega {d_lock:.2f} rad/s (deben ir solidarias)"))
+
+    # PRECARGA: bloqueo que existe SIN par, con el coche soltado
+    def bloqueo(t_axle, preload, rp, rc):
+        cfg.DIFF_TYPE = "lsd"
+        cfg.DIFF_PRELOAD, cfg.DIFF_RAMP_POWER, cfg.DIFF_RAMP_COAST = \
+            preload, rp, rc
+        c = Car()
+        tl, tr_ = c._diff_torques(t_axle, 5.0, 0.0)   # rueda izda mas rapida
+        return (tr_ - tl) / 2.0                       # par transferido
+
+    results.append(check("la precarga bloquea aunque no pase par",
+                         bloqueo(0.0, 80.0, 0.45, 0.20) > 30.0,
+                         f"{bloqueo(0.0, 80.0, 0.45, 0.20):.0f} N*m sin par"))
+
+    # RAMPAS SEPARADAS: acelerando bloquea mas que reteniendo
+    acc = bloqueo(400.0, 0.0, 0.45, 0.20)
+    ret = bloqueo(-400.0, 0.0, 0.45, 0.20)
+    results.append(check("la rampa de aceleracion bloquea mas que la de retencion",
+                         acc > ret * 2.0, f"acelerando {acc:.0f} vs "
+                         f"reteniendo {ret:.0f} N*m"))
+    # y el porcentaje nominal se respeta: un "45 %" bloquea el 45 % del par
+    pct = 2.0 * acc / 400.0
+    results.append(check("el porcentaje de bloqueo es el nominal",
+                         abs(pct - 0.45) < 0.02, f"{100*pct:.0f} % (nominal 45 %)"))
+    cfg.DIFF_TYPE, cfg.DIFF_PRELOAD = _dif[0], _dif[1]
+    cfg.DIFF_RAMP_POWER, cfg.DIFF_RAMP_COAST = _dif[2], _dif[3]
+
+    # ------------------------------------------------------------------
+    print("--- Amortiguacion separada y topes ---")
+    garage.load_car(DEP)
+    _amo = (cfg.SUSP_DAMPER_BUMP_F, cfg.SUSP_DAMPER_REB_F,
+            cfg.SUSP_BUMP_STIFF, cfg.SUSP_BUMP_GAP_F)
+
+    # la EXTENSION es mas dura que la compresion: es lo que impide que el
+    # coche rebote al devolver el muelle su energia
+    results.append(check("la extension amortigua mas que la compresion",
+                         cfg.SUSP_DAMPER_REB_F > cfg.SUSP_DAMPER_BUMP_F * 1.5,
+                         f"compresion {cfg.SUSP_DAMPER_BUMP_F:.0f} vs "
+                         f"extension {cfg.SUSP_DAMPER_REB_F:.0f} N*s/m"))
+
+    # PARA QUE SIRVE la extension: controlar la energia que el muelle
+    # devuelve. Se comprime el coche y se suelta; con poca extension rebota
+    # y con mucha vuelve sin pasarse. Se mide el REBOTE (cuanto se pasa del
+    # equilibrio), que es el efecto caracteristico y no depende del instante
+    # exacto en que se mire.
+    def rebote(reb):
+        cfg.SUSP_DAMPER_REB_F = cfg.SUSP_DAMPER_REB_R = reb
+        c = Car()
+        settle(c, flat, 1.5)
+        eq = c.state.heave
+        c.state.heave -= 0.05          # se hunde el coche 5 cm...
+        c.state.heave_v = 0.0
+        alto = -9.9
+        for _ in range(int(1.5 / DT)):  # ...y se suelta
+            c.step(DT, 0.0, 0.0, 0.0, flat)
+            alto = max(alto, c.state.heave)
+        return alto - eq                # cuanto se pasa por arriba
+
+    blando, duro = rebote(1500.0), rebote(12000.0)
+    results.append(check("mas extension = menos rebote",
+                         duro < blando,
+                         f"rebote {blando*1000:.1f} mm -> {duro*1000:.1f} mm"))
+    cfg.SUSP_DAMPER_REB_F = cfg.SUSP_DAMPER_REB_R = _amo[1]
+
+    # TOPES: agotado el hueco, la rigidez se dispara (cuadratica)
+    cfg.SUSP_BUMP_STIFF, cfg.SUSP_BUMP_GAP_F = 2.0e7, 0.070
+    f10 = cfg.SUSP_BUMP_STIFF * 0.010 ** 2
+    f20 = cfg.SUSP_BUMP_STIFF * 0.020 ** 2
+    results.append(check("el tope es cuadratico (doblar penetracion x4)",
+                         abs(f20 / f10 - 4.0) < 0.01,
+                         f"10 mm: {f10:.0f} N, 20 mm: {f20:.0f} N"))
+
+    # una carga que agote el recorrido debe apoyarse en el tope y NO seguir
+    # hundiendose sin fin
+    def hundimiento(stiff):
+        """Hondonada a velocidad: la carga vertical agota el recorrido.
+        Se guarda el MAXIMO alcanzado, no el valor final."""
+        cfg.SUSP_BUMP_STIFF = stiff
+        hoya = SlopeTrack(grade=0.0, vcurv=0.020)
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 40.0)
+        peor = 0.0
+        for _ in range(int(1.5 / DT)):
+            c.step(DT, 0.0, 0.25, 0.0, hoya)
+            peor = max(peor, max(c.state.susp_def))
+        return peor
+
+    con_tope = hundimiento(2.0e7)
+    sin_tope = hundimiento(0.0)
+    results.append(check("el tope limita el recorrido de la suspension",
+                         con_tope < sin_tope,
+                         f"sin topes {sin_tope*1000:.0f} mm -> "
+                         f"con topes {con_tope*1000:.0f} mm"))
+    cfg.SUSP_BUMP_STIFF, cfg.SUSP_BUMP_GAP_F = _amo[2], _amo[3]
+
+    # ------------------------------------------------------------------
+    print("--- Convergencia (toe) ---")
+    garage.load_car(DEP)
+    _toe = (cfg.TOE_FRONT_DEG, cfg.TOE_REAR_DEG)
+
+    # con convergencia, en RECTA las dos ruedas de un eje llevan deriva de
+    # signo OPUESTO: tiran una contra otra. De ahi el arrastre y el desgaste.
+    cfg.TOE_FRONT_DEG, cfg.TOE_REAR_DEG = 0.4, 0.0
+    c = Car()
+    settle(c, flat, 1.0)
+    set_speed(c, 30.0)
+    for _ in range(int(1.0 / DT)):
+        c.step(DT, 0.0, 0.25, 0.0, flat)
+    a_izq = math.degrees(c.state.slip_angle[FL])
+    a_dch = math.degrees(c.state.slip_angle[FR])
+    results.append(check("la convergencia enfrenta las dos ruedas del eje",
+                         a_izq * a_dch < 0.0 and abs(a_izq) > 0.2,
+                         f"deriva izda {a_izq:+.2f} / dcha {a_dch:+.2f} deg"))
+
+    # ...y por eso FRENA: en recta cuesta velocidad punta
+    def punta(toe):
+        cfg.TOE_FRONT_DEG = cfg.TOE_REAR_DEG = toe
+        c = Car()
+        settle(c, flat, 0.5)
+        set_speed(c, 45.0)
+        for _ in range(int(4.0 / DT)):
+            c.step(DT, 0.0, 1.0, 0.0, flat)
+        return c.state.vx
+
+    v_recta, v_conv = punta(0.0), punta(0.5)
+    results.append(check("la convergencia cuesta velocidad en recta",
+                         v_conv < v_recta,
+                         f"{v_recta*3.6:.1f} -> {v_conv*3.6:.1f} km/h"))
+
+    # convergencia TRASERA = estabilidad: frena la guiñada al levantar el pie
+    def coletazo(toe_r):
+        cfg.TOE_FRONT_DEG, cfg.TOE_REAR_DEG = 0.0, toe_r
+        c = Car()
+        settle(c, flat, 0.5)
+        set_speed(c, 28.0)
+        for _ in range(int(1.2 / DT)):        # apoyado
+            c.step(DT, 0.28, 0.35, 0.0, flat)
+        pico = 0.0
+        for _ in range(int(1.0 / DT)):        # y se levanta el pie
+            c.step(DT, 0.28, 0.0, 0.0, flat)
+            pico = max(pico, abs(c.state.yaw_rate))
+        return pico
+
+    div, conv = coletazo(-0.3), coletazo(0.4)
+    results.append(check("la convergencia trasera calma el levantar el pie",
+                         conv < div,
+                         f"divergente {div:.4f} -> convergente {conv:.4f} rad/s"))
+    cfg.TOE_FRONT_DEG, cfg.TOE_REAR_DEG = _toe
 
     # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")

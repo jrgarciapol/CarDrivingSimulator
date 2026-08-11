@@ -1,11 +1,17 @@
 """Punto de entrada del simulador.
 
-Uso:  python -m simulator.main [--frames N]
+Uso:  python -m simulator.main [--frames N] [--rendimiento]
+                               [--ventana ANCHOxALTO] [--completa]
 
 Controles con volante Thrustmaster (configurables en simulator/config.py):
   volante        direccion
   pedales        acelerador / freno
   levas          subir / bajar marcha
+Controles con mando (Steam Deck, XBox, PlayStation):
+  stick izqdo.   direccion
+  gatillos       acelerador (derecho) / freno (izquierdo), analogicos
+  L1 / R1        bajar / subir marcha
+  A B X Y        motor / recolocar / vista / cambio automatico
 Teclado (siempre activo):
   flechas        conducir (si no hay volante)
   A / Z          subir / bajar marcha
@@ -33,6 +39,7 @@ from . import garage
 from . import render as render_mod
 from .audio import EngineSound
 from .menu import run_menu
+from .timing import LapTimer
 from .physics import Car
 from .render import Hud, Renderer
 from .track import Track
@@ -61,22 +68,95 @@ def ghost_sample(data, t, track_len):
             n0 + (n1 - n0) * u, p0 + (p1 - p0) * u)
 
 
+def ajustar_ventana():
+    """Encaja la ventana en la pantalla real. En un portátil (una Steam Deck
+    es de 1280x800) una ventana de 1920x1080 se sale por abajo y por la
+    derecha, y no hay forma de ver el HUD ni de llegar a los botones."""
+    if not getattr(cfg, "WINDOW_AUTO", False):
+        return
+    modo = sdl2.SDL_DisplayMode()
+    if sdl2.SDL_GetCurrentDisplayMode(0, ctypes.byref(modo)) != 0:
+        return
+    pw, ph = int(modo.w), int(modo.h)
+    if pw <= 0 or ph <= 0:
+        return
+    if pw >= cfg.WINDOW_WIDTH and ph >= cfg.WINDOW_HEIGHT:
+        return                      # cabe de sobra: no tocar nada
+    # se reduce MANTENIENDO LA PROPORCION, y a múltiplos de 2 px para que
+    # los rectángulos del HUD no queden a medio píxel
+    k = min(pw / cfg.WINDOW_WIDTH, ph / cfg.WINDOW_HEIGHT)
+    cfg.WINDOW_WIDTH = int(cfg.WINDOW_WIDTH * k) // 2 * 2
+    cfg.WINDOW_HEIGHT = int(cfg.WINDOW_HEIGHT * k) // 2 * 2
+    print(f"Pantalla {pw}x{ph}: ventana ajustada a "
+          f"{cfg.WINDOW_WIDTH}x{cfg.WINDOW_HEIGHT}")
+
+
+def preset_rendimiento():
+    """Baja la carga de CPU para equipos modestos (Steam Deck, portátiles).
+
+    Los recortes están elegidos MIDIENDO, no a ojo. A 1280x800 con el
+    render por software, el coste por fotograma se reparte así:
+
+        bruma atmosférica ....... 22 %   <- el efecto más caro con diferencia
+        alcance de dibujado ..... 12 %
+        sombreado solar .......... 7 %
+        trazada ideal ............ 2 %
+        física a 480 Hz .......... 8 %
+
+    Por eso NO se toca la física: cuesta poco y bajarla degradaría el force
+    feedback, que es lo último que conviene sacrificar. Se apagan los dos
+    efectos atmosféricos (que son barridos de numpy sobre todas las
+    secciones) y se recorta el alcance, que por debajo de ~130 segmentos ya
+    no da más rendimiento y sí quita visibilidad.
+
+    El modelo físico queda INTACTO: cambia lo que se ve, no cómo se conduce.
+    """
+    cfg.DRAW_DISTANCE = 140
+    cfg.GFX_FOG_DIST = 0.0
+    cfg.GFX_SUN_SHADE = 0.0
+    cfg.GHOST_ENABLED = False
+    print("Preset de rendimiento: sin bruma ni sombreado, alcance 140 "
+          "(la fisica NO se toca)")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Car Driving Simulator")
     parser.add_argument("--frames", type=int, default=0,
                         help="salir tras N frames (pruebas automatizadas)")
+    parser.add_argument("--rendimiento", action="store_true",
+                        help="preset para equipos modestos (Steam Deck)")
+    parser.add_argument("--ventana", metavar="ANCHOxALTO",
+                        help="forzar el tamano de ventana, p.ej. 1280x800")
+    parser.add_argument("--completa", action="store_true",
+                        help="arrancar en pantalla completa")
     args = parser.parse_args(argv)
 
     if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO | sdl2.SDL_INIT_JOYSTICK |
+                     sdl2.SDL_INIT_GAMECONTROLLER |
                      sdl2.SDL_INIT_HAPTIC | sdl2.SDL_INIT_AUDIO |
                      sdl2.SDL_INIT_EVENTS) != 0:
         print("Error al iniciar SDL:", sdl2.SDL_GetError().decode())
         return 1
 
+    if args.rendimiento:
+        preset_rendimiento()
+    if args.ventana:
+        try:
+            w, h = args.ventana.lower().split("x")
+            cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT = int(w), int(h)
+        except ValueError:
+            print("Formato de --ventana no valido; se esperaba ANCHOxALTO")
+            return 1
+    else:
+        ajustar_ventana()
+    flags = sdl2.SDL_WINDOW_SHOWN
+    if args.completa or getattr(cfg, "WINDOW_FULLSCREEN", False):
+        flags |= sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP
+
     window = sdl2.SDL_CreateWindow(
         cfg.WINDOW_TITLE,
         sdl2.SDL_WINDOWPOS_CENTERED, sdl2.SDL_WINDOWPOS_CENTERED,
-        cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, sdl2.SDL_WINDOW_SHOWN)
+        cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, flags)
     if not window:
         print("Error al crear la ventana:", sdl2.SDL_GetError().decode())
         return 1
@@ -157,28 +237,33 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     from .physics import engine_peak_power_cv
     print(f"Motor: {cfg.ENGINE_MAX_TORQUE_NM:.0f} Nm de par maximo, "
           f"~{engine_peak_power_cv():.0f} CV")
-    if wheel.connected:
+    if wheel.es_mando:
+        print(f"Mando detectado: {wheel.name}")
+        print("  stick izquierdo = direccion | gatillos = gas y freno")
+        print("  L1/R1 = marchas | A = motor | B = recolocar | X = vista"
+              " | Y = automatico")
+        print("Vibracion:", "activa" if ffb.ok else "desactivada")
+    elif wheel.connected:
         print(f"Volante detectado: {wheel.name} "
               f"({wheel.num_axes} ejes, {wheel.num_buttons} botones)")
         print("Force feedback:", "activo" if ffb.ok else "no disponible")
     else:
-        print("No se ha detectado ningun volante: usando teclado (flechas).")
+        print("Sin volante ni mando: usando teclado (flechas).")
 
     perf_freq = sdl2.SDL_GetPerformanceFrequency()
     last = sdl2.SDL_GetPerformanceCounter()
+    frame_dt = 1.0 / 60.0     # la entrada lo usa antes de medirlo (mando)
     physics_dt = 1.0 / cfg.PHYSICS_HZ
     accumulator = 0.0
 
-    lap_time = 0.0
-    best_lap = garage.record_get(track.name, car_name, condition)
-    lap_count = 1
+    timer = LapTimer(track.length,
+                     garage.record_get(track.name, car_name, condition))
     record_banner_until = -1.0
     # fantasma de la mejor vuelta de la sesión + partículas
     particles = render_mod.Particles()
     ghost_rec = []        # vuelta en curso: (t, s, n, psi) cada 50 ms
     ghost_best = None     # mejor vuelta grabada de la sesión
     ghost_next = 0.0
-    lap_valid = False     # la primera vuelta (parcial) no se graba
     show_debug = False
     show_telemetry = False
     show_line = cfg.RACING_LINE
@@ -221,6 +306,10 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                     show_minimap = not show_minimap
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
+                    # recolocar el coche INVALIDA la vuelta en curso: si no,
+                    # se podria "arreglar" una salida de pista y cronometrar
+                    # igual, que es de donde salian tiempos irreales
+                    timer.invalidate()
                 elif sym == sdl2.SDLK_a:
                     if car.shift_up():
                         ffb.notify_gear_shift()
@@ -229,25 +318,28 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                         ffb.notify_gear_shift()
 
         keys = sdl2.SDL_GetKeyboardState(None)
-        wheel.update(keys)
+        # la velocidad solo la usa el MANDO, para cerrar el tope de
+        # direccion a medida que se corre mas
+        wheel.update(keys, car.state.speed_kmh, max(1e-4, frame_dt))
 
         # levas del volante
-        if wheel.button_pressed_edge(cfg.BUTTON_SHIFT_UP):
+        if wheel.action_edge("shift_up"):
             if car.shift_up():
                 ffb.notify_gear_shift()
-        if wheel.button_pressed_edge(cfg.BUTTON_SHIFT_DOWN):
+        if wheel.action_edge("shift_down"):
             if car.shift_down():
                 ffb.notify_gear_shift()
-        if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_AUTO):
+        if wheel.action_edge("toggle_auto"):
             auto_gear = not auto_gear
-        if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_VIEW):
+        if wheel.action_edge("toggle_view"):
             view_mode = (view_mode + 1) % 3
-        if wheel.button_pressed_edge(cfg.BUTTON_ENGINE):
+        if wheel.action_edge("engine"):
             car.toggle_engine()
-        if wheel.button_pressed_edge(cfg.BUTTON_SLOWMO):
+        if wheel.action_edge("slowmo"):
             time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
-        if wheel.button_pressed_edge(cfg.BUTTON_RESET):
+        if wheel.action_edge("reset"):
             car.reset(car.state.s)
+            timer.invalidate()         # igual que la tecla R
 
         # cambio automático (las levas siguen funcionando en manual)
         if auto_gear and car.auto_shift(wheel.throttle):
@@ -268,31 +360,27 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             prev_s = st.s
             car.step(physics_dt, wheel.steering, wheel.throttle, wheel.brake,
                      track)
-            # cronometraje de vueltas
-            lap_time += physics_dt
+            # cronometraje de vueltas (reglas de validez en timing.py)
             sim_time += physics_dt
             # grabación del fantasma: estado curvilíneo cada ~50 ms
-            if cfg.GHOST_ENABLED and lap_valid and lap_time >= ghost_next:
-                ghost_rec.append((lap_time, st.s % track.length, st.n,
+            if (cfg.GHOST_ENABLED and timer.valid
+                    and timer.lap_time >= ghost_next):
+                ghost_rec.append((timer.lap_time, st.s % track.length, st.n,
                                   st.psi))
-                ghost_next = lap_time + 0.05
-            if prev_s % track.length > st.s % track.length and st.vx > 1.0:
-                new_best = best_lap is None or lap_time < best_lap
-                if new_best:
-                    best_lap = lap_time
-                    if garage.record_save(track.name, car_name, condition,
-                                          lap_time):
-                        record_banner_until = sim_time + 5.0
+                ghost_next = timer.lap_time + 0.05
+            vuelta = timer.update(physics_dt, prev_s, st.s, st.vx, st.psi)
+            if vuelta is not None and timer.last_was_best:
+                if garage.record_save(track.name, car_name, condition,
+                                      vuelta):
+                    record_banner_until = sim_time + 5.0
                 # el fantasma pasa a reproducir la vuelta recién batida
-                if lap_valid and new_best and len(ghost_rec) > 4:
-                    ghost_rec.append((lap_time, st.s % track.length,
+                if len(ghost_rec) > 4:
+                    ghost_rec.append((vuelta, st.s % track.length,
                                       st.n, st.psi))
                     ghost_best = ghost_rec
+            if vuelta is not None or timer.lap_time < physics_dt * 1.5:
                 ghost_rec = []
                 ghost_next = 0.0
-                lap_valid = True
-                lap_time = 0.0
-                lap_count += 1
             accumulator -= physics_dt
 
         # ------------------------------------------------ force feedback
@@ -349,7 +437,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                         cam_fwd)
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
-            g = ghost_sample(ghost_best, lap_time, track.length)
+            g = ghost_sample(ghost_best, timer.lap_time, track.length)
             if g is not None:
                 scene.draw_ghost(track, g[0], g[1], g[2])
         if view_mode == 1:
@@ -380,8 +468,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             font_mod.draw_text(renderer, txt,
                                cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 4) // 2,
                                150, 4, (120, 255, 120, 255))
-        hud.draw(car.state, lap_time, best_lap, lap_count, ffb.ok, wheel.name,
-                 auto_gear, time_scale, track, car_name, condition)
+        hud.draw(car.state, timer.lap_time, timer.best, timer.lap_count,
+                 ffb.ok, wheel.name, auto_gear, time_scale, track, car_name,
+                 condition, timer.wrong_way, timer.valid)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface)
         if show_telemetry:

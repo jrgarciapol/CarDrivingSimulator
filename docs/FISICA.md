@@ -248,26 +248,51 @@ frenar en curva, el efecto de las estabilizadoras sobre el equilibrio
 (más barra delante ⇒ más transferencia delante ⇒ subvirador) y la
 sensibilidad al reparto de frenada.
 
-### Empuje por caída (camber thrust) y camber gain
+### Caída (camber): ángulo, empuje y huella
 
-Al balancear, la carrocería inclina las ruedas consigo. Una rueda inclinada
-genera empuje lateral hacia el lado al que se tumba (como una motocicleta).
-La **geometría de suspensión** lo compensa en parte: al comprimirse, cada
-lado gana caída hacia el centro del coche (*camber gain*), enderezando la
-rueda exterior en el apoyo. El ángulo de inclinación efectivo de cada
-rueda (hacia +y) y su empuje son:
+Lo único que le importa al neumático es su ángulo **contra el asfalto**, que
+suma cuatro aportaciones (detalle completo en [`NEUMATICO.md`](NEUMATICO.md)
+§6):
 
 ```
-γ_i = −φ − lado_i · SUSP_CAMBER_GAIN · d_i        lado_i = signo(Y_i)
-fy ← fy + TIRE_CAMBER_THRUST · γ_i · Fz_i
+γ_i = lado_i · γ_est − φ − lado_i · SUSP_CAMBER_GAIN · d_i  [+ caster, eje directriz]
+                                                   lado_i = signo(Y_i)
 ```
+
+- **γ_est**: CAIDA ESTATICA de reglaje (`STATIC_CAMBER_FRONT_DEG` /
+  `_REAR_DEG`, por coche). Negativa = la rueda abraza el coche por arriba.
+  Se pone para que la rueda EXTERIOR quede plana cuando la carrocería se
+  tumbe: en el DEPORTIVO, −2° llevan la exterior de 1,93° a 0,04° en curva.
+- **−φ**: el balanceo la tumba hacia **fuera**, deshaciendo la estática.
+- **camber gain**: al comprimirse, la geometría recupera caída negativa. El
+  autobús (eje rígido, 0) lo sufre entero; un paralelogramo la recupera.
+- **caster**: solo el eje directriz, la ganada al girar.
 
 El signo por lado importa: la misma compresión tumba la rueda izquierda
-hacia la derecha y la derecha hacia la izquierda (en un apoyo simétrico
-por aero los dos empujes se cancelan exactamente). En curva la carrocería
-se tumba hacia **fuera** y el término neto resta agarre; el camber gain lo
-recupera en parte según la geometría del coche: el autobús (eje rígido,
-ganancia 0) lo sufre entero, la fórmula (1.5 rad/m) apenas.
+hacia la derecha y la derecha hacia la izquierda (en un apoyo simétrico por
+aero los dos empujes se cancelan exactamente).
+
+Ese ángulo produce **dos efectos que compiten**, y de su contraste sale el
+óptimo de reglaje:
+
+```
+fy   ← fy + TIRE_CAMBER_THRUST · γ_i · Fz_i        (LINEAL: empuje)
+mu_i ← mu_i · (1 − TIRE_CAMBER_PATCH · γ_i²)       (CUADRATICO: huella)
+```
+
+- **Empuje por caída** (*camber thrust*): una rueda inclinada genera fuerza
+  lateral hacia el lado al que se tumba, como una motocicleta. Crece
+  **linealmente**.
+- **Pérdida de huella**: inclinada no apoya plana, la carga se concentra en
+  un hombro y el agarre disponible baja. Crece **cuadráticamente** (1° →
+  0,5 %; 3° → 4,9 %; 5° → 13,7 %).
+
+Para inclinaciones pequeñas gana el empuje; pasado ~1° manda la huella. Si
+la pérdida fuese lineal, el neumático siempre querría apoyar plano y no
+existiría óptimo alguno. De aquí sale el compromiso real: **−4° de caída
+estática alargan la frenada 100-0 de 35,1 a 41,3 m**, a cambio de agarre en
+curva. La caída además **calienta más** la goma (`TIRE_CAMBER_HEAT`): es el
+desgaste asimétrico del hombro interior.
 
 ### Temperatura
 

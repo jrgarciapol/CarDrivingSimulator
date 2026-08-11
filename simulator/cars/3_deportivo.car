@@ -37,5 +37,7 @@ CL = 0.449                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 15000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.72           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.15              # m, ojo del conductor: asiento bajo
-SUSP_CAMBER_GAIN = 1.0            # paralelogramo deportivo
+SUSP_CAMBER_GAIN = 0.45            # rad/m: paralelogramo deportivo
+STATIC_CAMBER_FRONT_DEG = -1.5      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -1.5      # grados detras: compromiso calle/circuito
 CAMERA_FORWARD = 0.50             # m, ojo del conductor

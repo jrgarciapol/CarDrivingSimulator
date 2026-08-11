@@ -21,14 +21,15 @@ conducción entera.
 3. [Por qué la deriva genera fuerza: el modelo de cepillo](#3-por-qué-la-deriva-genera-fuerza-el-modelo-de-cepillo)
 4. [La curva de Pacejka: pico y caída](#4-la-curva-de-pacejka-pico-y-caída)
 5. [El par autoalineante y los dos avances](#5-el-par-autoalineante-y-los-dos-avances)
-6. [La longitud de relajación: el agarre llega con retraso](#6-la-longitud-de-relajación-el-agarre-llega-con-retraso)
-7. [El deslizamiento longitudinal](#7-el-deslizamiento-longitudinal)
-8. [El agarre combinado: la elipse de fricción](#8-el-agarre-combinado-la-elipse-de-fricción)
-9. [Transferencia de carga y sensibilidad a la carga](#9-transferencia-de-carga-y-sensibilidad-a-la-carga)
-10. [Efectos de segundo orden](#10-efectos-de-segundo-orden)
-11. [¿Qué está modelizado y dónde?](#11-qué-está-modelizado-y-dónde)
-12. [Qué NO está modelizado](#12-qué-no-está-modelizado)
-13. [Parámetros ajustables](#13-parámetros-ajustables)
+6. [La caída (camber): el ángulo que se pierde al tumbarse](#6-la-caída-camber-el-ángulo-que-se-pierde-al-tumbarse)
+7. [La longitud de relajación: el agarre llega con retraso](#7-la-longitud-de-relajación-el-agarre-llega-con-retraso)
+8. [El deslizamiento longitudinal](#8-el-deslizamiento-longitudinal)
+9. [El agarre combinado: la elipse de fricción](#9-el-agarre-combinado-la-elipse-de-fricción)
+10. [Transferencia de carga y sensibilidad a la carga](#10-transferencia-de-carga-y-sensibilidad-a-la-carga)
+11. [Efectos de segundo orden](#11-efectos-de-segundo-orden)
+12. [¿Qué está modelizado y dónde?](#12-qué-está-modelizado-y-dónde)
+13. [Qué NO está modelizado](#13-qué-no-está-modelizado)
+14. [Parámetros ajustables](#14-parámetros-ajustables)
 
 ---
 
@@ -262,7 +263,7 @@ precisamente porque no se deriva de primeros principios: se ajusta. Y ajusta
 extraordinariamente bien.
 
 En el simulador está en `simulator/physics.py:61-65`, en su versión
-**combinada** (una sola curva para el deslizamiento total, ver §8):
+**combinada** (una sola curva para el deslizamiento total, ver §9):
 
 ```python
 def tire_force_magnitude(rho, mu, fz):
@@ -468,7 +469,149 @@ Es lo que produce:
 
 ---
 
-## 6. La longitud de relajación: el agarre llega con retraso
+## 6. La caída (camber): el ángulo que se pierde al tumbarse
+
+Si la deriva es cuánto va de lado una rueda, **la caída es cuánto va
+tumbada**: el ángulo entre el plano de la rueda y la vertical, visto de
+frente.
+
+Por convenio, **caída NEGATIVA** significa que la rueda «abraza» al coche —
+la parte de arriba se inclina hacia el centro del vehículo. Es la que se ve
+en cualquier coche de circuito y en un turismo cargado en curva.
+
+### 6.1 Las cuatro caídas que se suman
+
+Lo importante, y lo que más se malinterpreta: **lo único que le importa al
+neumático es su ángulo CONTRA EL ASFALTO**, no cada aportación por separado.
+Y ese ángulo es la suma de cuatro cosas (`simulator/physics.py`):
+
+```python
+lean = side * gamma_estatica          # 1. reglaje de alineación
+       - st.roll                      # 2. balanceo de la carrocería
+       - side * SUSP_CAMBER_GAIN * susp_def[i]   # 3. camber gain
+if i < 2:
+    lean += caster_camber(delta, side)           # 4. caster (eje directriz)
+```
+
+1. **Caída estática** (`STATIC_CAMBER_FRONT_DEG` / `_REAR_DEG`): la del
+   reglaje de alineación, la que lleva el coche parado. Es lo que se ajusta
+   en una mesa de alineación.
+2. **Balanceo**: en curva la carrocería se tumba hacia **fuera** y arrastra
+   consigo a las ruedas, **deshaciendo** la caída estática.
+3. **Camber gain** (`SUSP_CAMBER_GAIN`): al comprimirse, la geometría de
+   suspensión devuelve caída negativa. Un paralelogramo deformable la
+   recupera bien; un eje rígido, nada.
+4. **Caster** (solo el eje directriz): la ganada al girar, §5.4.
+
+### 6.2 Para qué sirve la caída estática
+
+Aquí está la idea entera: **se pone caída negativa estática precisamente
+para que la rueda EXTERIOR quede plana cuando la carrocería se tumbe.**
+
+Es un pago por adelantado. En recta la rueda va inclinada (y eso cuesta), a
+cambio de que en el apoyo —donde se juega el agarre— quede apoyando de
+lleno. Medido en el simulador con el DEPORTIVO, aislando el caster:
+
+| Caída estática | Caída de la rueda exterior en curva |
+|---:|---:|
+| 0° | **1,93°** (rodando sobre el hombro exterior) |
+| −2° | **0,04°** (apoya plana) |
+
+### 6.3 El efecto en la huella, y el óptimo
+
+Una rueda inclinada **no apoya plana**: la carga se concentra en un hombro,
+la huella efectiva se reduce y el agarre disponible baja. La pérdida es
+**cuadrática** (`TIRE_CAMBER_PATCH`), y eso importa mucho:
+
+| Inclinación contra el asfalto | Agarre perdido |
+|---:|---:|
+| 1° | 0,5 % |
+| 2° | 2,2 % |
+| 3° | 4,9 % |
+| 5° | 13,7 % |
+
+Un grado no se nota; cinco arruinan el neumático. Y aquí está **la clave de
+por qué existe un óptimo de reglaje**:
+
+- El **empuje por caída** (*camber thrust*, §6.4) crece **linealmente** con
+  la inclinación.
+- La **pérdida de huella** crece **cuadráticamente**.
+
+Para inclinaciones pequeñas gana el empuje (aporta más de lo poco que cuesta
+la huella); pasado cierto punto manda la huella y todo lo que añadas resta.
+Ese equilibrio cae en torno a **1° de caída contra el asfalto en la rueda
+cargada**, que es exactamente lo que persigue un ingeniero de pista.
+
+> Si la pérdida de huella fuese **lineal** en vez de cuadrática, el modelo
+> diría que el neumático siempre quiere apoyar perfectamente plano, y no
+> existiría ningún óptimo. Es un detalle de modelización que cambia por
+> completo el comportamiento del reglaje.
+
+De ahí sale el compromiso completo, que el simulador reproduce:
+
+| | Con caída estática | Sin ella |
+|---|---|---|
+| En **recta** (frenar, acelerar) | Peor: la rueda va inclinada | Mejor: apoya plana |
+| En **curva** | Mejor: el balanceo la endereza | Peor: rueda sobre el hombro |
+| **Desgaste** | Se come el hombro interior | Parejo |
+| **Temperatura** | Sube antes (`TIRE_CAMBER_HEAT`) | Normal |
+
+Medido en el simulador: **−4° de caída estática alargan la frenada de 100 a
+0 km/h de 35,1 m a 41,3 m** (+18 %). Es el precio real de un reglaje de
+circuito en un coche que hace kilómetros de autopista.
+
+### 6.4 Empuje por caída (*camber thrust*)
+
+Una rueda inclinada genera fuerza lateral **hacia el lado al que se tumba**
+aunque su deriva sea cero — es el mecanismo con el que gira una motocicleta,
+que no tiene apenas deriva sino que se tumba.
+
+En un coche, al balancearse la carrocería las ruedas se tumban hacia
+**fuera** de la curva, así que este empuje **resta** agarre lateral. Por eso
+un vehículo alto y blando subvira mucho más apoyado que uno rígido.
+
+`fy += TIRE_CAMBER_THRUST · lean · fz`
+
+Nótese que **el empuje y la pérdida de huella son efectos distintos que
+conviven**: el primero añade fuerza lateral en una dirección concreta, el
+segundo recorta la capacidad de fricción en todas.
+
+### 6.5 Por qué un todoterreno agarra mal en curva
+
+Con todo lo anterior, el simulador explica solo un comportamiento conocido.
+Caída de la rueda **exterior** al límite, medida con cada coche en su propia
+curva:
+
+| Coche | Estática | Camber gain | Balanceo | **Exterior en curva** |
+|---|---:|---:|---:|---:|
+| DEPORTIVO | −1,5° | 0,45 | 2,9° | **+0,03°** (plana) |
+| GT ITALIANO | −3,0° | 0,55 | 2,4° | **+2,19°** (tumbada hacia dentro) |
+| FÓRMULA | −3,5° | 0,65 | 4,2° | **−0,02°** (plana) |
+| RALLY | −2,0° | 0,40 | 3,3° | **+0,03°** (plana) |
+| BERLINA | −0,8° | 0,30 | 4,7° | **−2,28°** |
+| UTILITARIO | −0,5° | 0,25 | 4,1° | **−2,69°** |
+| AUTOBÚS | 0,0° | 0,00 | 3,1° | **−2,72°** |
+| TODOTERRENO | −0,3° | 0,10 | 5,0° | **−4,04°** |
+
+Los coches de prestaciones llegan a la curva con la rueda **plana o
+ligeramente tumbada hacia dentro**: máximo agarre. Los altos y blandos
+llegan con la rueda **volcada sobre el hombro exterior**, perdiendo huella
+justo cuando más la necesitan. No es un parámetro de castigo puesto a mano:
+sale de que ruedan mucho (5°) y su suspensión apenas recupera caída.
+
+Es también la razón física de que a un todoterreno le siente tan bien
+rebajar el centro de gravedad o endurecer las barras: no es solo «vuelca
+menos», es que **su goma vuelve a apoyar plana**.
+
+> **Nota de calibración.** Al introducir la caída estática se vio que los
+> `SUSP_CAMBER_GAIN` de toda la flota estaban 2-3 veces por encima de lo
+> real (1,2 rad/m en el GT recuperaba 1,8°, cuando un GT3 recupera del orden
+> de 0,5-0,8°/pulgada ≈ 0,55 rad/m). Sin caída estática con la que
+> compararlos, el desajuste no se notaba. Están recalibrados.
+
+---
+
+## 7. La longitud de relajación: el agarre llega con retraso
 
 La fuerza lateral **no aparece en el instante** en que giras el volante. La
 goma necesita **rodar un cierto trecho** para construir el estirón de tacos
@@ -511,7 +654,7 @@ la realidad. `TIRE_RELAX_LENGTH = 0.3 m` (`config.py:206`).
 
 ---
 
-## 7. El deslizamiento longitudinal
+## 8. El deslizamiento longitudinal
 
 Todo lo anterior tiene su gemelo en la dirección de avance. El
 **deslizamiento longitudinal** (*slip ratio*) mide la discrepancia entre la
@@ -546,7 +689,7 @@ En el simulador se calcula en `physics.py:591` y el ABS modula en
 
 ---
 
-## 8. El agarre combinado: la elipse de fricción
+## 9. El agarre combinado: la elipse de fricción
 
 ![Elipse de fricción y transferencia de carga](img/combinado_transferencia.png)
 
@@ -622,7 +765,7 @@ continua y físicamente coherente.
 
 ---
 
-## 9. Transferencia de carga y sensibilidad a la carga
+## 10. Transferencia de carga y sensibilidad a la carga
 
 ### 9.1 La transferencia
 
@@ -733,22 +876,9 @@ apoyarse en tres.
 
 ---
 
-## 10. Efectos de segundo orden
+## 11. Efectos de segundo orden
 
 Todos ellos modelizados; se detallan en [`FISICA.md`](FISICA.md).
-
-### Empuje por caída (*camber thrust*)
-
-Una rueda inclinada genera fuerza lateral **hacia el lado al que se tumba**,
-aunque tenga deriva cero — es el mecanismo con el que gira una motocicleta.
-En un coche, al balancearse la carrocería en curva las ruedas se tumban
-hacia **fuera**, así que este empuje **resta** agarre. Por eso un vehículo
-alto y blando subvira mucho más apoyado que uno rígido.
-
-La **geometría de suspensión** lo compensa parcialmente: al comprimirse,
-cada lado gana caída negativa (*camber gain*, `SUSP_CAMBER_GAIN`),
-enderezando la rueda exterior justo cuando más se necesita.
-`physics.py:612-625`.
 
 ### Temperatura
 
@@ -787,7 +917,7 @@ antes que cualquier otra cosa. `physics.py:353-381`,
 
 ---
 
-## 11. ¿Qué está modelizado y dónde?
+## 12. ¿Qué está modelizado y dónde?
 
 Mapa completo de conceptos a código. **Estado:** ✅ completo · 🟡
 simplificado · ❌ ausente.
@@ -812,8 +942,12 @@ simplificado · ❌ ausente.
 | Caída ganada al girar (*caster camber gain*) | ✅ | `caster_camber()` |
 | Acoplamiento tamaño de rueda → peso del volante | ✅ | `mechanical_trail(R_w[i])` |
 | Radio de pivotamiento (*scrub radius*) | ✅ | `physics.py`, `STEER_SCRUB_RADIUS` |
-| Empuje por caída (*camber thrust*) | ✅ | `physics.py:612-625` |
+| Empuje por caída (*camber thrust*) | ✅ | `TIRE_CAMBER_THRUST` |
+| **Caída estática** (reglaje de alineación) | ✅ | `STATIC_CAMBER_FRONT_DEG` / `_REAR_DEG`, por coche |
+| Pérdida de huella por inclinación (cuadrática) | ✅ | `TIRE_CAMBER_PATCH` |
+| Calentamiento extra del hombro cargado | ✅ | `TIRE_CAMBER_HEAT` |
 | Ganancia de caída con la compresión | ✅ | `SUSP_CAMBER_GAIN` |
+| Caída resultante contra el asfalto, por rueda | ✅ | `CarState.camber[i]` |
 | Modelo térmico de la goma | ✅ | `physics.py:631-644` |
 | Ancho → agarre, sensibilidad y calentamiento | ✅ | `physics.py:177-190` |
 | Radio, masa e inercia por catálogo | ✅ | `garage.py`, `WHEEL_SPEC` |
@@ -848,7 +982,7 @@ con su física propia y sus referencias verificadas en la tabla.
 
 ---
 
-## 12. Qué NO está modelizado
+## 13. Qué NO está modelizado
 
 Honestidad sobre los límites del modelo:
 
@@ -863,9 +997,11 @@ Honestidad sobre los límites del modelo:
    forma acoplada — es un buen candidato a futuro porque es el reglaje más
    accesible en la realidad.
 
-3. **Convergencia (*toe*) estática.** No existe como parámetro. En la
-   realidad, algo de convergencia precarga los neumáticos y da estabilidad
-   en recta a costa de arrastre.
+3. **Convergencia (*toe*) estática.** Es la pata que falta de la mesa de
+   alineación: ya están el avance (§5) y la caída (§6), pero no la
+   convergencia. En la realidad precarga los neumáticos, da estabilidad en
+   recta y afina la respuesta al entrar en curva, a costa de arrastre y
+   desgaste. *Es la mejora más clara pendiente en geometría de tren.*
 
 4. **Desgaste del neumático.** El modelo térmico existe, pero no hay
    degradación acumulada que reduzca μ a lo largo de una tanda.
@@ -884,7 +1020,7 @@ Honestidad sobre los límites del modelo:
 
 ---
 
-## 13. Parámetros ajustables
+## 14. Parámetros ajustables
 
 Todos editables en vivo desde **AJUSTES AVANZADOS** (menú principal), o en
 `simulator/config.py`. Entre corchetes, el rango normal.
@@ -904,7 +1040,12 @@ Todos editables en vivo desde **AJUSTES AVANZADOS** (menú principal), o en
 | `CASTER_ANGLE_DEG` | 4.5 (por coche) | **Ángulo de avance**: de él sale el avance mecánico y la caída ganada al girar |
 | `STEER_TRAIL_OFFSET` | 0.0 m | Ajusta el avance mecánico sin tocar el caster |
 | `CASTER_CAMBER_GAIN` | 1.0 | Cuánta caída por caster llega a la rueda |
-| `TIRE_CAMBER_THRUST` | 0.6 | Empuje lateral por radián de inclinación de la rueda |
+| `TIRE_CAMBER_THRUST` | 0.6 | Empuje lateral por radián de inclinación (LINEAL) |
+| `STATIC_CAMBER_FRONT_DEG` | −1.0 (por coche) | **Caída estática** delantera; negativa = abraza el coche |
+| `STATIC_CAMBER_REAR_DEG` | −1.2 (por coche) | Ídem trasera |
+| `TIRE_CAMBER_PATCH` | 18.0 | Pérdida de huella por rad² de inclinación (CUADRÁTICA) |
+| `TIRE_CAMBER_HEAT` | 3.0 | Calentamiento extra del hombro cargado |
+| `SUSP_CAMBER_GAIN` | 0.40 (por coche) | Caída recuperada por metro de compresión |
 | `TIRE_WIDTH_MM` | 205 | Ancho de referencia; acopla μ, sensibilidad y calor |
 | `STEER_SCRUB_RADIUS` | 0.04 m | Cuánto tiran del volante las fuerzas longitudinales |
 | `CAR_CG_HEIGHT` | 0.52 m | Altura del CG → cuánta carga se transfiere |
@@ -927,6 +1068,14 @@ Para *sentir* la teoría, mejor que leerla:
   mecánico bajo el neumático); a 12° pesa mucho más, gira algo mejor en
   curva lenta (caída ganada) pero el aviso se difumina. Es exactamente el
   compromiso que se negocia en un reglaje real.
+- **Barre `STATIC_CAMBER_FRONT_DEG` de 0 a −5** en el DEPORTIVO y cronometra
+  frenada y curva por separado: verás las dos ramas del compromiso cruzarse.
+  A −4° la frenada 100-0 pasa de 35,1 a 41,3 m.
+- **Pon `TIRE_CAMBER_PATCH` a 0** y repite: desaparece el óptimo y más caída
+  es siempre mejor. Es la forma más rápida de ver por qué hace falta ese
+  término.
+- **Sube `SUSP_CAMBER_GAIN` del TODOTERRENO de 0.10 a 0.60**: su rueda
+  exterior deja de rodar sobre el hombro y el coche se transforma en curva.
 - **Pon `CASTER_CAMBER_GAIN` a 0 y a 1.5** en una horquilla cerrada: se
   aísla la caída ganada al girar, que es lo que hace que un fórmula clave el
   morro en curva lenta.

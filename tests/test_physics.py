@@ -907,7 +907,15 @@ def main():
                          f"ext {math.degrees(lean_izq):+.2f} deg, "
                          f"int {math.degrees(lean_dch):+.2f} deg"))
 
-    # ...y eso se traduce en MAS giro real con el mismo volante
+    # ...y eso se traduce en MAS giro real con el mismo volante. Se prueba
+    # con el coche SIN caida estatica: asi la rueda exterior llega a la curva
+    # tumbada hacia FUERA (le falta caida) y la que aporta el caster la
+    # acerca a su optimo. Con la caida de serie el coche ya esta en su punto,
+    # y anadir mas la pasaria de largo: la huella perderia mas de lo que
+    # aporta el empuje, que es justo el compromiso que modela TIRE_CAMBER_PATCH
+    old_scf, old_scr = cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = 0.0
+
     def yaw_con_caster(ccg):
         cfg.CASTER_CAMBER_GAIN = ccg
         c = Car()
@@ -925,6 +933,7 @@ def main():
     results.append(check("la caida ganada por caster hace girar mas",
                          yaw_con > yaw_sin,
                          f"yaw {yaw_sin:.4f} -> {yaw_con:.4f} rad/s"))
+    cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG = old_scf, old_scr
 
     # rueda mas grande = brazo mas largo (acopla el catalogo con la direccion)
     cfg.CASTER_ANGLE_DEG = 6.0
@@ -955,6 +964,113 @@ def main():
     results.append(check("el coche no hereda reglajes del anterior",
                          ficha() == ficha_limpia,
                          "ficha identica tras cargar los 8 coches"))
+
+    # ------------------------------------------------------------------
+    print("--- Caida estatica (camber de reglaje) ---")
+    garage.load_car(DEP)
+    old_f, old_r = cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG
+    old_patch = cfg.TIRE_CAMBER_PATCH
+
+    def caida_en(steer, seg=2.5, v=25.0):
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, v)
+        for _ in range(int(seg / DT)):
+            c.step(DT, steer, 0.30, 0.0, flat)
+        return c.state
+
+    # EN RECTA la rueda va inclinada exactamente su caida estatica, y con
+    # signo OPUESTO en cada lado (ambas "abrazan" el coche por arriba)
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = -2.0
+    st_r = caida_en(0.0, 1.5)
+    cam_izq = math.degrees(st_r.camber[FL])
+    cam_dch = math.degrees(st_r.camber[FR])
+    results.append(check("en recta cada rueda lleva su caida estatica",
+                         abs(cam_izq - 2.0) < 0.35 and abs(cam_dch + 2.0) < 0.35,
+                         f"izda {cam_izq:+.2f} dcha {cam_dch:+.2f} deg (reglaje -2.0)"))
+
+    # EN CURVA el balanceo endereza la rueda EXTERIOR: para eso se pone.
+    # Se aisla del caster (que aporta su propia caida al girar) para medir
+    # justo lo que dice el enunciado: caida estatica contra balanceo
+    old_ccg2 = cfg.CASTER_CAMBER_GAIN
+    cfg.CASTER_CAMBER_GAIN = 0.0
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = -2.0
+    ext_con = abs(math.degrees(caida_en(0.30).camber[FL]))
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = 0.0
+    ext_sin = abs(math.degrees(caida_en(0.30).camber[FL]))
+    cfg.CASTER_CAMBER_GAIN = old_ccg2
+    results.append(check("la caida estatica endereza la rueda exterior",
+                         ext_con < ext_sin,
+                         f"|caida| exterior {ext_sin:.2f} -> {ext_con:.2f} deg"))
+
+    # EFECTO EN HUELLA: en RECTA la caida estatica hace FRENAR PEOR, porque
+    # la rueda no apoya plana (ese es el precio del reglaje)
+    def frenada(cam):
+        cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = cam
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 100 / 3.6)
+        d0, t = c.state.s, 0.0
+        while c.state.vx > 1.0 and t < 12.0:
+            c.step(DT, 0.0, 0.0, 1.0, flat)
+            t += DT
+        return c.state.s - d0
+
+    d_plana, d_caida = frenada(0.0), frenada(-4.0)
+    results.append(check("la caida estatica empeora la frenada en recta",
+                         d_caida > d_plana * 1.01,
+                         f"{d_plana:.1f} m -> {d_caida:.1f} m"))
+
+    # ...y la perdida de huella es CUADRATICA: doblar la caida cuadruplica
+    # el coste. Es lo que hace que 1 grado no se note y 5 arruinen el apoyo
+    cfg.TIRE_CAMBER_PATCH = old_patch
+    g1, g2 = math.radians(1.0), math.radians(2.0)
+    p1 = 1.0 - cfg.TIRE_CAMBER_PATCH * g1 * g1
+    p2 = 1.0 - cfg.TIRE_CAMBER_PATCH * g2 * g2
+    results.append(check("la perdida de huella es cuadratica",
+                         abs((1 - p2) / (1 - p1) - 4.0) < 0.01,
+                         f"1 deg: -{100*(1-p1):.2f} %  2 deg: -{100*(1-p2):.2f} %"))
+
+    # EL OPTIMO EXISTE: pasarse de caida estatica vuelve a inclinar la rueda
+    # y el agarre en curva CAE. Sin este efecto, mas caida seria siempre mejor
+    def ay_media(cam):
+        cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = cam
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 26.0)
+        acc, n = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.26, 0.28, 0.0, flat)
+            if k > int(1.8 / DT):
+                acc += abs(c.state.ay)
+                n += 1
+        return acc / n
+
+    ay_moderada, ay_exagerada = ay_media(-1.5), ay_media(-6.0)
+    results.append(check("pasarse de caida estatica resta agarre en curva",
+                         ay_exagerada < ay_moderada,
+                         f"a -1.5 deg {ay_moderada:.2f} vs a -6 deg {ay_exagerada:.2f} m/s2"))
+
+    # la caida concentra el trabajo en un hombro: la goma se calienta MAS.
+    # Se mide en FRENADA RECTA para que las dos pruebas recorran lo mismo:
+    # en curva, la que lleva mas caida agarra menos, va mas despacio y eso
+    # enmascara el efecto termico
+    def temp_tras_frenada(cam):
+        cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = cam
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 120 / 3.6)
+        for _ in range(int(2.0 / DT)):
+            c.step(DT, 0.0, 0.0, 0.85, flat)
+        return c.state.tire_temp[FL]
+
+    t_plana, t_caida = temp_tras_frenada(0.0), temp_tras_frenada(-5.0)
+    results.append(check("la caida calienta mas la goma",
+                         t_caida > t_plana,
+                         f"{t_plana:.1f} -> {t_caida:.1f} C"))
+
+    cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG = old_f, old_r
+    cfg.TIRE_CAMBER_PATCH = old_patch
 
     # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")

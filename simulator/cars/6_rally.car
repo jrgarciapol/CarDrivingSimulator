@@ -39,5 +39,7 @@ CL = 0.389                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 17000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.66           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.35              # m, ojo del conductor: con casco y baquet
-SUSP_CAMBER_GAIN = 0.9            # recorrido largo bien guiado
+SUSP_CAMBER_GAIN = 0.40            # rad/m: recorrido largo bien guiado
+STATIC_CAMBER_FRONT_DEG = -2.0      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -1.5      # grados detras: apoyo con recorrido largo de suspension
 CAMERA_FORWARD = 0.50             # m, ojo del conductor

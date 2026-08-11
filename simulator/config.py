@@ -244,6 +244,32 @@ TIRE_TRAIL_NEG_FRAC = 0.18   # cuánto llega a hacerse NEGATIVO el avance
                              # neumático pasado el pico, en fracción del
                              # valor a deriva cero. Acentúa el aviso de
                              # subviraje en el volante [0 .. 0.4]
+STATIC_CAMBER_FRONT_DEG = -1.0   # grados de CAIDA ESTATICA del eje delantero,
+                             # la del reglaje de alineación. NEGATIVA = la
+                             # rueda abraza al coche por arriba. Se pone para
+                             # que la rueda EXTERIOR quede plana cuando la
+                             # carrocería se tumbe en curva: más agarre en
+                             # apoyo, a cambio de menos en recta y de
+                             # desgastar el hombro interior. Turismo -0.5,
+                             # deportivo -1.5, circuito -3 a -4 [-5 .. 1]
+STATIC_CAMBER_REAR_DEG = -1.2    # ídem eje trasero; suele ser algo MENOS
+                             # negativa que la delantera porque el eje
+                             # trasero balancea menos y necesita tracción
+                             # [-5 .. 1]
+TIRE_CAMBER_PATCH = 18.0     # pérdida de agarre por radián CUADRADO de
+                             # inclinación contra el asfalto: la rueda tumbada
+                             # no apoya plana, la carga se concentra en un
+                             # hombro y la huella efectiva se reduce. Es
+                             # CUADRATICA (1 grado no se nota, 5 arruinan):
+                             # 1 deg -> 0.5 %, 2 -> 2 %, 3 -> 5 %, 5 -> 14 %.
+                             # Cuadrática frente al empuje por caída, que es
+                             # lineal: de ese contraste sale el ÓPTIMO de
+                             # reglaje (~1 grado en la rueda cargada).
+                             # 0 = desactivado [0 .. 50]
+TIRE_CAMBER_HEAT = 3.0       # calentamiento extra por radián de inclinación:
+                             # el hombro cargado trabaja más y sube de
+                             # temperatura antes (desgaste asimétrico)
+                             # [0 .. 8]
 TIRE_CAMBER_THRUST = 0.6     # empuje por caída: fuerza lateral por radián
                              # de inclinación de la rueda (fracción de la
                              # carga). Al tumbarse la carrocería en curva
@@ -296,7 +322,7 @@ SUSP_ANTI_PITCH = 0.30       # geometría anti-dive/anti-squat: fracción de
                              # suspensión desvían directamente al chasis
                              # (menos cabeceo, misma transferencia de
                              # carga, plataforma más estable) [0 .. 0.5]
-SUSP_CAMBER_GAIN = 0.8       # rad de caída negativa ganada por metro de
+SUSP_CAMBER_GAIN = 0.40      # rad de caída negativa ganada por metro de
                              # compresión: la rueda exterior (comprimida)
                              # se endereza compensando el balanceo y
                              # recupera parte del agarre que roba el

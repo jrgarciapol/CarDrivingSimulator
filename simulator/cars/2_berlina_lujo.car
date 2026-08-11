@@ -38,5 +38,7 @@ CL = 0.142                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 22000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.70           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.30              # m, ojo del conductor: berlina comoda
-SUSP_CAMBER_GAIN = 0.6            # confort antes que apoyo
+SUSP_CAMBER_GAIN = 0.30            # rad/m: confort antes que apoyo
+STATIC_CAMBER_FRONT_DEG = -0.8      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -1.2      # grados detras: algo de caida sin castigar el neumatico
 CAMERA_FORWARD = 0.45             # m, ojo del conductor a media cabina

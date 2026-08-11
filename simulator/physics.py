@@ -160,6 +160,9 @@ class CarState:
         self.susp_def = [0.0, 0.0, 0.0, 0.0]   # deflexión muelle (m, + comprimido)
         self.slip_ratio = [0.0, 0.0, 0.0, 0.0]
         self.slip_angle = [0.0, 0.0, 0.0, 0.0]
+        self.camber = [0.0, 0.0, 0.0, 0.0]     # rad, caída CONTRA EL ASFALTO
+                                               # (estática + balanceo + gain
+                                               # + caster); 0 = apoya plana
         self.wheel_surface = ["road"] * 4
         # motor
         self.rpm = cfg.ENGINE_IDLE_RPM
@@ -637,8 +640,48 @@ class Car:
             st.slip_ratio[i] = slip
             st.slip_angle[i] = alpha
 
+            # --- CAIDA (camber) de esta rueda respecto al ASFALTO ---------
+            # Se suman cuatro aportaciones, y lo que importa siempre es el
+            # ángulo RESULTANTE contra el suelo, no cada una por separado:
+            #  1. CAIDA ESTATICA: la que lleva de reglaje, parada y en recta.
+            #     Negativa = la rueda "abraza" el coche por arriba. Se pone
+            #     precisamente para que la rueda EXTERIOR quede plana cuando
+            #     la carrocería se tumbe en curva.
+            #  2. BALANCEO: la carrocería se tumba hacia FUERA y arrastra a
+            #     las ruedas con ella (deshace la caída estática).
+            #  3. CAMBER GAIN: al comprimirse, la geometría devuelve caída
+            #     negativa (opuesto en cada lado).
+            #  4. CASTER (solo el eje directriz): la ganada al girar.
+            side = 1.0 if self.Y_POS[i] > 0.0 else -1.0
+            gamma_st = math.radians(cfg.STATIC_CAMBER_FRONT_DEG if i < 2
+                                    else cfg.STATIC_CAMBER_REAR_DEG)
+            lean = side * gamma_st - st.roll \
+                - side * cfg.SUSP_CAMBER_GAIN * st.susp_def[i]
+            if i < 2:
+                lean += caster_camber(delta, side)
+
+            # EFECTO EN LA HUELLA: una rueda inclinada NO apoya plana. La
+            # carga se concentra en un hombro, la huella efectiva se reduce y
+            # el agarre disponible baja. La pérdida es CUADRATICA: un grado
+            # apenas se nota (la goma absorbe la diferencia de presión), pero
+            # a partir de tres o cuatro se dispara.
+            #
+            # Que sea cuadrática mientras el empuje por caída es LINEAL es lo
+            # que crea el óptimo real del reglaje: para inclinaciones pequeñas
+            # el empuje gana (compensa de sobra lo poco que cuesta la huella),
+            # y a partir de cierto punto la huella manda y todo lo que se
+            # añada resta. Ese equilibrio está en torno a 1 grado de caída
+            # CONTRA EL ASFALTO en la rueda cargada, que es justo lo que
+            # busca un ingeniero de pista. De ahí sale el compromiso:
+            #   - En RECTA la rueda va inclinada su caída estática y pierde
+            #     algo de agarre (frena y tracciona peor, desgasta el hombro).
+            #   - En CURVA el balanceo la endereza hacia ese óptimo.
+            #   - Pasarse de caída estática la inclina de más en ambos casos.
+            # Penaliza el AGARRE disponible, no el empuje por caída: son
+            # efectos distintos que conviven.
+            patch = max(0.35, 1.0 - cfg.TIRE_CAMBER_PATCH * lean * lean)
             mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
-                                self._w_ls[i])
+                                self._w_ls[i]) * patch
             # elipse de fricción: más capacidad longitudinal que lateral
             ratio_l = cfg.TIRE_LONG_GRIP_RATIO
             s_n = slip / peak_s
@@ -653,26 +696,14 @@ class Car:
                 fx = f_total * (s_e / rho) * ratio_l
                 fy_ss = -f_total * (a_n / rho)
                 grip_used[i] = min(1.0, rho)
-            # empuje por caída (camber thrust): con el balanceo las ruedas
-            # se inclinan con la carrocería y empujan hacia el lado al que
-            # se tumban, como una moto. En curva la carrocería se tumba
-            # hacia FUERA, así que este empuje RESTA agarre lateral: los
-            # coches altos y blandos (autobús, todoterreno) subviran mucho
-            # más apoyados que los rígidos (fórmula), que apenas se tumban.
-            # La GEOMETRÍA de suspensión lo compensa en parte: al
-            # comprimirse, cada lado gana caída hacia el centro del coche
-            # (camber gain), enderezando la rueda exterior en el apoyo.
-            # El signo es opuesto en cada lado: la misma compresión tumba
-            # la rueda izquierda hacia la derecha y viceversa.
-            side = 1.0 if self.Y_POS[i] > 0.0 else -1.0
-            lean = -st.roll - side * cfg.SUSP_CAMBER_GAIN * st.susp_def[i]
-            # ...y en el EJE DIRECTRIZ, la caída que se gana al girar por
-            # tener el eje de dirección inclinado (caster camber gain): la
-            # rueda exterior se tumba hacia dentro de la curva y empuja a
-            # favor. Compensa en parte el balanceo, y crece con el ángulo de
-            # volante, así que se nota sobre todo en curva lenta y cerrada.
-            if i < 2:
-                lean += caster_camber(delta, side)
+            # EMPUJE POR CAIDA (camber thrust): una rueda inclinada genera
+            # fuerza lateral hacia el lado al que se tumba aunque su deriva
+            # sea cero, como una moto. Con el balanceo las ruedas se tumban
+            # hacia FUERA y este empuje RESTA agarre lateral: castiga a los
+            # coches altos y blandos (autobús, todoterreno) y apenas a los
+            # rígidos (fórmula). La caída estática y el camber gain lo
+            # compensan enderezando la rueda exterior en el apoyo.
+            st.camber[i] = lean
             fy_ss += cfg.TIRE_CAMBER_THRUST * lean * st.fz[i]
             # retardo de respuesta lateral (relaxation length)
             blend = min(1.0, (vx_abs + 0.5) * dt / cfg.TIRE_RELAX_LENGTH)
@@ -686,7 +717,13 @@ class Car:
             p_fric = math.hypot(fx, self._fy_state[i]) * v_slip_mag
             # tasa limitada: la masa térmica de la goma no permite subir
             # más de ~6 C/s ni en el derrape más salvaje
-            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric * self._w_heat[i])
+            # ...y la caída concentra el trabajo en un hombro, así que la
+            # goma se calienta MAS que si apoyara plana. Es el desgaste
+            # asimétrico clásico de un coche con mucha caída estática que
+            # hace más kilómetros de recta que de curva.
+            camber_heat = 1.0 + cfg.TIRE_CAMBER_HEAT * abs(lean)
+            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric * self._w_heat[i]
+                       * camber_heat)
             cool = cfg.TIRE_COOL_COEFF * (2.0 + vx_abs) \
                 * (st.tire_temp[i] - cfg.TIRE_TEMP_AMB)
             st.tire_temp[i] += (heat - cool) * dt

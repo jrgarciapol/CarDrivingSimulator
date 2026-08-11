@@ -37,5 +37,7 @@ CL = 0.000                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 9500.0          # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.74           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.40              # m, ojo del conductor: alto y erguido
-SUSP_CAMBER_GAIN = 0.5            # geometria sencilla McPherson
+SUSP_CAMBER_GAIN = 0.25            # rad/m: McPherson sencillo
+STATIC_CAMBER_FRONT_DEG = -0.5      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -0.8      # grados detras: confort y desgaste parejo antes que apoyo
 CAMERA_FORWARD = 0.55             # m, ojo del conductor adelantado (coche corto)

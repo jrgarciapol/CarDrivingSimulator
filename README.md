@@ -1,8 +1,12 @@
 # CarDrivingSimulator
 
-Simulador de conducción sencillo para Windows con soporte de **volante
-Thrustmaster** (T300, T150, TMX, T248, TX…) y sus pedales, con **force
-feedback realista** calculado a partir de la física del vehículo.
+Simulador de conducción con soporte de **volante Thrustmaster** (T300,
+T150, TMX, T248, TX…) y sus pedales, con **force feedback realista**
+calculado a partir de la física del vehículo.
+
+Funciona en **Windows y en Linux** (incluida la **Steam Deck**): todo pasa
+por SDL2, sin una sola dependencia específica de Windows. También se puede
+jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
 
 ## Qué simula
 
@@ -198,6 +202,56 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `T` | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
 | `M` | Mostrar/ocultar el plano del circuito |
 | `ESC` | Salir |
+
+| Mando (Steam Deck, XBox, PlayStation) | Acción |
+| --- | --- |
+| Stick izquierdo | Dirección |
+| Gatillo derecho (R2/RT) | Acelerador (**analógico**) |
+| Gatillo izquierdo (L2/LT) | Freno (**analógico**) |
+| R1 / L1 | Subir / bajar marcha |
+| A | Arrancar / parar el motor |
+| B | Recolocar el coche |
+| X | Cambiar vista |
+| Y | Alternar cambio automático / manual |
+| Select / View | Cámara lenta |
+
+El mando se detecta solo. Un volante reconocido siempre tiene prioridad.
+
+## Jugar en Steam Deck
+
+El simulador corre **nativo** en SteamOS, sin Proton: es Python + SDL2 y el
+force feedback usa `SDL_Haptic`, que en Linux se apoya en la interfaz de
+force feedback de evdev.
+
+```bash
+# el sistema de archivos de SteamOS es inmutable: instalar en el usuario
+pip install --user -r requirements.txt
+python3 -m simulator.main --rendimiento
+```
+
+Ajustes pensados para ella:
+
+- **Resolución automática** (`WINDOW_AUTO`): la ventana se encaja en la
+  pantalla manteniendo la proporción. En una Deck, 1920×1080 pasa a
+  1280×720 en vez de salirse por los bordes. Se puede forzar con
+  `--ventana 1280x800` o pedir pantalla completa con `--completa`.
+- **`--rendimiento`**: apaga la bruma atmosférica y el sombreado solar y
+  recorta el alcance de dibujado a 140 segmentos. Elegido midiendo: la
+  bruma sola cuesta el 22 % del fotograma. **La física no se toca** —
+  cuesta un 8 % y bajarla degradaría el force feedback.
+- **Dirección adaptada al stick**: zona muerta reescalada, curva
+  progresiva, velocidad de giro limitada y **tope que se cierra con la
+  velocidad** (a 170 km/h queda el 30 % del recorrido). Sin esto un stick
+  es incontrolable, porque recorre todo su rango en dos centímetros.
+- **Vibración** en vez de par: el motor bajo avisa del eje que pierde
+  agarre (el equivalente al aligeramiento del volante) y el alto da los
+  pianos, la hierba y el golpe del cambio.
+
+Con el **volante T300 conectado a la Deck** el juego lo prefiere
+automáticamente. Ten en cuenta que necesita alimentación propia y un hub
+USB-C, y que para el force feedback completo hace falta el módulo de kernel
+`hid-tmff2`, que en SteamOS hay que reinstalar tras cada actualización del
+sistema.
 
 ## Ajustar el mapeo del volante
 

@@ -14,6 +14,12 @@ VERSION = "v3.2"
 # ===========================================================================
 WINDOW_WIDTH = 1920          # px, ancho de la ventana [800 .. 1920]
 WINDOW_HEIGHT = 1080         # px, alto de la ventana [600 .. 1080]
+WINDOW_AUTO = True           # ajustar la ventana a la pantalla al arrancar.
+                             # Imprescindible en portátiles: una Steam Deck
+                             # es de 1280x800 y una ventana de 1920x1080 se
+                             # sale. Poner False para forzar los valores de
+                             # arriba
+WINDOW_FULLSCREEN = False    # pantalla completa (sin bordes) al arrancar
 WINDOW_TITLE = b"Car Driving Simulator - Thrustmaster"
 TARGET_FPS = 60              # objetivo de imágenes por segundo (informativo)
 PHYSICS_HZ = 480             # Hz del paso de física; más alto = más precisa
@@ -52,6 +58,36 @@ BUTTON_SLOWMO = 10       # cámara lenta (tecla T): cicla las velocidades
 TIME_SCALES = (1.0, 0.5, 0.25, 0.1)   # velocidades de la cámara lenta
 
 STEERING_DEADZONE = 0.005    # zona muerta del volante [0 .. 0.05]
+
+# ---------------------------------------------------------------------------
+# MANDO (Steam Deck, XBox, PlayStation...)
+#
+# Un stick no es un volante: va de tope a tope en dos centímetros y vuelve
+# al centro de golpe. Sin estas correcciones el coche es incontrolable a
+# velocidad. Solo se aplican cuando NO hay volante conectado.
+# ---------------------------------------------------------------------------
+PAD_DEADZONE = 0.12          # zona muerta del stick; se reescala lo que
+                             # queda para no perder recorrido [0 .. 0.35]
+PAD_STEER_EXPO = 0.60        # curva progresiva: 0 = lineal (nervioso),
+                             # 1 = muy suave en el centro. Permite hilar
+                             # fino en recta sin perder tope [0 .. 1]
+PAD_STEER_MAX = 1.00         # fracción del tope de dirección disponible a
+                             # baja velocidad (maniobras) [0.3 .. 1]
+PAD_STEER_MAX_FAST = 0.30    # ...y a alta velocidad: pedir el mismo ángulo
+                             # a 200 km/h que aparcando hace trompear al
+                             # menor toque [0.1 .. 0.8]
+PAD_STEER_FAST_KMH = 170.0   # velocidad a la que se alcanza ese límite
+                             # [80 .. 300]
+PAD_STEER_RATE = 3.0         # 1/s, velocidad máxima de giro del volante:
+                             # tampoco tus brazos van de tope a tope al
+                             # instante [1 .. 10]
+PAD_RUMBLE = 0.9             # ganancia de la vibración (sustituye al par
+                             # del volante, que un mando no puede dar).
+                             # 0 la desactiva [0 .. 1]
+PAD_RUMBLE_SLIP = 1.4        # cuánta vibración por unidad de derrape: es el
+                             # aviso de que un eje se está yendo, el
+                             # equivalente al aligeramiento del volante
+                             # [0 .. 3]
 
 AUTO_GEAR = True         # True = arrancar con cambio automático
 VIEW_MODE = 0            # vista inicial: 0 = sin coche (cámara interior),

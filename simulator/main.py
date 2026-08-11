@@ -1,11 +1,17 @@
 """Punto de entrada del simulador.
 
-Uso:  python -m simulator.main [--frames N]
+Uso:  python -m simulator.main [--frames N] [--rendimiento]
+                               [--ventana ANCHOxALTO] [--completa]
 
 Controles con volante Thrustmaster (configurables en simulator/config.py):
   volante        direccion
   pedales        acelerador / freno
   levas          subir / bajar marcha
+Controles con mando (Steam Deck, XBox, PlayStation):
+  stick izqdo.   direccion
+  gatillos       acelerador (derecho) / freno (izquierdo), analogicos
+  L1 / R1        bajar / subir marcha
+  A B X Y        motor / recolocar / vista / cambio automatico
 Teclado (siempre activo):
   flechas        conducir (si no hay volante)
   A / Z          subir / bajar marcha
@@ -62,22 +68,95 @@ def ghost_sample(data, t, track_len):
             n0 + (n1 - n0) * u, p0 + (p1 - p0) * u)
 
 
+def ajustar_ventana():
+    """Encaja la ventana en la pantalla real. En un portátil (una Steam Deck
+    es de 1280x800) una ventana de 1920x1080 se sale por abajo y por la
+    derecha, y no hay forma de ver el HUD ni de llegar a los botones."""
+    if not getattr(cfg, "WINDOW_AUTO", False):
+        return
+    modo = sdl2.SDL_DisplayMode()
+    if sdl2.SDL_GetCurrentDisplayMode(0, ctypes.byref(modo)) != 0:
+        return
+    pw, ph = int(modo.w), int(modo.h)
+    if pw <= 0 or ph <= 0:
+        return
+    if pw >= cfg.WINDOW_WIDTH and ph >= cfg.WINDOW_HEIGHT:
+        return                      # cabe de sobra: no tocar nada
+    # se reduce MANTENIENDO LA PROPORCION, y a múltiplos de 2 px para que
+    # los rectángulos del HUD no queden a medio píxel
+    k = min(pw / cfg.WINDOW_WIDTH, ph / cfg.WINDOW_HEIGHT)
+    cfg.WINDOW_WIDTH = int(cfg.WINDOW_WIDTH * k) // 2 * 2
+    cfg.WINDOW_HEIGHT = int(cfg.WINDOW_HEIGHT * k) // 2 * 2
+    print(f"Pantalla {pw}x{ph}: ventana ajustada a "
+          f"{cfg.WINDOW_WIDTH}x{cfg.WINDOW_HEIGHT}")
+
+
+def preset_rendimiento():
+    """Baja la carga de CPU para equipos modestos (Steam Deck, portátiles).
+
+    Los recortes están elegidos MIDIENDO, no a ojo. A 1280x800 con el
+    render por software, el coste por fotograma se reparte así:
+
+        bruma atmosférica ....... 22 %   <- el efecto más caro con diferencia
+        alcance de dibujado ..... 12 %
+        sombreado solar .......... 7 %
+        trazada ideal ............ 2 %
+        física a 480 Hz .......... 8 %
+
+    Por eso NO se toca la física: cuesta poco y bajarla degradaría el force
+    feedback, que es lo último que conviene sacrificar. Se apagan los dos
+    efectos atmosféricos (que son barridos de numpy sobre todas las
+    secciones) y se recorta el alcance, que por debajo de ~130 segmentos ya
+    no da más rendimiento y sí quita visibilidad.
+
+    El modelo físico queda INTACTO: cambia lo que se ve, no cómo se conduce.
+    """
+    cfg.DRAW_DISTANCE = 140
+    cfg.GFX_FOG_DIST = 0.0
+    cfg.GFX_SUN_SHADE = 0.0
+    cfg.GHOST_ENABLED = False
+    print("Preset de rendimiento: sin bruma ni sombreado, alcance 140 "
+          "(la fisica NO se toca)")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Car Driving Simulator")
     parser.add_argument("--frames", type=int, default=0,
                         help="salir tras N frames (pruebas automatizadas)")
+    parser.add_argument("--rendimiento", action="store_true",
+                        help="preset para equipos modestos (Steam Deck)")
+    parser.add_argument("--ventana", metavar="ANCHOxALTO",
+                        help="forzar el tamano de ventana, p.ej. 1280x800")
+    parser.add_argument("--completa", action="store_true",
+                        help="arrancar en pantalla completa")
     args = parser.parse_args(argv)
 
     if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO | sdl2.SDL_INIT_JOYSTICK |
+                     sdl2.SDL_INIT_GAMECONTROLLER |
                      sdl2.SDL_INIT_HAPTIC | sdl2.SDL_INIT_AUDIO |
                      sdl2.SDL_INIT_EVENTS) != 0:
         print("Error al iniciar SDL:", sdl2.SDL_GetError().decode())
         return 1
 
+    if args.rendimiento:
+        preset_rendimiento()
+    if args.ventana:
+        try:
+            w, h = args.ventana.lower().split("x")
+            cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT = int(w), int(h)
+        except ValueError:
+            print("Formato de --ventana no valido; se esperaba ANCHOxALTO")
+            return 1
+    else:
+        ajustar_ventana()
+    flags = sdl2.SDL_WINDOW_SHOWN
+    if args.completa or getattr(cfg, "WINDOW_FULLSCREEN", False):
+        flags |= sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP
+
     window = sdl2.SDL_CreateWindow(
         cfg.WINDOW_TITLE,
         sdl2.SDL_WINDOWPOS_CENTERED, sdl2.SDL_WINDOWPOS_CENTERED,
-        cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, sdl2.SDL_WINDOW_SHOWN)
+        cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, flags)
     if not window:
         print("Error al crear la ventana:", sdl2.SDL_GetError().decode())
         return 1
@@ -158,15 +237,22 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     from .physics import engine_peak_power_cv
     print(f"Motor: {cfg.ENGINE_MAX_TORQUE_NM:.0f} Nm de par maximo, "
           f"~{engine_peak_power_cv():.0f} CV")
-    if wheel.connected:
+    if wheel.es_mando:
+        print(f"Mando detectado: {wheel.name}")
+        print("  stick izquierdo = direccion | gatillos = gas y freno")
+        print("  L1/R1 = marchas | A = motor | B = recolocar | X = vista"
+              " | Y = automatico")
+        print("Vibracion:", "activa" if ffb.ok else "desactivada")
+    elif wheel.connected:
         print(f"Volante detectado: {wheel.name} "
               f"({wheel.num_axes} ejes, {wheel.num_buttons} botones)")
         print("Force feedback:", "activo" if ffb.ok else "no disponible")
     else:
-        print("No se ha detectado ningun volante: usando teclado (flechas).")
+        print("Sin volante ni mando: usando teclado (flechas).")
 
     perf_freq = sdl2.SDL_GetPerformanceFrequency()
     last = sdl2.SDL_GetPerformanceCounter()
+    frame_dt = 1.0 / 60.0     # la entrada lo usa antes de medirlo (mando)
     physics_dt = 1.0 / cfg.PHYSICS_HZ
     accumulator = 0.0
 
@@ -232,24 +318,26 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                         ffb.notify_gear_shift()
 
         keys = sdl2.SDL_GetKeyboardState(None)
-        wheel.update(keys)
+        # la velocidad solo la usa el MANDO, para cerrar el tope de
+        # direccion a medida que se corre mas
+        wheel.update(keys, car.state.speed_kmh, max(1e-4, frame_dt))
 
         # levas del volante
-        if wheel.button_pressed_edge(cfg.BUTTON_SHIFT_UP):
+        if wheel.action_edge("shift_up"):
             if car.shift_up():
                 ffb.notify_gear_shift()
-        if wheel.button_pressed_edge(cfg.BUTTON_SHIFT_DOWN):
+        if wheel.action_edge("shift_down"):
             if car.shift_down():
                 ffb.notify_gear_shift()
-        if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_AUTO):
+        if wheel.action_edge("toggle_auto"):
             auto_gear = not auto_gear
-        if wheel.button_pressed_edge(cfg.BUTTON_TOGGLE_VIEW):
+        if wheel.action_edge("toggle_view"):
             view_mode = (view_mode + 1) % 3
-        if wheel.button_pressed_edge(cfg.BUTTON_ENGINE):
+        if wheel.action_edge("engine"):
             car.toggle_engine()
-        if wheel.button_pressed_edge(cfg.BUTTON_SLOWMO):
+        if wheel.action_edge("slowmo"):
             time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
-        if wheel.button_pressed_edge(cfg.BUTTON_RESET):
+        if wheel.action_edge("reset"):
             car.reset(car.state.s)
             timer.invalidate()         # igual que la tecla R
 

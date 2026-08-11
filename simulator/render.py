@@ -1204,6 +1204,12 @@ class Hud:
         hueco = 200                      # media anchura del pasillo central
         box_x = W // 2 - hueco - box_w   # panel IZQUIERDO: fricción y temp.
         box_y = 96
+        # En pantallas estrechas (una Steam Deck es de 1280 px) el panel
+        # derecho llegaría hasta debajo del cuadro de tiempos. Se bajan
+        # ambos por debajo de él en vez de encogerlos, que dejaría los
+        # círculos de fricción ilegibles.
+        if W // 2 + hueco + box_w > W - 330:
+            box_y = 150
         self._fill(box_x, box_y, box_w, 344, (0, 0, 0, 190))
         font.draw_text(self.r, "F2: FRICCION Y TEMP.", box_x + 12, box_y + 10, 2)
         names = ("DI", "DD", "TI", "TD")

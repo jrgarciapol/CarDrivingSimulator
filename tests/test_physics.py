@@ -1155,6 +1155,54 @@ def main():
                          not t.wrong_way))
 
     # ------------------------------------------------------------------
+    print("--- Direccion con mando (Steam Deck) ---")
+    from simulator.wheel import curva_direccion, _zona_muerta
+
+    def asentar(bruto, kmh, pasos=200, dt=1 / 60.0):
+        """Deja que el filtro de velocidad de giro llegue al regimen."""
+        v = 0.0
+        for _ in range(pasos):
+            v = curva_direccion(bruto, kmh, v, dt)
+        return v
+
+    # la zona muerta se RECORTA pero se REESCALA: al fondo del stick sigue
+    # habiendo tope completo, no se pierde recorrido
+    results.append(check("la zona muerta no come recorrido util",
+                         _zona_muerta(0.05, 0.12) == 0.0
+                         and abs(_zona_muerta(1.0, 0.12) - 1.0) < 1e-9,
+                         "centro=0, tope=1"))
+
+    # curva progresiva: a medio stick da MENOS de medio volante
+    medio = asentar(0.5, 0.0)
+    tope = asentar(1.0, 0.0)
+    results.append(check("la curva del stick es progresiva",
+                         medio < 0.5 * tope * 0.95,
+                         f"medio stick = {medio:.3f}, tope = {tope:.3f}"))
+
+    # ...pero al fondo sigue dando TODO el tope disponible
+    results.append(check("a fondo el stick da todo el tope",
+                         abs(tope - cfg.PAD_STEER_MAX) < 0.02,
+                         f"{tope:.3f} vs PAD_STEER_MAX={cfg.PAD_STEER_MAX}"))
+
+    # el tope se CIERRA con la velocidad: es lo que evita el trompo al
+    # menor toque en recta rapida
+    parado, rapido = asentar(1.0, 0.0), asentar(1.0, 250.0)
+    results.append(check("el tope de direccion se cierra con la velocidad",
+                         rapido < parado * 0.5,
+                         f"parado {parado:.3f} -> a 250 km/h {rapido:.3f}"))
+
+    # velocidad de giro limitada: de centro a tope no puede ser instantaneo
+    un_paso = curva_direccion(1.0, 0.0, 0.0, 1 / 60.0)
+    results.append(check("el volante no salta de tope a tope al instante",
+                         un_paso < 0.2,
+                         f"tras 1/60 s: {un_paso:.3f} (max {cfg.PAD_STEER_RATE/60:.3f})"))
+
+    # simetria: el stick a izquierda y derecha debe dar lo mismo
+    izq, der = asentar(-0.7, 60.0), asentar(0.7, 60.0)
+    results.append(check("la direccion del mando es simetrica",
+                         abs(izq + der) < 1e-6, f"{izq:.4f} / {der:.4f}"))
+
+    # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS
                 if hasattr(cfg, k)}

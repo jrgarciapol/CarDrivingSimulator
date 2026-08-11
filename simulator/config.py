@@ -68,9 +68,16 @@ FFB_ENABLED = True
 FFB_GAIN = 0.8           # ganancia global del par [0 .. 1]
 FFB_INVERT = False       # True si el volante empuja hacia FUERA de la
                          # curva en vez de autocentrarse
-FFB_MAX_TORQUE_NM = 35.0 # Nm de columna que saturan el volante; BAJARLO
+FFB_MAX_TORQUE_NM = 66.0 # Nm de columna que saturan el volante; BAJARLO
                          # endurece el volante en apoyo y hace más evidente
-                         # el aligeramiento al subvirar [20 .. 60]
+                         # el aligeramiento al subvirar. Subido de 35 a 66 al
+                         # separar el avance mecánico del neumático: la física
+                         # entrega ahora ~88 % más par de columna (el avance
+                         # mecánico real es mucho mayor que el 15 % que se
+                         # suponía), así que el volante se sentiría igual de
+                         # duro pero saturado casi siempre. Calibrado
+                         # para que pico/umbral quede en 0.73, igual
+                         # que antes del cambio [20 .. 90]
 FFB_COLUMN_DAMPING = 1.3 # Nm por rad/s de giro del volante; amortigua las
                          # oscilaciones autoexcitadas en recta (se escala
                          # además con la velocidad) [0 .. 4]
@@ -126,6 +133,24 @@ STEER_RATIO = 12.0           # relación volante:rueda; más baja = dirección
 STEER_SCRUB_RADIUS = 0.04    # m, radio de pivotamiento: cuánto "tiran" del
                              # volante las fuerzas de frenada/tracción
                              # asimétricas [0 .. 0.08]
+CASTER_ANGLE_DEG = 4.5       # grados, ANGULO DE AVANCE (caster): inclinación
+                             # hacia atrás del eje de dirección. De él sale el
+                             # avance MECANICO (t = R·tan(caster)), el efecto
+                             # "carrito de la compra" que endereza el volante
+                             # solo. Más avance = volante más pesado, más
+                             # estable en recta y más caída negativa ganada al
+                             # girar. Turismo 2-6, deportivo 5-8, fórmula
+                             # 10-14 [0 .. 14]
+STEER_TRAIL_OFFSET = 0.0     # m, desplazamiento longitudinal del eje de
+                             # dirección respecto al centro de rueda. Permite
+                             # ajustar el avance mecánico SIN tocar el caster
+                             # (y con él, la caída ganada). Los fórmula lo usan
+                             # NEGATIVO: mucho caster para ganar caída,
+                             # pero el eje retrasado para que el volante
+                             # no sea imposible [-0.05 .. 0.03]
+CASTER_CAMBER_GAIN = 1.0     # cuánta de la caída por caster llega a la rueda
+                             # (1 = geometría ideal, 0 = desactivado). Bajarlo
+                             # simula una geometría que la desperdicia [0 .. 1.5]
 
 # Derivados de la geometría (no editar: se calculan del reparto)
 CAR_CG_TO_FRONT = WHEELBASE * (1.0 - WEIGHT_DIST_FRONT)
@@ -165,6 +190,11 @@ ENGINE_INERTIA = 0.15            # kg·m², inercia rotacional del motor y
                                  # en 1a cueste más que en 6a [0.05 .. 3]
 GEAR_RATIOS = [3.62, 2.19, 1.51, 1.17, 0.95, 0.81]  # desarrollos 1a..6a
 FINAL_DRIVE = 3.70               # relación del grupo final [3.0 .. 4.5]
+GEARING_KEEP_ON_WHEEL_CHANGE = True  # al calzar otra rueda, reescalar el
+                                 # grupo final para CONSERVAR el desarrollo
+                                 # (lo que haría un ingeniero al recalzar).
+                                 # Desactívalo para notar el efecto puro del
+                                 # cambio de radio sobre el desarrollo.
 REVERSE_RATIO = 3.40             # relación de la marcha atrás
 DRIVELINE_EFF = 0.90             # rendimiento de la transmisión [0.85 .. 0.95]
 
@@ -185,6 +215,17 @@ TIRE_PEAK_SLIP_RATIO = 0.12      # deslizamiento longitudinal del pico
 TIRE_LOAD_SENS = 0.10        # caída de mu por unidad de sobrecarga sobre
                              # la carga estática de esa rueda; hace que
                              # transferir peso reste agarre [0 .. 0.2]
+TIRE_WIDTH_MM = 205.0        # mm, ancho del neumático (lo fija el
+                             # WHEEL_SPEC del coche). Más ancho = más huella:
+                             # algo más de mu, menos caída por sobrecarga y
+                             # calentamiento más lento [125 .. 445]
+GYRO_GAIN = 1.0              # precesión giroscópica de las ruedas: al girar,
+                             # su momento angular genera un par de balanceo
+                             # (1 = físico exacto, 0 = desactivado). En coche
+                             # es sutil; en moto sería dominante [0 .. 3]
+GYRO_FFB_GAIN = 1.0          # reacción giroscópica que llega al volante al
+                             # balancear (peso vivo en cambios de apoyo
+                             # rápidos a alta velocidad) [0 .. 3]
 TIRE_LONG_GRIP_RATIO = 1.10  # elipse de fricción: capacidad longitudinal
                              # extra respecto a la lateral [1.0 .. 1.2]
 TIRE_RELAX_LENGTH = 0.3      # m, retardo de respuesta lateral de la
@@ -192,10 +233,43 @@ TIRE_RELAX_LENGTH = 0.3      # m, retardo de respuesta lateral de la
 TIRE_REAR_GRIP_FACTOR = 1.04 # agarre relativo del eje trasero: >1 subvira
                              # en el límite (estable), <1 sobrevira (drift)
                              # [0.90 .. 1.15]
-TIRE_TRAIL = 0.045           # m, avance neumático+mecánico: escala del par
-                             # de autoalineado del volante [0.02 .. 0.08]
-TIRE_TRAIL_SAT_DEG = 7.0     # deriva a la que el avance cae (el volante se
-                             # aligera al saturar) [5 .. 10]
+TIRE_TRAIL = 0.030           # m, AVANCE NEUMATICO con deriva cero: brazo de
+                             # palanca que nace de la DEFORMACION de la huella
+                             # (la resultante queda retrasada). Se derrumba con
+                             # la deriva. El avance MECANICO es aparte y sale
+                             # del CASTER_ANGLE_DEG [0.01 .. 0.05]
+TIRE_TRAIL_SAT_DEG = 7.0     # deriva a la que el avance NEUMATICO se anula
+                             # (el volante se aligera al saturar) [5 .. 10]
+TIRE_TRAIL_NEG_FRAC = 0.18   # cuánto llega a hacerse NEGATIVO el avance
+                             # neumático pasado el pico, en fracción del
+                             # valor a deriva cero. Acentúa el aviso de
+                             # subviraje en el volante [0 .. 0.4]
+STATIC_CAMBER_FRONT_DEG = -1.0   # grados de CAIDA ESTATICA del eje delantero,
+                             # la del reglaje de alineación. NEGATIVA = la
+                             # rueda abraza al coche por arriba. Se pone para
+                             # que la rueda EXTERIOR quede plana cuando la
+                             # carrocería se tumbe en curva: más agarre en
+                             # apoyo, a cambio de menos en recta y de
+                             # desgastar el hombro interior. Turismo -0.5,
+                             # deportivo -1.5, circuito -3 a -4 [-5 .. 1]
+STATIC_CAMBER_REAR_DEG = -1.2    # ídem eje trasero; suele ser algo MENOS
+                             # negativa que la delantera porque el eje
+                             # trasero balancea menos y necesita tracción
+                             # [-5 .. 1]
+TIRE_CAMBER_PATCH = 18.0     # pérdida de agarre por radián CUADRADO de
+                             # inclinación contra el asfalto: la rueda tumbada
+                             # no apoya plana, la carga se concentra en un
+                             # hombro y la huella efectiva se reduce. Es
+                             # CUADRATICA (1 grado no se nota, 5 arruinan):
+                             # 1 deg -> 0.5 %, 2 -> 2 %, 3 -> 5 %, 5 -> 14 %.
+                             # Cuadrática frente al empuje por caída, que es
+                             # lineal: de ese contraste sale el ÓPTIMO de
+                             # reglaje (~1 grado en la rueda cargada).
+                             # 0 = desactivado [0 .. 50]
+TIRE_CAMBER_HEAT = 3.0       # calentamiento extra por radián de inclinación:
+                             # el hombro cargado trabaja más y sube de
+                             # temperatura antes (desgaste asimétrico)
+                             # [0 .. 8]
 TIRE_CAMBER_THRUST = 0.6     # empuje por caída: fuerza lateral por radián
                              # de inclinación de la rueda (fracción de la
                              # carga). Al tumbarse la carrocería en curva
@@ -248,7 +322,7 @@ SUSP_ANTI_PITCH = 0.30       # geometría anti-dive/anti-squat: fracción de
                              # suspensión desvían directamente al chasis
                              # (menos cabeceo, misma transferencia de
                              # carga, plataforma más estable) [0 .. 0.5]
-SUSP_CAMBER_GAIN = 0.8       # rad de caída negativa ganada por metro de
+SUSP_CAMBER_GAIN = 0.40      # rad de caída negativa ganada por metro de
                              # compresión: la rueda exterior (comprimida)
                              # se endereza compensando el balanceo y
                              # recupera parte del agarre que roba el

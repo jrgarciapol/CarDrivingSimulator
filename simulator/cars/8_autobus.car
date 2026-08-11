@@ -11,9 +11,12 @@ WHEELBASE = 5.90                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.45          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 1.10              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 2.10            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.50           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 12.0          # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "295/80R22.5"        # neumatico real: deriva radio, masa e inercia coherentes
+WHEEL_OPTIONS = ["275/70R22.5", "315/70R22.5"]# monturas homologadas (menu RUEDAS)
+CAR_WHEEL_INERTIA = 12.0          # ruedas GEMELAS detras: inercia doble
+UNSPRUNG_MASS = 320.0             # eje rigido + gemelas
 STEER_RATIO = 22.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 2.0          # grados, angulo de avance: minimo: con esa masa el volante ya pesa bastante
 STEER_SCRUB_RADIUS = 0.06         # m, radio de pivote: tirones al frenar/traccionar
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "locked"              # diferencial: open, lsd (autoblocante) o locked
@@ -41,8 +44,9 @@ BRAKE_FORCE_MAX = 90000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.58           # fraccion de frenada al eje delantero
 ENGINE_INERTIA = 2.2              # kg*m2, volante motor: retencion al reducir
 CAMERA_HEIGHT = 2.30              # m, ojo del conductor: en lo alto de todo
-UNSPRUNG_MASS = 320.0             # kg por rueda: eje rigido y gemelas
 TIRE_VERT_STIFF = 2000000.0       # N/m, neumatico de camion
 TIRE_VERT_DAMP = 8000.0           # N*s/m
-SUSP_CAMBER_GAIN = 0.0            # eje rigido: no gana caida
+SUSP_CAMBER_GAIN = 0.00            # rad/m: eje rigido: no gana caida
+STATIC_CAMBER_FRONT_DEG = 0.0       # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = 0.0       # grados detras: eje rigido: sin reglaje de caida
 CAMERA_FORWARD = 2.20             # m, conductor al frente, sobre el eje delantero

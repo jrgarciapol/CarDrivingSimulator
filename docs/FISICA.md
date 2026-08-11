@@ -7,6 +7,12 @@ parámetros citados (`CAR_MASS`, `TIRE_MU`…) están documentados uno a uno en
 `simulator/config.py`, y cada coche del garaje los redefine en su
 `simulator/cars/*.car`.
 
+> **¿Buscas el porqué en vez del cómo?** [`NEUMATICO.md`](NEUMATICO.md)
+> explica desde cero la física del contacto neumático-asfalto —deriva, modelo
+> de cepillo, curva de Pacejka, par autoalineante, elipse de fricción y
+> transferencia de carga—, con figuras y con el mapa de qué está modelizado y
+> dónde. Este documento describe el modelo; aquél, los fundamentos.
+
 Contenido:
 
 1. [Convenios y variables de estado](#1-convenios-y-variables-de-estado)
@@ -242,26 +248,51 @@ frenar en curva, el efecto de las estabilizadoras sobre el equilibrio
 (más barra delante ⇒ más transferencia delante ⇒ subvirador) y la
 sensibilidad al reparto de frenada.
 
-### Empuje por caída (camber thrust) y camber gain
+### Caída (camber): ángulo, empuje y huella
 
-Al balancear, la carrocería inclina las ruedas consigo. Una rueda inclinada
-genera empuje lateral hacia el lado al que se tumba (como una motocicleta).
-La **geometría de suspensión** lo compensa en parte: al comprimirse, cada
-lado gana caída hacia el centro del coche (*camber gain*), enderezando la
-rueda exterior en el apoyo. El ángulo de inclinación efectivo de cada
-rueda (hacia +y) y su empuje son:
+Lo único que le importa al neumático es su ángulo **contra el asfalto**, que
+suma cuatro aportaciones (detalle completo en [`NEUMATICO.md`](NEUMATICO.md)
+§6):
 
 ```
-γ_i = −φ − lado_i · SUSP_CAMBER_GAIN · d_i        lado_i = signo(Y_i)
-fy ← fy + TIRE_CAMBER_THRUST · γ_i · Fz_i
+γ_i = lado_i · γ_est − φ − lado_i · SUSP_CAMBER_GAIN · d_i  [+ caster, eje directriz]
+                                                   lado_i = signo(Y_i)
 ```
+
+- **γ_est**: CAIDA ESTATICA de reglaje (`STATIC_CAMBER_FRONT_DEG` /
+  `_REAR_DEG`, por coche). Negativa = la rueda abraza el coche por arriba.
+  Se pone para que la rueda EXTERIOR quede plana cuando la carrocería se
+  tumbe: en el DEPORTIVO, −2° llevan la exterior de 1,93° a 0,04° en curva.
+- **−φ**: el balanceo la tumba hacia **fuera**, deshaciendo la estática.
+- **camber gain**: al comprimirse, la geometría recupera caída negativa. El
+  autobús (eje rígido, 0) lo sufre entero; un paralelogramo la recupera.
+- **caster**: solo el eje directriz, la ganada al girar.
 
 El signo por lado importa: la misma compresión tumba la rueda izquierda
-hacia la derecha y la derecha hacia la izquierda (en un apoyo simétrico
-por aero los dos empujes se cancelan exactamente). En curva la carrocería
-se tumba hacia **fuera** y el término neto resta agarre; el camber gain lo
-recupera en parte según la geometría del coche: el autobús (eje rígido,
-ganancia 0) lo sufre entero, la fórmula (1.5 rad/m) apenas.
+hacia la derecha y la derecha hacia la izquierda (en un apoyo simétrico por
+aero los dos empujes se cancelan exactamente).
+
+Ese ángulo produce **dos efectos que compiten**, y de su contraste sale el
+óptimo de reglaje:
+
+```
+fy   ← fy + TIRE_CAMBER_THRUST · γ_i · Fz_i        (LINEAL: empuje)
+mu_i ← mu_i · (1 − TIRE_CAMBER_PATCH · γ_i²)       (CUADRATICO: huella)
+```
+
+- **Empuje por caída** (*camber thrust*): una rueda inclinada genera fuerza
+  lateral hacia el lado al que se tumba, como una motocicleta. Crece
+  **linealmente**.
+- **Pérdida de huella**: inclinada no apoya plana, la carga se concentra en
+  un hombro y el agarre disponible baja. Crece **cuadráticamente** (1° →
+  0,5 %; 3° → 4,9 %; 5° → 13,7 %).
+
+Para inclinaciones pequeñas gana el empuje; pasado ~1° manda la huella. Si
+la pérdida fuese lineal, el neumático siempre querría apoyar plano y no
+existiría óptimo alguno. De aquí sale el compromiso real: **−4° de caída
+estática alargan la frenada 100-0 de 35,1 a 41,3 m**, a cambio de agarre en
+curva. La caída además **calienta más** la goma (`TIRE_CAMBER_HEAT`): es el
+desgaste asimétrico del hombro interior.
 
 ### Temperatura
 
@@ -299,6 +330,81 @@ Cada rueda integra su velocidad angular con la EDO:
 ```
 I_ef·ω̇ = T_aplicado − fx·R          T_aplicado = T_tracción + T_freno
 ```
+
+### Tamaño de rueda: el catálogo (`WHEEL_SPEC`)
+
+El radio `R`, la inercia `I` y la masa de la rueda deben ser COHERENTES
+entre sí (una rueda mayor pesa y "vuela" más). En vez de tres números
+sueltos, cada coche declara su neumático con la designación real
+`ANCHO/PERFIL R LLANTA` (p.ej. `245/35R18`) y el garaje deriva:
+
+```
+R = llanta/2 + ancho·perfil                       (exacto, por definición)
+m_cubierta ≈ 9.5·(ancho/205)·(R/0.316)²           (empírica)
+m_llanta   ≈ 8.0·(llanta/16)²                     (aleación)
+I ≈ 0.92·m_cub·(0.94·R)² + 0.55·m_lla·r_lla²      (anillo + disco)
+UNSPRUNG_MASS = UNSPRUNG_HUB_MASS + rueda completa
+```
+
+Un valor explícito en el `.car` gana al derivado (llanta de magnesio del
+fórmula, gemelas del autobús). Efectos emergentes de montar rueda mayor:
+desarrollo más largo (menos empuje, `F = T/R`), arranque y frenada más
+perezosos (más `I`, también reflejada del motor), y peor contacto sobre
+bache (más masa no suspendida). Medido con el deportivo: 0–100 en 6.78 s
+con 205/50R15 frente a 7.40 s con 285/30R21.
+
+El **ancho** además compra agarre — no por el Coulomb de escuela (área
+irrelevante) sino por la **sensibilidad a la carga**: más huella = menos
+presión de contacto = el μ cae menos al sobrecargar. Con el ancho `w` del
+`WHEEL_SPEC` (referencia 205 mm):
+
+```
+μ_ef        = μ · (w/205)^0.10          (huella: algo más de agarre)
+sens_carga  = LS · (205/w)^0.6          (ancho: menos caída al cargar)
+calentamiento ∝ (205/w)^0.5             (más goma que calentar)
+```
+
+Por eso el eje motriz de un RWD potente monta goma ancha: la transferencia
+al acelerar castiga menos a un neumático ancho. Medido: en apoyo saturado,
+8.15 m/s² con 155 mm frente a 8.79 m/s² con 305 mm.
+
+### Montaje escalonado (por eje) y transmisión
+
+Cada eje lleva su montura (`WHEEL_SPEC_FRONT` / `WHEEL_SPEC_REAR`) y la
+física trabaja con **radio, inercia y ancho por rueda** (`R_w`, `I_w`). El
+fórmula reproduce el neumático real de F1: **305 delante y 405 detrás con
+el mismo diámetro** (670 mm). Medido al límite, la deriva del eje trasero
+baja monótonamente al ensanchar la goma trasera: 3.5° (205) → 3.2° (225) →
+3.0° (275/305).
+
+Al recalzar, el **desarrollo** cambia (`F = T/R`), así que `apply_wheel`
+reescala `FINAL_DRIVE` en proporción al radio del eje motriz —lo que haría
+un ingeniero al montar otra rueda— salvo que se desactive
+`GEARING_KEEP_ON_WHEEL_CHANGE`. Sin recalzar, el efecto es grande: 16.3 m
+en 3 s recalzado frente a 13.8 m sin recalzar con la misma rueda.
+
+En el menú, las filas **RUEDAS DELANTE / DETRÁS** eligen del catálogo
+(`WHEEL_CATALOG`, con el uso habitual de cada medida: utilitario, GT3,
+fórmula, todoterreno, autobús…) sin editar archivos.
+
+## 5b. Precesión giroscópica de las ruedas
+
+Cada rueda es un giróscopo: su momento angular de giro `L = I·ω` apunta
+según el eje transversal. Cuando ese eje gira —guiñada del coche, y en las
+delanteras también el propio volante— aparece un par de precesión
+perpendicular a ambos, que resulta ser un **momento de balanceo**:
+
+```
+M_balanceo = GYRO_GAIN · [ (Ω_guiñada + δ̇/STEER_RATIO)·L_del + Ω_guiñada·L_tras ]
+M_volante  = GYRO_FFB_GAIN · Ω_balanceo · L_del / STEER_RATIO
+```
+
+Con el convenio de aquí sale positivo en curva a derechas: la precesión
+**suma** al balanceo de la curva. Medido con el deportivo a 160 km/h: 147
+N·m de par giroscópico, que añade 0.06° a los 3.0° de balanceo — real pero
+sutil, como corresponde a un coche (en una moto sería dominante). Con
+rueda mayor crece: 277 N·m con 325/30R21. También llega al volante como el
+"peso vivo" al cambiar de apoyo rápido.
 
 ### Inercia efectiva (acoplamiento con el motor)
 
@@ -464,13 +570,30 @@ la misma presión bloquea con facilidad — como en la realidad.
 El par que se envía al volante se construye enteramente desde la física:
 
 ```
-M_z = Σ_delanteras [ −fy_i · t(α_i) ]  +  (fx_FL − fx_FR)·scrub_radius
-t(α) = TIRE_TRAIL · (0.15 + 0.85·max(0, 1 − |α|/α_sat))
+M_z = Σ_delanteras [ −fy_i · (t_neum(α_i) + t_mec(R_i)) ]
+      + (fx_FL − fx_FR)·scrub_radius
+
+t_neum(α) = max( −f_neg·TIRE_TRAIL,  TIRE_TRAIL·(1 − |α|/α_sat) )
+t_mec(R)  = R·tan(CASTER_ANGLE_DEG) + STEER_TRAIL_OFFSET
 ```
 
-- El **par de autoalineado** usa un avance neumático que cae con la deriva
-  (el volante se aligera al saturar el tren delantero — el aviso clásico de
-  subviraje) más un 15 % de avance mecánico residual que nunca desaparece.
+- El **par de autoalineado** suma **dos avances independientes**, cada uno
+  con su propia física (detalle completo en [`NEUMATICO.md`](NEUMATICO.md)):
+  - **Avance neumático** `t_neum`: nace de la **deformación** de la huella
+    (la resultante de la fuerza lateral queda retrasada). **Se derrumba con
+    la deriva** y pasado el pico llega a hacerse ligeramente **negativo**.
+  - **Avance mecánico** `t_mec`: **geometría pura** del ángulo de avance
+    (*caster*), el efecto «carrito de la compra». **Constante** con la
+    deriva, y existiría aunque la rueda fuese rígida. Depende del **radio**,
+    así que montar rueda mayor endurece el volante.
+- Que uno caiga y el otro no es lo que hace que **M_z alcance su máximo
+  ANTES que la fuerza lateral**: con el reglaje de serie, el par pica a ~3,9°
+  de deriva cuando el agarre pica a 7°, y cae un **35 %** hasta la saturación.
+  El volante se aligera como **aviso anticipado de subviraje**, pero nunca
+  queda muerto porque el avance mecánico permanece.
+- El **caster** además genera **caída al girar** (*caster camber gain*): la
+  rueda exterior se tumba hacia dentro de la curva y empuja a favor. Es la
+  razón de que los coches de competición monten mucho avance.
 - El término de **scrub radius** transmite la diferencia de fuerzas
   longitudinales entre las dos ruedas delanteras: torque-steer en FWD,
   tirón al frenar con medio coche en la hierba, pulsación del ABS.

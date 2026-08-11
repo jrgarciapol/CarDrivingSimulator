@@ -11,9 +11,12 @@ WHEELBASE = 2.60                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.546         # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.52              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.55            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.31           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 1.4           # kg*m2, inercia de cada rueda
+WHEEL_SPEC_FRONT = "225/40R18"    # neumatico delantero (real)
+WHEEL_SPEC_REAR = "265/35R18"     # trasero MAS ANCHO: es el eje motriz
+WHEEL_OPTIONS = ["225/45R17", "265/35R19"]# monturas homologadas (menu RUEDAS)
+UNSPRUNG_HUB_MASS = 14.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 12.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 6.0          # grados, angulo de avance: avance alto: caida negativa ganada al girar
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
 ENGINE_MAX_TORQUE_NM = 320.0      # Nm, par maximo del motor
@@ -34,5 +37,7 @@ CL = 0.449                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 15000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.72           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.15              # m, ojo del conductor: asiento bajo
-SUSP_CAMBER_GAIN = 1.0            # paralelogramo deportivo
+SUSP_CAMBER_GAIN = 0.45            # rad/m: paralelogramo deportivo
+STATIC_CAMBER_FRONT_DEG = -1.5      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -1.5      # grados detras: compromiso calle/circuito
 CAMERA_FORWARD = 0.50             # m, ojo del conductor

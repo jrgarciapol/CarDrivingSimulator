@@ -65,21 +65,68 @@ def tire_force_magnitude(rho: float, mu: float, fz: float) -> float:
     return mu * fz * math.sin(cfg.TIRE_C * math.atan(cfg.TIRE_B * rho))
 
 
-def mu_with_load(mu_base: float, fz: float, fz_ref: float) -> float:
+def mu_with_load(mu_base: float, fz: float, fz_ref: float,
+                 ls_scale: float = 1.0) -> float:
     """Sensibilidad a la carga: el mu cae al sobrecargar la rueda respecto
     a SU carga estática (que depende del reparto de pesos del vehículo).
-    Esto hace que transferir peso reduzca el agarre total del eje."""
-    factor = 1.0 - cfg.TIRE_LOAD_SENS * (fz - fz_ref) / fz_ref
+    Esto hace que transferir peso reduzca el agarre total del eje.
+    ls_scale la modula: un neumático ANCHO reparte la carga en más huella
+    (menos presión de contacto), así que su mu cae menos al sobrecargar."""
+    factor = 1.0 - cfg.TIRE_LOAD_SENS * ls_scale * (fz - fz_ref) / fz_ref
     return mu_base * max(0.6, min(1.3, factor))
 
 
 def pneumatic_trail(alpha: float) -> float:
-    """El avance neumático cae con la deriva (el volante se aligera al
-    saturar el tren delantero); el avance mecánico (~15 %) permanece.
-    El contraste alto hace el aviso de subviraje claramente perceptible."""
+    """AVANCE NEUMATICO: nace de la DEFORMACION de la huella. Como la zona
+    delantera agarra y la trasera desliza, la resultante de la fuerza lateral
+    queda retrasada respecto al centro de la huella; esa distancia es el
+    brazo de palanca. Al crecer la deriva la parte trasera deja de agarrar,
+    la resultante se ADELANTA y el avance se derrumba: por eso el volante se
+    aligera justo antes de que el tren delantero se vaya.
+
+    Pasado el pico llega a hacerse ligeramente NEGATIVO (la resultante se
+    adelanta al centro de la huella), lo que acentúa el aviso.
+    Existe solo porque la goma se deforma: una rueda rígida no lo tendría."""
     sat = math.radians(cfg.TIRE_TRAIL_SAT_DEG)
-    falloff = max(0.0, 1.0 - abs(alpha) / sat)
-    return cfg.TIRE_TRAIL * (0.15 + 0.85 * falloff)
+    t = cfg.TIRE_TRAIL * (1.0 - abs(alpha) / sat)
+    return max(-cfg.TIRE_TRAIL_NEG_FRAC * cfg.TIRE_TRAIL, t)
+
+
+def mechanical_trail(radius: float) -> float:
+    """AVANCE MECANICO: GEOMETRIA PURA, nada que ver con la deformación.
+    El eje de dirección (la línea entre las rótulas de la mangueta) está
+    inclinado hacia atrás el ángulo de AVANCE o caster; al prolongarlo corta
+    el suelo POR DELANTE del punto de contacto. Como la fuerza lateral tira
+    por DETRAS del pivote, aparece un par que alinea la rueda con el avance:
+    es el mismo efecto que las ruedas locas de un carrito de la compra.
+
+        t_mec = R · tan(caster) + offset
+
+    Existe aunque la rueda fuese perfectamente rígida, y NO cae con la
+    deriva: es el suelo que queda en el volante cuando el tren delantero ya
+    ha saturado y el avance neumático se ha derrumbado.
+
+    Que dependa del RADIO acopla el catálogo de ruedas con la dirección:
+    montar rueda más grande alarga el brazo y endurece el volante."""
+    return radius * math.tan(math.radians(cfg.CASTER_ANGLE_DEG)) \
+        + cfg.STEER_TRAIL_OFFSET
+
+
+def caster_camber(delta: float, side: float) -> float:
+    """Caída ganada al girar por tener el eje de dirección inclinado
+    (caster camber gain). Al pivotar sobre un eje tumbado hacia atrás, la
+    rueda EXTERIOR de la curva se inclina HACIA DENTRO (caída negativa, que
+    es la buena: empuja hacia el centro de la curva) mientras la interior se
+    tumba hacia fuera. Es la razón de que los coches de competición monten
+    mucho avance: caída negativa gratis justo cuando hace falta, sin
+    penalizar la huella en recta.
+
+    delta = giro de la rueda (rad, + = a la derecha)
+    side  = -1 rueda izquierda, +1 rueda derecha
+    Devuelve el incremento de inclinación en el mismo convenio que el
+    balanceo: + = la rueda se tumba hacia la derecha."""
+    return -side * math.sin(math.radians(cfg.CASTER_ANGLE_DEG)) * delta \
+        * cfg.CASTER_CAMBER_GAIN
 
 
 class CarState:
@@ -113,6 +160,9 @@ class CarState:
         self.susp_def = [0.0, 0.0, 0.0, 0.0]   # deflexión muelle (m, + comprimido)
         self.slip_ratio = [0.0, 0.0, 0.0, 0.0]
         self.slip_angle = [0.0, 0.0, 0.0, 0.0]
+        self.camber = [0.0, 0.0, 0.0, 0.0]     # rad, caída CONTRA EL ASFALTO
+                                               # (estática + balanceo + gain
+                                               # + caster); 0 = apoya plana
         self.wheel_surface = ["road"] * 4
         # motor
         self.rpm = cfg.ENGINE_IDLE_RPM
@@ -130,6 +180,7 @@ class CarState:
         self.oversteer = 0.0    # 0..1: cuánto se va el tren trasero
         self.alpha_front = 0.0
         self.steer_column_torque = 0.0
+        self.gyro_roll_moment = 0.0   # N·m, precesión de las ruedas
 
     @property
     def speed_kmh(self) -> float:
@@ -161,6 +212,23 @@ class Car:
         t2 = cfg.CAR_TRACK_WIDTH / 2.0
         self.X_POS = [a, a, -b, -b]
         self.Y_POS = [-t2, t2, -t2, t2]
+        # RUEDAS POR EJE: cada eje puede llevar su montura (staggered), como
+        # un RWD potente con goma mayor detrás. Si el coche no define el eje
+        # trasero, se usa el delantero en las cuatro.
+        rf = cfg.CAR_WHEEL_RADIUS
+        rr = getattr(cfg, "CAR_WHEEL_RADIUS_REAR", None) or rf
+        if_ = cfg.CAR_WHEEL_INERTIA
+        ir = getattr(cfg, "CAR_WHEEL_INERTIA_REAR", None) or if_
+        self.R_w = [rf, rf, rr, rr]
+        self.I_w = [if_, if_, ir, ir]
+        # ANCHO del neumático (del WHEEL_SPEC): más huella = menos presión de
+        # contacto = algo más de mu, MENOS caída por sobrecarga y goma que se
+        # calienta más despacio. Referencia: 205 mm.
+        wf = getattr(cfg, "TIRE_WIDTH_MM", 205.0)
+        wr = getattr(cfg, "TIRE_WIDTH_MM_REAR", None) or wf
+        self._w_mu = [(w / 205.0) ** 0.10 for w in (wf, wf, wr, wr)]
+        self._w_ls = [(205.0 / w) ** 0.6 for w in (wf, wf, wr, wr)]
+        self._w_heat = [(205.0 / w) ** 0.5 for w in (wf, wf, wr, wr)]
         # reparto estático de peso por rueda
         L = a + b
         wf = cfg.CAR_MASS * G * b / L / 2.0
@@ -287,7 +355,8 @@ class Car:
         self._auto_dwell = max(0.0, self._auto_dwell - dt)
 
         m = cfg.CAR_MASS
-        R = cfg.CAR_WHEEL_RADIUS
+        R_w = self.R_w                  # radio POR RUEDA (montura por eje)
+        R = R_w[0]
         wheel_angle = steer_norm * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0)
         delta = wheel_angle / cfg.STEER_RATIO
         cos_d, sin_d = math.cos(delta), math.sin(delta)
@@ -314,7 +383,7 @@ class Car:
             # por abusar del derrape tampoco
             dev = st.tire_temp[i] - cfg.TIRE_TEMP_OPT
             mu *= max(0.72, 1.0 - cfg.TIRE_TEMP_SENS * dev * dev)
-            mu_wheel[i] = mu
+            mu_wheel[i] = mu * self._w_mu[i]  # huella ancha: algo más de mu
             bump[i] = track.bump_at(s_i, n_i, surf)
 
         # --- suspensión: chasis <-> masa no suspendida <-> asfalto ------
@@ -452,6 +521,29 @@ class Car:
         # peralte la carrocería se tumba hacia el lado bajo aunque el coche
         # vaya recto, igual que el cabeceo funciona parado en pendiente
         roll_acc = (sum_my + self._fy_tires * cfg.CAR_CG_HEIGHT) / cfg.CAR_INERTIA_ROLL
+        # --- PRECESION GIROSCOPICA de las ruedas -------------------------
+        # Cada rueda es un giróscopo: su momento angular de giro L = I·ω
+        # apunta según su eje (transversal). Al girar ese eje —guiñada del
+        # coche, y en las delanteras también la propia dirección— aparece un
+        # par de precesión perpendicular a ambos: un MOMENTO DE BALANCEO.
+        # Con el convenio de aquí (guiñada + = derecha, balanceo + = lado
+        # derecho elevado) el par sale +yaw_rate·L, o sea que SUMA al
+        # balanceo de la curva. En un coche es un efecto pequeño frente a
+        # las fuerzas del neumático; en moto sería dominante.
+        gyro_g = getattr(cfg, "GYRO_GAIN", 0.0)
+        if gyro_g > 0.0:
+            # las delanteras giran además con el volante: su eje precesa a
+            # (guiñada + velocidad de giro de la dirección)
+            l_front = sum(self.I_w[i] * st.omega[i] for i in (FL, FR))
+            l_rear = sum(self.I_w[i] * st.omega[i] for i in (RL, RR))
+            self._l_front = l_front
+            rate_f = st.yaw_rate + self._steer_rate_lp / cfg.STEER_RATIO
+            m_gyro = gyro_g * (rate_f * l_front + st.yaw_rate * l_rear)
+            st.gyro_roll_moment = m_gyro
+            roll_acc += m_gyro / cfg.CAR_INERTIA_ROLL
+        else:
+            self._l_front = 0.0
+            st.gyro_roll_moment = 0.0
         st.heave_v += heave_acc * dt
         st.pitch_v += pitch_acc * dt
         st.roll_v += roll_acc * dt
@@ -510,8 +602,9 @@ class Car:
 
         # --- par de freno por rueda (con ABS) ---------------------------
         t_brake_max = [0.0] * 4
-        per_front = cfg.BRAKE_FORCE_MAX * cfg.BRAKE_BIAS_FRONT / 2.0 * R
-        per_rear = cfg.BRAKE_FORCE_MAX * (1.0 - cfg.BRAKE_BIAS_FRONT) / 2.0 * R
+        per_front = cfg.BRAKE_FORCE_MAX * cfg.BRAKE_BIAS_FRONT / 2.0 * R_w[0]
+        per_rear = cfg.BRAKE_FORCE_MAX * (1.0 - cfg.BRAKE_BIAS_FRONT) / 2.0 \
+            * R_w[2]
         st.abs_active = False
         for i in range(4):
             base = per_front if i < 2 else per_rear
@@ -542,12 +635,53 @@ class Car:
             else:
                 v_along, v_side = vxi, vyi
             denom = max(abs(v_along), 1.5)
-            slip = (st.omega[i] * R - v_along) / denom
+            slip = (st.omega[i] * R_w[i] - v_along) / denom
             alpha = math.atan2(v_side, max(abs(v_along), 1.5))
             st.slip_ratio[i] = slip
             st.slip_angle[i] = alpha
 
-            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
+            # --- CAIDA (camber) de esta rueda respecto al ASFALTO ---------
+            # Se suman cuatro aportaciones, y lo que importa siempre es el
+            # ángulo RESULTANTE contra el suelo, no cada una por separado:
+            #  1. CAIDA ESTATICA: la que lleva de reglaje, parada y en recta.
+            #     Negativa = la rueda "abraza" el coche por arriba. Se pone
+            #     precisamente para que la rueda EXTERIOR quede plana cuando
+            #     la carrocería se tumbe en curva.
+            #  2. BALANCEO: la carrocería se tumba hacia FUERA y arrastra a
+            #     las ruedas con ella (deshace la caída estática).
+            #  3. CAMBER GAIN: al comprimirse, la geometría devuelve caída
+            #     negativa (opuesto en cada lado).
+            #  4. CASTER (solo el eje directriz): la ganada al girar.
+            side = 1.0 if self.Y_POS[i] > 0.0 else -1.0
+            gamma_st = math.radians(cfg.STATIC_CAMBER_FRONT_DEG if i < 2
+                                    else cfg.STATIC_CAMBER_REAR_DEG)
+            lean = side * gamma_st - st.roll \
+                - side * cfg.SUSP_CAMBER_GAIN * st.susp_def[i]
+            if i < 2:
+                lean += caster_camber(delta, side)
+
+            # EFECTO EN LA HUELLA: una rueda inclinada NO apoya plana. La
+            # carga se concentra en un hombro, la huella efectiva se reduce y
+            # el agarre disponible baja. La pérdida es CUADRATICA: un grado
+            # apenas se nota (la goma absorbe la diferencia de presión), pero
+            # a partir de tres o cuatro se dispara.
+            #
+            # Que sea cuadrática mientras el empuje por caída es LINEAL es lo
+            # que crea el óptimo real del reglaje: para inclinaciones pequeñas
+            # el empuje gana (compensa de sobra lo poco que cuesta la huella),
+            # y a partir de cierto punto la huella manda y todo lo que se
+            # añada resta. Ese equilibrio está en torno a 1 grado de caída
+            # CONTRA EL ASFALTO en la rueda cargada, que es justo lo que
+            # busca un ingeniero de pista. De ahí sale el compromiso:
+            #   - En RECTA la rueda va inclinada su caída estática y pierde
+            #     algo de agarre (frena y tracciona peor, desgasta el hombro).
+            #   - En CURVA el balanceo la endereza hacia ese óptimo.
+            #   - Pasarse de caída estática la inclina de más en ambos casos.
+            # Penaliza el AGARRE disponible, no el empuje por caída: son
+            # efectos distintos que conviven.
+            patch = max(0.35, 1.0 - cfg.TIRE_CAMBER_PATCH * lean * lean)
+            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
+                                self._w_ls[i]) * patch
             # elipse de fricción: más capacidad longitudinal que lateral
             ratio_l = cfg.TIRE_LONG_GRIP_RATIO
             s_n = slip / peak_s
@@ -562,19 +696,14 @@ class Car:
                 fx = f_total * (s_e / rho) * ratio_l
                 fy_ss = -f_total * (a_n / rho)
                 grip_used[i] = min(1.0, rho)
-            # empuje por caída (camber thrust): con el balanceo las ruedas
-            # se inclinan con la carrocería y empujan hacia el lado al que
-            # se tumban, como una moto. En curva la carrocería se tumba
-            # hacia FUERA, así que este empuje RESTA agarre lateral: los
-            # coches altos y blandos (autobús, todoterreno) subviran mucho
-            # más apoyados que los rígidos (fórmula), que apenas se tumban.
-            # La GEOMETRÍA de suspensión lo compensa en parte: al
-            # comprimirse, cada lado gana caída hacia el centro del coche
-            # (camber gain), enderezando la rueda exterior en el apoyo.
-            # El signo es opuesto en cada lado: la misma compresión tumba
-            # la rueda izquierda hacia la derecha y viceversa.
-            side = 1.0 if self.Y_POS[i] > 0.0 else -1.0
-            lean = -st.roll - side * cfg.SUSP_CAMBER_GAIN * st.susp_def[i]
+            # EMPUJE POR CAIDA (camber thrust): una rueda inclinada genera
+            # fuerza lateral hacia el lado al que se tumba aunque su deriva
+            # sea cero, como una moto. Con el balanceo las ruedas se tumban
+            # hacia FUERA y este empuje RESTA agarre lateral: castiga a los
+            # coches altos y blandos (autobús, todoterreno) y apenas a los
+            # rígidos (fórmula). La caída estática y el camber gain lo
+            # compensan enderezando la rueda exterior en el apoyo.
+            st.camber[i] = lean
             fy_ss += cfg.TIRE_CAMBER_THRUST * lean * st.fz[i]
             # retardo de respuesta lateral (relaxation length)
             blend = min(1.0, (vx_abs + 0.5) * dt / cfg.TIRE_RELAX_LENGTH)
@@ -588,7 +717,13 @@ class Car:
             p_fric = math.hypot(fx, self._fy_state[i]) * v_slip_mag
             # tasa limitada: la masa térmica de la goma no permite subir
             # más de ~6 C/s ni en el derrape más salvaje
-            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric)
+            # ...y la caída concentra el trabajo en un hombro, así que la
+            # goma se calienta MAS que si apoyara plana. Es el desgaste
+            # asimétrico clásico de un coche con mucha caída estática que
+            # hace más kilómetros de recta que de curva.
+            camber_heat = 1.0 + cfg.TIRE_CAMBER_HEAT * abs(lean)
+            heat = min(6.0, cfg.TIRE_HEAT_GAIN * p_fric * self._w_heat[i]
+                       * camber_heat)
             cool = cfg.TIRE_COOL_COEFF * (2.0 + vx_abs) \
                 * (st.tire_temp[i] - cfg.TIRE_TEMP_AMB)
             st.tire_temp[i] += (heat - cool) * dt
@@ -665,7 +800,7 @@ class Car:
                 v_along = vxi * cos_d + (st.vy + st.yaw_rate * self.X_POS[i]) * sin_d
             else:
                 v_along = vxi
-            omega_free = v_along / R
+            omega_free = v_along / R_w[i]
             denom = max(abs(v_along), 1.5)
             # el freno se opone al giro de la rueda (o al giro inminente)
             if abs(st.omega[i]) > 0.5:
@@ -684,34 +819,35 @@ class Car:
             # al cuadrado (acelerar/retener en 1a cuesta mucho más que en 6a)
             if i in driven and st.engine_on and not clutch_slipping \
                     and ratio != 0.0:
-                i_eff = cfg.CAR_WHEEL_INERTIA \
+                i_eff = self.I_w[i] \
                     + cfg.ENGINE_INERTIA * ratio * ratio / len(driven)
             else:
-                i_eff = cfg.CAR_WHEEL_INERTIA
-            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i])
+                i_eff = self.I_w[i]
+            mu_i = mu_with_load(mu_wheel[i], st.fz[i], self._static_fz[i],
+                                self._w_ls[i])
             grip_force = mu_i * st.fz[i] * cfg.TIRE_LONG_GRIP_RATIO
-            slip_now = (st.omega[i] * R - v_along) / denom
+            slip_now = (st.omega[i] * R_w[i] - v_along) / denom
             deep_slip = abs(slip_now) > 0.9 * peak_s \
-                or abs(t_app) / R > 0.9 * grip_force
+                or abs(t_app) / R_w[i] > 0.9 * grip_force
             if not deep_slip and st.fz[i] > 50.0:
                 # régimen de rodadura (fricción estática): relajación
                 # exponencial exacta al deslizamiento de equilibrio, que
                 # transmite el par aplicado al suelo. Incondicionalmente
                 # estable a cualquier dt.
                 k_v = grip_force * cfg.TIRE_C * cfg.TIRE_B / (peak_s * denom)
-                tau = i_eff / (k_v * R * R)
-                omega_eq = (v_along + (t_app / R) / k_v) / R
+                tau = i_eff / (k_v * R_w[i] * R_w[i])
+                omega_eq = (v_along + (t_app / R_w[i]) / k_v) / R_w[i]
                 blend = math.exp(-dt / tau) if tau > 1e-6 else 0.0
                 new_omega = omega_eq + (st.omega[i] - omega_eq) * blend
             else:
                 # deslizamiento profundo (bloqueo o patinaje): integración
                 # explícita con la fuerza de la curva del neumático
-                t_net = t_app - fx_w[i] * R
+                t_net = t_app - fx_w[i] * R_w[i]
                 new_omega = st.omega[i] + t_net / i_eff * dt
                 # si cruza la rodadura libre sin par para seguir deslizando,
                 # vuelve al régimen de rodadura
                 if (st.omega[i] - omega_free) * (new_omega - omega_free) < 0.0 \
-                        and abs(t_app) < grip_force * R:
+                        and abs(t_app) < grip_force * R_w[i]:
                     new_omega = omega_free
                 # bloqueo: la rueda no invierte el sentido por frenar
                 if abs(omega_free) > 0.3 and st.omega[i] * omega_free >= 0.0 \
@@ -757,9 +893,16 @@ class Car:
             st.oversteer = 0.0
 
         # --- par en la columna para el force feedback -------------------
+        # El brazo de palanca son DOS avances independientes que se suman:
+        # el NEUMATICO (nace de la deformación, se derrumba con la deriva) y
+        # el MECANICO (geometría del caster, constante). Que el primero caiga
+        # y el segundo no es lo que hace que el par de autoalineado alcance su
+        # máximo ANTES que la fuerza lateral: el volante se aligera como aviso
+        # anticipado de subviraje, pero nunca queda muerto.
         mz = 0.0
         for i in (FL, FR):
-            mz += -fy_w[i] * pneumatic_trail(st.slip_angle[i])
+            trail = pneumatic_trail(st.slip_angle[i]) + mechanical_trail(R_w[i])
+            mz += -fy_w[i] * trail
         # radio de pivotamiento (scrub radius): la diferencia de fuerza
         # longitudinal entre las ruedas delanteras tira del volante
         # (torque steer en FWD, tirón al frenar con media pista de hierba,
@@ -780,7 +923,18 @@ class Car:
         self._kick_lp += (kick_raw - self._kick_lp) * min(1.0, 2.0 * dt)
         kick_hp = kick_raw - self._kick_lp
         self._bump_kick += (kick_hp - self._bump_kick) * min(1.0, 25.0 * dt)
-        raw_torque = mz / cfg.STEER_RATIO * 2.0 + self._bump_kick + damping
+        # reacción giroscópica en la DIRECCION: al balancear la carrocería,
+        # el eje de giro de las ruedas delanteras precesa alrededor del eje
+        # longitudinal y devuelve un par alrededor del pivote de dirección
+        # (M = ω_balanceo × L). Es el "peso vivo" que se nota al cambiar de
+        # apoyo rápido a alta velocidad.
+        gyro_ffb = getattr(cfg, "GYRO_FFB_GAIN", 0.0)
+        t_gyro = 0.0
+        if gyro_ffb > 0.0:
+            t_gyro = gyro_ffb * st.roll_v * getattr(self, "_l_front", 0.0) \
+                / cfg.STEER_RATIO
+        raw_torque = mz / cfg.STEER_RATIO * 2.0 + self._bump_kick + damping \
+            + t_gyro
         # suavizado final del par: corta la excitación de alta frecuencia
         # que produce bandazos del volante en recta (FFB_SMOOTHING_S)
         if cfg.FFB_SMOOTHING_S > 1e-4:

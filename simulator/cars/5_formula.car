@@ -11,9 +11,16 @@ WHEELBASE = 3.40                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.45          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.30              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.60            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.33           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 1.1           # kg*m2, inercia de cada rueda
+WHEEL_SPEC_FRONT = "305/55R13"    # neumatico delantero (real)
+WHEEL_SPEC_REAR = "405/42R13"     # trasero MAS ANCHO: es el eje motriz
+WHEEL_OPTIONS = ["305/55R13", "270/60R13"]# monturas homologadas (menu RUEDAS)
+CAR_WHEEL_INERTIA = 1.1           # llanta de magnesio, masa periferica minima
+UNSPRUNG_MASS = 20.0              # conjunto de competicion ligerisimo
 STEER_RATIO = 8.0                 # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 12.0         # grados, angulo de avance: formula: avance extremo = caida gratis en curva
+STEER_TRAIL_OFFSET = -0.032       # m, eje adelantado: recorta el avance mecanico
+                                  # que daria un caster de 12 grados, sin perder
+                                  # la caida que se gana al girar
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
 DIFF_LSD_COEFF = 32.0             # Nm*s, dureza del autoblocante
@@ -44,9 +51,10 @@ ABS_ENABLED = False               # True con ABS, False sin el (bloqueos reales)
 ENGINE_INERTIA = 0.08             # kg*m2, volante motor: retencion al reducir
 SUSP_ANTI_PITCH = 0.45            # geometria anti-hundimiento al frenar/acelerar
 CAMERA_HEIGHT = 0.80              # m, ojo del conductor: a ras de asfalto
-UNSPRUNG_MASS = 20.0              # kg por rueda, todo magnesio
 TIRE_VERT_STIFF = 350000.0        # N/m, carcasa rigida de slick
 TIRE_VERT_DAMP = 1200.0           # N*s/m
-SUSP_CAMBER_GAIN = 1.5            # geometria de competicion
+SUSP_CAMBER_GAIN = 0.65            # rad/m: geometria de competicion
+STATIC_CAMBER_FRONT_DEG = -3.5      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -1.8      # grados detras: maximo apoyo; el eje motriz menos, por traccion
 TIRE_TEMP_OPT = 95.0              # slick: fria no agarra NADA
 CAMERA_FORWARD = 0.15             # m, piloto casi centrado en el coche

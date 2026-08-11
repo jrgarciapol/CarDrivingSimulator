@@ -11,9 +11,11 @@ WHEELBASE = 2.85                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.53          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.78              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.65            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.38           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 2.2           # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "245/75R16"          # neumatico real: deriva radio, masa e inercia coherentes
+WHEEL_OPTIONS = ["235/85R16", "265/70R17", "285/75R16"]# monturas homologadas (menu RUEDAS)
+UNSPRUNG_HUB_MASS = 40.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 17.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 3.5          # grados, angulo de avance: poco avance: volante manejable fuera de asfalto
 DRIVE_TYPE = "AWD"                # traccion: FWD delantera, RWD trasera, AWD total
 AWD_FRONT_SPLIT = 0.42            # fraccion del par al eje delantero (solo AWD)
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
@@ -37,7 +39,8 @@ CL = 0.000                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 24000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.80              # m, ojo del conductor: dominando el trafico
-UNSPRUNG_MASS = 65.0              # kg por rueda, llanta y freno grandes
 TIRE_VERT_STIFF = 400000.0        # N/m, globo de perfil alto
-SUSP_CAMBER_GAIN = 0.15           # eje casi rigido
+SUSP_CAMBER_GAIN = 0.10            # rad/m: eje casi rigido
+STATIC_CAMBER_FRONT_DEG = -0.3      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -0.5      # grados detras: casi plana: fuera de asfalto la huella manda
 CAMERA_FORWARD = 0.80             # m, puesto alto y adelantado

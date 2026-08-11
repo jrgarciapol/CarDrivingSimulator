@@ -11,9 +11,11 @@ WHEELBASE = 2.62                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.56          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.50              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.56            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.31           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 1.3           # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "195/65R15"          # neumatico real: deriva radio, masa e inercia coherentes
+WHEEL_OPTIONS = ["185/70R14", "205/50R16"]# monturas homologadas (menu RUEDAS)
+UNSPRUNG_HUB_MASS = 24.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 11.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 5.5          # grados, angulo de avance: compromiso: preciso pero manejable en contravolante
 DRIVE_TYPE = "AWD"                # traccion: FWD delantera, RWD trasera, AWD total
 AWD_FRONT_SPLIT = 0.45            # fraccion del par al eje delantero (solo AWD)
 DIFF_TYPE = "locked"              # diferencial: open, lsd (autoblocante) o locked
@@ -37,6 +39,7 @@ CL = 0.389                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 17000.0         # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.66           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.35              # m, ojo del conductor: con casco y baquet
-UNSPRUNG_MASS = 40.0              # kg por rueda, refuerzos de grava
-SUSP_CAMBER_GAIN = 0.9            # recorrido largo bien guiado
+SUSP_CAMBER_GAIN = 0.40            # rad/m: recorrido largo bien guiado
+STATIC_CAMBER_FRONT_DEG = -2.0      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -1.5      # grados detras: apoyo con recorrido largo de suspension
 CAMERA_FORWARD = 0.50             # m, ojo del conductor

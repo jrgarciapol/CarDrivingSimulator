@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from simulator import config as cfg
+from simulator import physics
 from simulator.physics import Car, FL, FR, RL, RR
 from simulator.track import Track
 
@@ -437,6 +438,11 @@ def main():
     def steady_yaw(camber):
         old = cfg.TIRE_CAMBER_THRUST
         cfg.TIRE_CAMBER_THRUST = camber
+        # aisla la caida por BALANCEO: sin esto, la caida ganada al girar por
+        # el caster (que va en sentido contrario, a favor de la curva)
+        # compensaria parte del efecto y la prueba mediria la suma de ambos
+        old_cc = cfg.CASTER_CAMBER_GAIN
+        cfg.CASTER_CAMBER_GAIN = 0.0
         c = Car()
         settle(c, flat, 1.0)
         set_speed(c, 25.0)
@@ -447,6 +453,7 @@ def main():
                 acc += abs(c.state.yaw_rate)
                 steps += 1
         cfg.TIRE_CAMBER_THRUST = old
+        cfg.CASTER_CAMBER_GAIN = old_cc
         return acc / steps
 
     yaw_no_camber = steady_yaw(0.0)
@@ -666,8 +673,407 @@ def main():
     cfg.CHASSIS_TORSION_STIFF = old_kc
 
     # ------------------------------------------------------------------
-    print("--- Garaje: los 8 coches ---")
+    print("--- Catalogo de ruedas (WHEEL_SPEC) ---")
     from simulator import garage
+    ws = garage.parse_wheel_spec("205/55R16")
+    # radio por definición: 16·25.4/2 + 205·0.55 = 203.2 + 112.75 = 315.95 mm
+    results.append(check("radio exacto desde la designacion (205/55R16)",
+                         abs(ws["radius"] - 0.31595) < 1e-4,
+                         f"R={ws['radius']*1000:.1f} mm"))
+    ws_big = garage.parse_wheel_spec("315/30R19")
+    results.append(check("rueda mayor -> mas radio, masa e inercia",
+                         ws_big["radius"] > ws["radius"]
+                         and ws_big["mass"] > ws["mass"]
+                         and ws_big["inertia"] > ws["inertia"],
+                         f"I {ws['inertia']:.2f} -> {ws_big['inertia']:.2f} "
+                         f"kg*m2"))
+    ok_bad = False
+    try:
+        garage.parse_wheel_spec("gigante")
+    except ValueError:
+        ok_bad = True
+    results.append(check("designacion invalida rechazada con aviso", ok_bad))
+
+    # --- ancho -> agarre (sensibilidad a la carga y termica) ----------
+    from simulator.physics import mu_with_load
+    m_norm = mu_with_load(1.0, 6000.0, 4000.0)           # sobrecargada
+    m_wide = mu_with_load(1.0, 6000.0, 4000.0, 0.66)     # goma ancha
+    results.append(check("neumatico ancho: menos caida de mu al sobrecargar",
+                         m_wide > m_norm,
+                         f"mu {m_norm:.3f} -> {m_wide:.3f}"))
+
+    def lateral_ab(width):
+        cfg.TIRE_WIDTH_MM = width
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 30.0)
+        for _ in range(int(3.0 / DT)):
+            c.step(DT, 0.5, 0.4, 0.0, flat)   # apoyo saturado
+        return abs(c.state.ay), max(c.state.tire_temp)
+    old_w = cfg.TIRE_WIDTH_MM
+    ay_n, tmp_n = lateral_ab(155.0)
+    ay_w, tmp_w = lateral_ab(305.0)
+    results.append(check("neumatico ancho: mas apoyo lateral al limite",
+                         ay_w > ay_n * 1.03,
+                         f"ay {ay_n:.2f} -> {ay_w:.2f} m/s2"))
+    # el factor termico se comprueba AISLADO (en pista el ancho tambien
+    # agarra mas -> mas potencia de friccion, y los efectos se compensan)
+    old_wr = getattr(cfg, "TIRE_WIDTH_MM_REAR", None)
+    cfg.TIRE_WIDTH_MM = cfg.TIRE_WIDTH_MM_REAR = 155.0
+    h_n = Car()._w_heat[0]
+    cfg.TIRE_WIDTH_MM = cfg.TIRE_WIDTH_MM_REAR = 305.0
+    h_w = Car()._w_heat[0]
+    cfg.TIRE_WIDTH_MM = old_w
+    cfg.TIRE_WIDTH_MM_REAR = old_wr
+    results.append(check("neumatico ancho: mas masa termica (calienta menos "
+                         "por unidad de trabajo)", h_w < h_n * 0.8,
+                         f"factor {h_n:.2f} -> {h_w:.2f}"))
+
+    # --- selector de monturas (apply_wheel consistente) ----------------
+    DEP = "simulator/cars/3_deportivo.car"
+    garage.load_car(DEP)
+    r0, i0, m0 = cfg.CAR_WHEEL_RADIUS, cfg.CAR_WHEEL_INERTIA, cfg.UNSPRUNG_MASS
+    old_keep = cfg.GEARING_KEEP_ON_WHEEL_CHANGE
+    cfg.GEARING_KEEP_ON_WHEEL_CHANGE = False
+    garage.apply_wheel("265/35R19", DEP)
+    results.append(check("apply_wheel: radio, inercia y masa cambian juntos",
+                         cfg.CAR_WHEEL_RADIUS > r0
+                         and cfg.CAR_WHEEL_INERTIA > i0
+                         and cfg.UNSPRUNG_MASS > m0
+                         and abs(cfg.TIRE_WIDTH_MM - 265.0) < 1e-6,
+                         f"R {r0:.3f}->{cfg.CAR_WHEEL_RADIUS:.3f} "
+                         f"I {i0:.2f}->{cfg.CAR_WHEEL_INERTIA:.2f} "
+                         f"m {m0:.1f}->{cfg.UNSPRUNG_MASS:.1f}"))
+    opts = garage.wheel_options(DEP)
+    results.append(check("catalogo: serie del coche + catalogo general",
+                         len(opts) > 20 and "SERIE" in opts[0][1]
+                         and any("AUTOBUS" in o[1] for o in opts)
+                         and any("FORMULA 1" in o[1] for o in opts),
+                         f"{len(opts)} monturas"))
+
+    # --- ruedas DISTINTAS por eje (staggered) --------------------------
+    garage.load_car(DEP)
+    garage.apply_wheel("225/45R17", DEP, "305/30R20")
+    results.append(check("montura por eje: delante y detras distintas",
+                         cfg.CAR_WHEEL_RADIUS_REAR > cfg.CAR_WHEEL_RADIUS
+                         and cfg.TIRE_WIDTH_MM_REAR > cfg.TIRE_WIDTH_MM,
+                         f"R {cfg.CAR_WHEEL_RADIUS:.3f}/"
+                         f"{cfg.CAR_WHEEL_RADIUS_REAR:.3f} m  ancho "
+                         f"{cfg.TIRE_WIDTH_MM:.0f}/{cfg.TIRE_WIDTH_MM_REAR:.0f}"))
+    c = Car()
+    results.append(check("la fisica usa el radio y la inercia de cada eje",
+                         c.R_w[FL] < c.R_w[RL] and c.I_w[FL] < c.I_w[RL]
+                         and c._w_ls[RL] < c._w_ls[FL],
+                         f"R_w={[round(r,3) for r in c.R_w]}"))
+    # goma mas ancha DETRAS en un RWD: mas agarre trasero, asi que al limite
+    # el eje trasero DERIVA MENOS (es el motivo real del montaje escalonado)
+    def rear_slip(spec_r):
+        garage.load_car(DEP)
+        garage.apply_wheel("225/45R17", DEP, spec_r)
+        cc = Car()
+        settle(cc, flat, 1.0)
+        set_speed(cc, 28.0)
+        for _ in range(int(2.5 / DT)):
+            cc.step(DT, 0.25, 0.30, 0.0, flat)
+        return math.degrees(abs(cc.state.slip_angle[RL]))
+    sl = [(s, rear_slip(s)) for s in
+          ("205/55R16", "225/45R17", "275/35R17", "305/30R20")]
+    monotona = all(sl[i][1] > sl[i + 1][1] for i in range(len(sl) - 1))
+    results.append(check("goma trasera mas ancha -> el eje trasero deriva "
+                         "menos (montaje escalonado)", monotona,
+                         "  ".join(f"{s.split('/')[0]}:{v:.1f}gra"
+                                   for s, v in sl)))
+
+    # el desarrollo: SIN recalzar, la rueda grande alarga y resta empuje
+    def launch(spec_r, keep):
+        garage.load_car(DEP)
+        cfg.GEARING_KEEP_ON_WHEEL_CHANGE = keep
+        garage.apply_wheel("225/45R17", DEP, spec_r)
+        cc = Car()
+        settle(cc, flat, 1.0)
+        d = 0.0
+        for _ in range(int(3.0 / DT)):
+            cc.step(DT, 0.0, 1.0, 0.0, flat)
+            d += cc.state.vx * DT
+        return d
+    d_keep = launch("305/30R20", True)
+    d_sin = launch("305/30R20", False)
+    results.append(check("sin recalzar, la rueda grande alarga el desarrollo",
+                         d_sin < d_keep,
+                         f"{d_keep:.1f} m (recalzado) vs {d_sin:.1f} m (sin)"))
+    # el grupo final compensa el recalzado (conserva el desarrollo)
+    garage.load_car(DEP)
+    fd0 = cfg.FINAL_DRIVE
+    cfg.GEARING_KEEP_ON_WHEEL_CHANGE = True
+    garage.apply_wheel("245/35R18", DEP, "325/30R21")
+    results.append(check("recalzar reescala el grupo final (mismo desarrollo)",
+                         cfg.FINAL_DRIVE > fd0,
+                         f"{fd0:.2f} -> {cfg.FINAL_DRIVE:.2f}"))
+    cfg.GEARING_KEEP_ON_WHEEL_CHANGE = old_keep
+
+    # --- efecto giroscopico de las ruedas ------------------------------
+    print("--- Precesion giroscopica ---")
+    old_gyro = cfg.GYRO_GAIN
+    garage.load_car(DEP)
+
+    def roll_in_turn(gain):
+        cfg.GYRO_GAIN = gain
+        cc = Car()
+        settle(cc, flat, 1.0)
+        set_speed(cc, 45.0)
+        for _ in range(int(2.0 / DT)):
+            cc.step(DT, 0.22, 0.35, 0.0, flat)
+        return cc.state.roll, cc.state.gyro_roll_moment
+    roll_off, m_off = roll_in_turn(0.0)
+    roll_on, m_on = roll_in_turn(1.0)
+    results.append(check("sin giroscopo no hay par de precesion",
+                         abs(m_off) < 1e-12, f"M={m_off:.2e} N*m"))
+    results.append(check("girando a la derecha, la precesion SUMA al balanceo",
+                         m_on > 0.0 and roll_on > roll_off,
+                         f"M={m_on:.0f} N*m, balanceo {math.degrees(roll_off):.3f}"
+                         f" -> {math.degrees(roll_on):.3f} grados"))
+    # con rueda mayor (mas inercia) el par de precesion crece
+    garage.apply_wheel("325/30R21", DEP)
+    _, m_big = roll_in_turn(1.0)
+    results.append(check("rueda mayor -> mas momento angular -> mas precesion",
+                         m_big > m_on, f"{m_on:.0f} -> {m_big:.0f} N*m"))
+    cfg.GYRO_GAIN = old_gyro
+
+    # ------------------------------------------------------------------
+    print("--- Angulo de avance (caster) ---")
+    garage.load_car(DEP)
+    old_caster = cfg.CASTER_ANGLE_DEG
+    old_off = cfg.STEER_TRAIL_OFFSET
+    old_ccg = cfg.CASTER_CAMBER_GAIN
+
+    # el avance MECANICO es geometria pura: NO depende de la deriva
+    t_mec = [physics.mechanical_trail(0.32) for _ in range(3)]
+    a_ext = [0.0, math.radians(5.0), math.radians(20.0)]
+    results.append(check("el avance mecanico no cae con la deriva",
+                         len(set(t_mec)) == 1 and t_mec[0] > 0.0,
+                         f"{t_mec[0]*1000:.1f} mm constante"))
+
+    # ...mientras que el NEUMATICO se derrumba y llega a hacerse negativo
+    t_pn = [physics.pneumatic_trail(a) for a in a_ext]
+    results.append(check("el avance neumatico se derrumba y se hace negativo",
+                         t_pn[0] > t_pn[1] > 0.0 > t_pn[2],
+                         f"{t_pn[0]*1000:.1f} -> {t_pn[1]*1000:.1f} -> "
+                         f"{t_pn[2]*1000:.1f} mm"))
+
+    # geometria: t = R*tan(caster) + offset
+    cfg.CASTER_ANGLE_DEG, cfg.STEER_TRAIL_OFFSET = 6.0, 0.0
+    esperado = 0.32 * math.tan(math.radians(6.0))
+    results.append(check("t_mecanico = R*tan(caster)",
+                         abs(physics.mechanical_trail(0.32) - esperado) < 1e-9,
+                         f"{physics.mechanical_trail(0.32)*1000:.2f} mm "
+                         f"= {esperado*1000:.2f} mm"))
+
+    # mas caster -> mas brazo -> volante mas pesado
+    def par_en_apoyo(caster):
+        cfg.CASTER_ANGLE_DEG = caster
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 28.0)
+        acc, n = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.30, 0.30, 0.0, flat)
+            if k > int(1.5 / DT):
+                acc += abs(c.state.steer_column_torque)
+                n += 1
+        return acc / n
+
+    par_poco, par_mucho = par_en_apoyo(2.0), par_en_apoyo(10.0)
+    results.append(check("mas avance -> volante mas pesado",
+                         par_mucho > par_poco * 1.3,
+                         f"{par_poco:.1f} -> {par_mucho:.1f} N*m"))
+
+    # el offset ajusta el avance mecanico SIN tocar el caster (ni la caida)
+    cfg.CASTER_ANGLE_DEG = 6.0
+    cfg.STEER_TRAIL_OFFSET = 0.02
+    t_con_off = physics.mechanical_trail(0.32)
+    cfg.STEER_TRAIL_OFFSET = 0.0
+    results.append(check("el offset mueve el avance sin tocar el caster",
+                         abs(t_con_off - esperado - 0.02) < 1e-9,
+                         f"{esperado*1000:.1f} -> {t_con_off*1000:.1f} mm"))
+
+    # CAIDA GANADA AL GIRAR: la rueda EXTERIOR se tumba hacia dentro de la
+    # curva (signo + con el convenio de balanceo) y la interior hacia fuera
+    cfg.CASTER_ANGLE_DEG, cfg.CASTER_CAMBER_GAIN = 8.0, 1.0
+    delta = math.radians(10.0)          # giro a la DERECHA
+    lean_izq = physics.caster_camber(delta, -1.0)   # exterior de la curva
+    lean_dch = physics.caster_camber(delta, +1.0)   # interior
+    results.append(check("el caster inclina la rueda exterior hacia la curva",
+                         lean_izq > 0.0 > lean_dch,
+                         f"ext {math.degrees(lean_izq):+.2f} deg, "
+                         f"int {math.degrees(lean_dch):+.2f} deg"))
+
+    # ...y eso se traduce en MAS giro real con el mismo volante. Se prueba
+    # con el coche SIN caida estatica: asi la rueda exterior llega a la curva
+    # tumbada hacia FUERA (le falta caida) y la que aporta el caster la
+    # acerca a su optimo. Con la caida de serie el coche ya esta en su punto,
+    # y anadir mas la pasaria de largo: la huella perderia mas de lo que
+    # aporta el empuje, que es justo el compromiso que modela TIRE_CAMBER_PATCH
+    old_scf, old_scr = cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = 0.0
+
+    def yaw_con_caster(ccg):
+        cfg.CASTER_CAMBER_GAIN = ccg
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 22.0)
+        acc, n = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.45, 0.30, 0.0, flat)
+            if k > int(1.5 / DT):
+                acc += abs(c.state.yaw_rate)
+                n += 1
+        return acc / n
+
+    yaw_sin, yaw_con = yaw_con_caster(0.0), yaw_con_caster(1.0)
+    results.append(check("la caida ganada por caster hace girar mas",
+                         yaw_con > yaw_sin,
+                         f"yaw {yaw_sin:.4f} -> {yaw_con:.4f} rad/s"))
+    cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG = old_scf, old_scr
+
+    # rueda mas grande = brazo mas largo (acopla el catalogo con la direccion)
+    cfg.CASTER_ANGLE_DEG = 6.0
+    results.append(check("rueda mayor -> mas avance mecanico",
+                         physics.mechanical_trail(0.36)
+                         > physics.mechanical_trail(0.28) * 1.2,
+                         f"{physics.mechanical_trail(0.28)*1000:.1f} -> "
+                         f"{physics.mechanical_trail(0.36)*1000:.1f} mm"))
+
+    cfg.CASTER_ANGLE_DEG = old_caster
+    cfg.STEER_TRAIL_OFFSET = old_off
+    cfg.CASTER_CAMBER_GAIN = old_ccg
+
+    # un coche debe comportarse IGUAL se haya conducido lo que se haya
+    # conducido antes: los parametros que solo declaran algunos .car no
+    # pueden quedarse pegados del vehiculo anterior
+    def ficha():
+        return tuple(getattr(cfg, k) for k in (
+            "TIRE_PEAK_SLIP_ANGLE_DEG", "ABS_ENABLED", "SUSP_ANTI_PITCH",
+            "STEER_TRAIL_OFFSET", "ENGINE_IDLE_RPM", "TIRE_RELAX_LENGTH",
+            "STEER_SCRUB_RADIUS", "TIRE_TEMP_OPT", "AERO_DF_FRONT_SHARE"))
+
+    garage.load_car(DEP)
+    ficha_limpia = ficha()
+    for _n, p, _d in garage.list_cars():     # pasa por TODOS los coches
+        garage.load_car(p)
+    garage.load_car(DEP)
+    results.append(check("el coche no hereda reglajes del anterior",
+                         ficha() == ficha_limpia,
+                         "ficha identica tras cargar los 8 coches"))
+
+    # ------------------------------------------------------------------
+    print("--- Caida estatica (camber de reglaje) ---")
+    garage.load_car(DEP)
+    old_f, old_r = cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG
+    old_patch = cfg.TIRE_CAMBER_PATCH
+
+    def caida_en(steer, seg=2.5, v=25.0):
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, v)
+        for _ in range(int(seg / DT)):
+            c.step(DT, steer, 0.30, 0.0, flat)
+        return c.state
+
+    # EN RECTA la rueda va inclinada exactamente su caida estatica, y con
+    # signo OPUESTO en cada lado (ambas "abrazan" el coche por arriba)
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = -2.0
+    st_r = caida_en(0.0, 1.5)
+    cam_izq = math.degrees(st_r.camber[FL])
+    cam_dch = math.degrees(st_r.camber[FR])
+    results.append(check("en recta cada rueda lleva su caida estatica",
+                         abs(cam_izq - 2.0) < 0.35 and abs(cam_dch + 2.0) < 0.35,
+                         f"izda {cam_izq:+.2f} dcha {cam_dch:+.2f} deg (reglaje -2.0)"))
+
+    # EN CURVA el balanceo endereza la rueda EXTERIOR: para eso se pone.
+    # Se aisla del caster (que aporta su propia caida al girar) para medir
+    # justo lo que dice el enunciado: caida estatica contra balanceo
+    old_ccg2 = cfg.CASTER_CAMBER_GAIN
+    cfg.CASTER_CAMBER_GAIN = 0.0
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = -2.0
+    ext_con = abs(math.degrees(caida_en(0.30).camber[FL]))
+    cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = 0.0
+    ext_sin = abs(math.degrees(caida_en(0.30).camber[FL]))
+    cfg.CASTER_CAMBER_GAIN = old_ccg2
+    results.append(check("la caida estatica endereza la rueda exterior",
+                         ext_con < ext_sin,
+                         f"|caida| exterior {ext_sin:.2f} -> {ext_con:.2f} deg"))
+
+    # EFECTO EN HUELLA: en RECTA la caida estatica hace FRENAR PEOR, porque
+    # la rueda no apoya plana (ese es el precio del reglaje)
+    def frenada(cam):
+        cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = cam
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 100 / 3.6)
+        d0, t = c.state.s, 0.0
+        while c.state.vx > 1.0 and t < 12.0:
+            c.step(DT, 0.0, 0.0, 1.0, flat)
+            t += DT
+        return c.state.s - d0
+
+    d_plana, d_caida = frenada(0.0), frenada(-4.0)
+    results.append(check("la caida estatica empeora la frenada en recta",
+                         d_caida > d_plana * 1.01,
+                         f"{d_plana:.1f} m -> {d_caida:.1f} m"))
+
+    # ...y la perdida de huella es CUADRATICA: doblar la caida cuadruplica
+    # el coste. Es lo que hace que 1 grado no se note y 5 arruinen el apoyo
+    cfg.TIRE_CAMBER_PATCH = old_patch
+    g1, g2 = math.radians(1.0), math.radians(2.0)
+    p1 = 1.0 - cfg.TIRE_CAMBER_PATCH * g1 * g1
+    p2 = 1.0 - cfg.TIRE_CAMBER_PATCH * g2 * g2
+    results.append(check("la perdida de huella es cuadratica",
+                         abs((1 - p2) / (1 - p1) - 4.0) < 0.01,
+                         f"1 deg: -{100*(1-p1):.2f} %  2 deg: -{100*(1-p2):.2f} %"))
+
+    # EL OPTIMO EXISTE: pasarse de caida estatica vuelve a inclinar la rueda
+    # y el agarre en curva CAE. Sin este efecto, mas caida seria siempre mejor
+    def ay_media(cam):
+        cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = cam
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 26.0)
+        acc, n = 0.0, 0
+        for k in range(int(2.5 / DT)):
+            c.step(DT, 0.26, 0.28, 0.0, flat)
+            if k > int(1.8 / DT):
+                acc += abs(c.state.ay)
+                n += 1
+        return acc / n
+
+    ay_moderada, ay_exagerada = ay_media(-1.5), ay_media(-6.0)
+    results.append(check("pasarse de caida estatica resta agarre en curva",
+                         ay_exagerada < ay_moderada,
+                         f"a -1.5 deg {ay_moderada:.2f} vs a -6 deg {ay_exagerada:.2f} m/s2"))
+
+    # la caida concentra el trabajo en un hombro: la goma se calienta MAS.
+    # Se mide en FRENADA RECTA para que las dos pruebas recorran lo mismo:
+    # en curva, la que lleva mas caida agarra menos, va mas despacio y eso
+    # enmascara el efecto termico
+    def temp_tras_frenada(cam):
+        cfg.STATIC_CAMBER_FRONT_DEG = cfg.STATIC_CAMBER_REAR_DEG = cam
+        c = Car()
+        settle(c, flat, 1.0)
+        set_speed(c, 120 / 3.6)
+        for _ in range(int(2.0 / DT)):
+            c.step(DT, 0.0, 0.0, 0.85, flat)
+        return c.state.tire_temp[FL]
+
+    t_plana, t_caida = temp_tras_frenada(0.0), temp_tras_frenada(-5.0)
+    results.append(check("la caida calienta mas la goma",
+                         t_caida > t_plana,
+                         f"{t_plana:.1f} -> {t_caida:.1f} C"))
+
+    cfg.STATIC_CAMBER_FRONT_DEG, cfg.STATIC_CAMBER_REAR_DEG = old_f, old_r
+    cfg.TIRE_CAMBER_PATCH = old_patch
+
+    # ------------------------------------------------------------------
+    print("--- Garaje: los 8 coches ---")
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS
                 if hasattr(cfg, k)}
     snapshot["CAR_CG_TO_FRONT"] = cfg.CAR_CG_TO_FRONT

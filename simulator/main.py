@@ -114,6 +114,14 @@ def main(argv=None):
                 setattr(cfg, k, v)
             if sel["car"] is not None:
                 car_name = garage.load_car(sel["car"][1])
+                if sel.get("wheel"):
+                    wf, wr = garage.apply_wheel(sel["wheel"], sel["car"][1],
+                                                sel.get("wheel_rear"))
+                    print(f"Ruedas: {sel['wheel']} delante / "
+                          f"{sel.get('wheel_rear') or sel['wheel']} detras")
+                    print(f"  R={wf['radius']*1000:.0f}/{wr['radius']*1000:.0f} mm"
+                          f"  I={wf['inertia']:.2f}/{wr['inertia']:.2f} kg*m2"
+                          f"  grupo final {cfg.FINAL_DRIVE:.2f}")
             cfg.TRACK_FILE = sel["track"][1]
             condition = sel["cond"]
             garage.apply_condition(condition)

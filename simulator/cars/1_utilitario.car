@@ -11,9 +11,11 @@ WHEELBASE = 2.45                  # m, distancia entre ejes
 WEIGHT_DIST_FRONT = 0.62          # fraccion del peso sobre el eje delantero
 CAR_CG_HEIGHT = 0.55              # m, altura del c. de gravedad: mas = mas vuelco
 CAR_TRACK_WIDTH = 1.45            # m, ancho de via entre ruedas
-CAR_WHEEL_RADIUS = 0.28           # m, radio de la rueda
-CAR_WHEEL_INERTIA = 0.9           # kg*m2, inercia de cada rueda
+WHEEL_SPEC = "165/70R13"          # neumatico real: deriva radio, masa e inercia coherentes
+WHEEL_OPTIONS = ["175/65R14", "185/55R15"]# monturas homologadas (menu RUEDAS)
+UNSPRUNG_HUB_MASS = 17.0          # kg, mangueta+freno+suspension (sin la rueda)
 STEER_RATIO = 15.0                # desmultiplicacion volante->rueda: mas = suave
+CASTER_ANGLE_DEG = 2.5          # grados, angulo de avance: urbano: direccion ligera para aparcar
 DRIVE_TYPE = "FWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "open"                # diferencial: open, lsd (autoblocante) o locked
 ENGINE_MAX_TORQUE_NM = 118.0      # Nm, par maximo del motor
@@ -35,6 +37,7 @@ CL = 0.000                     # coef. de carga aerodinamica (0 = sin apendices)
 BRAKE_FORCE_MAX = 9500.0          # N, fuerza maxima de frenada total
 BRAKE_BIAS_FRONT = 0.74           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.40              # m, ojo del conductor: alto y erguido
-UNSPRUNG_MASS = 28.0              # kg por rueda, llanta pequena
-SUSP_CAMBER_GAIN = 0.5            # geometria sencilla McPherson
+SUSP_CAMBER_GAIN = 0.25            # rad/m: McPherson sencillo
+STATIC_CAMBER_FRONT_DEG = -0.5      # grados de caida estatica delante
+STATIC_CAMBER_REAR_DEG = -0.8      # grados detras: confort y desgaste parejo antes que apoyo
 CAMERA_FORWARD = 0.55             # m, ojo del conductor adelantado (coche corto)

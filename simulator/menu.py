@@ -46,8 +46,23 @@ def run_menu(renderer):
     i_car = min(2, len(cars) - 1)   # DEPORTIVO por defecto
     i_trk = 0
     i_cnd = 0
+    wheels_cache = {}
+
+    def wheels_for(i):
+        path = cars[i][1]
+        if path not in wheels_cache:
+            wheels_cache[path] = garage.wheel_options(path)
+        return wheels_cache[path]
+
+    def serie_idx(i):
+        """Índices de la montura de serie de cada eje en la lista."""
+        specs = garage.car_wheel_specs(cars[i][1])
+        opts = [o[0] for o in wheels_for(i)]
+        return tuple(opts.index(s) if s in opts else 0 for s in specs)
+
+    i_wf, i_wr = serie_idx(i_car)   # monturas delante / detrás
     row = 0
-    rows = 5
+    rows = 7
     rect = sdl2.SDL_Rect()
     event = sdl2.SDL_Event()
 
@@ -64,21 +79,34 @@ def run_menu(renderer):
                 elif sym == sdl2.SDLK_DOWN:
                     row = (row + 1) % rows
                 elif sym in (sdl2.SDLK_RETURN, sdl2.SDLK_KP_ENTER):
-                    if row == 3:            # AJUSTES AVANZADOS
+                    if row == 5:            # AJUSTES AVANZADOS
                         from .tuning import run_tuning
                         run_tuning(renderer)
                     elif row == rows - 1:
+                        whl = wheels_for(i_car)
+                        s_f, s_r = serie_idx(i_car)
+                        cambia = whl and (i_wf != s_f or i_wr != s_r)
                         return {"car": cars[i_car], "track": tracks[i_trk],
-                                "cond": conds[i_cnd]}
+                                "cond": conds[i_cnd],
+                                "wheel": whl[i_wf][0] if cambia else None,
+                                "wheel_rear": whl[i_wr][0] if cambia else None}
                     else:
                         row = (row + 1) % rows
                 elif sym in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT):
                     step = 1 if sym == sdl2.SDLK_RIGHT else -1
                     if row == 0:
                         i_car = (i_car + step) % len(cars)
-                    elif row == 1:
+                        i_wf, i_wr = serie_idx(i_car)   # su rueda de serie
+                    elif row in (1, 2):
+                        whl = wheels_for(i_car)
+                        if whl:
+                            if row == 1:
+                                i_wf = (i_wf + step) % len(whl)
+                            else:
+                                i_wr = (i_wr + step) % len(whl)
+                    elif row == 3:
                         i_trk = (i_trk + step) % len(tracks)
-                    elif row == 2:
+                    elif row == 4:
                         i_cnd = (i_cnd + step) % len(conds)
 
         # ------------------------------------------------ dibujo
@@ -89,24 +117,27 @@ def run_menu(renderer):
         font.draw_text(renderer, cfg.VERSION, W // 2 - 250, 116, 2,
                        (150, 150, 150, 255))
 
-        labels = ["COCHE", "CIRCUITO", "ASFALTO", "AJUSTES AVANZADOS",
-                  "EMPEZAR"]
-        values = [cars[i_car][0], tracks[i_trk][0],
+        whl = wheels_for(i_car)
+        wf_txt = whl[i_wf][1] if whl else "(sin catalogo)"
+        wr_txt = whl[i_wr][1] if whl else "(sin catalogo)"
+        labels = ["COCHE", "RUEDAS DELANTE", "RUEDAS DETRAS", "CIRCUITO",
+                  "ASFALTO", "AJUSTES AVANZADOS", "EMPEZAR"]
+        values = [cars[i_car][0], wf_txt, wr_txt, tracks[i_trk][0],
                   f"{conds[i_cnd]} ({garage.CONDITIONS[conds[i_cnd]]['desc'].upper()})",
                   "(ENTER: EDITAR PARAMETROS)", ""]
-        y = 210
+        y = 190
         for r in range(rows):
             sel = (r == row)
             if sel:
-                _fill(renderer, rect, 120, y - 8, W - 240, 40, (40, 55, 80))
+                _fill(renderer, rect, 120, y - 8, W - 240, 38, (40, 55, 80))
             font.draw_text(renderer, labels[r], 150, y, 2,
                            (255, 200, 60, 255) if sel else (170, 170, 170, 255))
-            font.draw_text(renderer, values[r], 400 if r != 3 else 620, y,
+            font.draw_text(renderer, values[r], 500 if r != 5 else 620, y,
                            2, (255, 255, 255, 255) if sel else (190, 190, 190, 255))
-            if sel and r < 3:
-                font.draw_text(renderer, "<", 370, y, 2, (255, 200, 60, 255))
+            if sel and r < 5:
+                font.draw_text(renderer, "<", 470, y, 2, (255, 200, 60, 255))
                 font.draw_text(renderer, ">", W - 170, y, 2, (255, 200, 60, 255))
-            y += 56
+            y += 50
 
         # descripción del coche y récord de la combinación
         font.draw_text(renderer, cars[i_car][2], 150, y + 8, 2,

@@ -1,0 +1,5 @@
+project.manifest = manifest.xml
+
+# Recursos comunes a todos los dispositivos.
+base.sourcePath = source
+base.resourcePath = resources

@@ -1,0 +1,14 @@
+# Datos de sesiones: los reales son personales y los sintéticos se
+# regeneran con `python -m pipeline synth`.
+data/raw/*
+data/derived/*
+data/model.json
+!data/**/.gitkeep
+
+.pytest_cache/
+
+# Compilación de la app del reloj
+*.prg
+*.der
+*.debug.xml
+bin/

@@ -37,11 +37,14 @@ VOLANTE, MANDO, TECLADO = "volante", "mando", "teclado"
 
 #: Acciones del juego, independientes del mando físico que las produzca.
 ACCIONES = ("shift_up", "shift_down", "toggle_auto", "toggle_view",
-            "engine", "reset", "slowmo")
+            "engine", "reset", "slowmo",
+            "menu", "telemetry", "minimap", "plan", "line")
 
 #: Botones de un gamepad estándar para cada acción. SDL normaliza cualquier
 #: mando conocido a este esquema, así que vale igual para la Steam Deck que
-#: para un mando de XBox o de PlayStation.
+#: para un mando de XBox o de PlayStation. La CRUCETA (d-pad) da acceso a
+#: los paneles del HUD sin necesitar las teclas F1/F2, que el teclado
+#: virtual de la Deck no tiene.
 _PAD_BOTONES = {
     "shift_up": sdl2.SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
     "shift_down": sdl2.SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
@@ -50,6 +53,11 @@ _PAD_BOTONES = {
     "toggle_view": sdl2.SDL_CONTROLLER_BUTTON_X,
     "toggle_auto": sdl2.SDL_CONTROLLER_BUTTON_Y,
     "slowmo": sdl2.SDL_CONTROLLER_BUTTON_BACK,
+    "menu": sdl2.SDL_CONTROLLER_BUTTON_START,          # volver al menu (ESC)
+    "telemetry": sdl2.SDL_CONTROLLER_BUTTON_DPAD_UP,   # F2
+    "plan": sdl2.SDL_CONTROLLER_BUTTON_DPAD_RIGHT,     # planta del tramo (N)
+    "minimap": sdl2.SDL_CONTROLLER_BUTTON_DPAD_LEFT,   # plano completo (M)
+    "line": sdl2.SDL_CONTROLLER_BUTTON_DPAD_DOWN,      # trazada ideal (L)
 }
 
 
@@ -121,6 +129,10 @@ class WheelInput:
         self._prev_acciones = {}
 
     def _open_device(self):
+        modo = str(getattr(cfg, "INPUT_MODE", "auto")).lower()
+        if modo == "teclado":
+            return                              # no se abre ningun dispositivo
+
         count = sdl2.SDL_NumJoysticks()
         volante = pad = -1
         for i in range(count):
@@ -128,13 +140,31 @@ class WheelInput:
             name = raw.decode("utf-8", "replace").lower() if raw else ""
             if any(h in name for h in cfg.WHEEL_NAME_HINTS):
                 volante = i
-                break
             if pad < 0 and sdl2.SDL_IsGameController(i):
                 pad = i
-        # un VOLANTE reconocido manda siempre; si no, un mando; y si hay un
-        # dispositivo que SDL no sabe clasificar, se prueba como volante
-        if volante < 0 and pad < 0 and count > 0:
-            volante = 0
+
+        if modo == "volante":
+            # forzar VOLANTE: el primer dispositivo (o el que coincida por
+            # nombre). Util si el volante no esta en WHEEL_NAME_HINTS.
+            volante = volante if volante >= 0 else (0 if count > 0 else -1)
+            pad = -1
+        elif modo == "mando":
+            # forzar MANDO: solo si SDL lo reconoce como game controller.
+            # Un mando sin mapeo (p.ej. la Deck fuera de Steam) NO se puede
+            # leer bien como gamepad; en ese caso se avisa y se cae a teclado
+            # en vez de fingir un volante con los pedales al reves.
+            volante = -1
+            if pad < 0:
+                print("AVISO: se pidio --mando pero SDL no reconoce ningun "
+                      "gamepad.\n  En una Steam Deck, LANZA EL JUEGO DESDE "
+                      "STEAM (Steam Input lo\n  convierte en un mando de "
+                      "Xbox). Por ahora, teclado.")
+        else:  # "auto"
+            # un VOLANTE reconocido manda; si no, un mando reconocido; y solo
+            # si NO hay nada reconocido se prueba el primero como volante
+            if volante < 0 and pad < 0 and count > 0:
+                volante = 0
+
         if volante >= 0:
             self.joystick = sdl2.SDL_JoystickOpen(volante)
             self.kind = VOLANTE if self.joystick else TECLADO

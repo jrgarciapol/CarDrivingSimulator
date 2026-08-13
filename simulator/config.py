@@ -59,6 +59,16 @@ TIME_SCALES = (1.0, 0.5, 0.25, 0.1)   # velocidades de la cámara lenta
 
 STEERING_DEADZONE = 0.005    # zona muerta del volante [0 .. 0.05]
 
+# Cómo se lee la entrada. "auto" detecta solo (volante reconocido > mando >
+# teclado). Los otros valores FUERZAN el modo, por si la deteccion falla:
+# en una Steam Deck lanzada fuera de Steam, el mando NO se anuncia como
+# gamepad y "auto" lo confunde con un volante (stick haciendo de direccion,
+# pedales invertidos). La solucion buena es lanzar desde Steam (Steam Input
+# lo convierte en un mando de Xbox); "mando" aqui es el plan B.
+# Valores: "auto" | "mando" | "volante" | "teclado".
+# Tambien por linea de comandos: --mando / --volante / --teclado
+INPUT_MODE = "auto"
+
 # ---------------------------------------------------------------------------
 # MANDO (Steam Deck, XBox, PlayStation...)
 #

@@ -252,14 +252,25 @@ bash tools/instalar_steamdeck.sh
 ./jugar.sh
 ```
 
-> **`pip: command not found`.** Es lo normal en una Steam Deck y no falla
-> nada del juego: **SteamOS trae Python 3 pero su imagen viene sin pip**,
-> porque el sistema de archivos raíz es de solo lectura. A menudo tampoco
-> existe `python3 -m pip`. El script de arriba lo resuelve: usa pip si
-> está, si no lo activa con `ensurepip`, y si tampoco, lo descarga con el
-> `get-pip.py` oficial. Después crea un entorno virtual en `.venv` dentro
-> del proyecto, que es lo más limpio en un sistema inmutable: no toca nada
-> del sistema y se deshace con `rm -rf .venv`.
+> **`pip: command not found`** o **`error: externally-managed-environment`.**
+> Son lo normal en una Steam Deck y no falla nada del juego: **SteamOS trae
+> Python 3 pero su imagen viene sin pip**, con el sistema de archivos raíz
+> de solo lectura y el Python del sistema marcado como *externally-managed*
+> (PEP 668), que rechaza instalar nada en él. El script de arriba lo evita:
+> **no toca el Python del sistema**, crea un entorno virtual en `.venv`
+> dentro del proyecto (que sí admite instalar paquetes) y, si ese entorno
+> no trae pip, se lo inyecta con el `get-pip.py` oficial. Es lo más limpio
+> en un sistema inmutable: no ensucia el sistema y se deshace con
+> `rm -rf .venv`.
+>
+> Si prefieres hacerlo a mano, es exactamente esto:
+> ```bash
+> python3 -m venv --without-pip .venv
+> curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+> .venv/bin/python /tmp/get-pip.py
+> .venv/bin/python -m pip install pysdl2 pysdl2-dll numpy
+> .venv/bin/python -m simulator.main --rendimiento
+> ```
 
 Instala **solo lo que el juego necesita** (`pysdl2`, `pysdl2-dll`,
 `numpy`). El `matplotlib` de `requirements.txt` es únicamente para los

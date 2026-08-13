@@ -960,30 +960,6 @@ class Hud:
         font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 100, 6)
         font.draw_text(self.r, "KM/H", 170, H - 84, 2)
 
-        # ------- radio de la curva: CENTRADO justo encima del horizonte, para
-        # tenerlo delante de los ojos sin apartar la mirada del centro
-        if track is not None:
-            look = cfg.HUD_RADIUS_LOOKAHEAD_M
-            # curvatura media en un entorno del punto de mira (estabiliza)
-            ks = [track.kappa_at(st.s + look + d) for d in (-8, -4, 0, 4, 8)]
-            kap = sum(ks) / len(ks)
-            cxc = W // 2
-            hy = H // 2 + int(camera_pitch_px(st))       # horizonte
-            by = hy - 108
-            self._fill(cxc - 150, by, 300, 64, (0, 0, 0, 150))
-            lbl = f"RADIO A {int(look)} M"
-            font.draw_text(self.r, lbl, cxc - font.text_width(lbl, 2) // 2,
-                           by + 5, 2, (190, 190, 190, 255))
-            if abs(kap) < 1.0 / cfg.HUD_RADIUS_STRAIGHT_M:
-                txt, col = "RECTA", (120, 220, 120, 255)
-            else:
-                R = 1.0 / abs(kap)
-                col = (255, 90, 70, 255) if R < 60 else (
-                    (255, 200, 60, 255) if R < 200 else (120, 220, 120, 255))
-                txt = f"{R:.0f} M  {'DER' if kap > 0 else 'IZQ'}"
-            font.draw_text(self.r, txt, cxc - font.text_width(txt, 4) // 2,
-                           by + 26, 4, col)
-
         # tiempos
         self._fill(W - 320, 20, 300, 116, (0, 0, 0, 160))
         font.draw_text(self.r, f"VUELTA {lap_count}", W - 300, 32, 2)
@@ -1171,6 +1147,175 @@ class Hud:
         # el coche
         cx_, cy_ = to_px(pts[i_car])
         self._fill(cx_ - 3, cy_ - 3, 7, 7, (235, 45, 35))
+
+    #: Escalas admitidas para la planta (px por metro). Se elige la mayor
+    #: que quepa: cuantizarlas evita que el dibujo "respire" al avanzar,
+    #: que es lo que pasa con una escala continua y lo hace ilegible.
+    PLAN_ESCALAS = (0.18, 0.24, 0.32, 0.42, 0.55, 0.72, 0.95)
+
+    def draw_plan_ahead(self, track, car_state):
+        """PLANTA DEL TRAMO QUE VIENE, abajo a la derecha.
+
+        Vista EGOCENTRICA: el coche y el trazado que se desenrolla por
+        delante, como las notas de un copiloto. Sustituye al antiguo
+        indicador de "radio a 50 m", que daba un número aislado: un radio
+        sin contexto no dice si hay que frenar, porque eso depende de lo que
+        venga DESPUES.
+
+        Tres capas de información:
+
+          - LA FORMA, para anticipar: se ve si una curva encadena con otra
+            o da a una recta.
+          - EL COLOR: cada punto se pinta según su radio (rojo cerrada,
+            ámbar media, verde abierta), así que la severidad se lee sin
+            mirar ningún número.
+          - LOS NUMEROS: el radio en metros de las curvas MAS CERRADAS, que
+            son las que obligan a frenar. Es el dato duro para comparar
+            circuitos entre sí.
+        """
+        if track is None:
+            return
+        W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        pw = min(int(cfg.MAP_AHEAD_W), W - 40)
+        ph = min(int(cfg.MAP_AHEAD_H), H - 120)
+        x0, y0 = W - pw - 16, H - ph - 44
+        self._fill(x0, y0, pw, ph, (0, 0, 0, int(cfg.MAP_AHEAD_ALPHA)))
+        borde = (120, 140, 170, 90)
+        self._fill(x0, y0, pw, 1, borde)
+        self._fill(x0, y0 + ph - 1, pw, 1, borde)
+        self._fill(x0, y0, 1, ph, borde)
+        self._fill(x0 + pw - 1, y0, 1, ph, borde)
+
+        pts = track.forward_plan(car_state.s, cfg.MAP_AHEAD_M, 6.0)
+        xs = [p_[0] for p_ in pts]
+        ys = [p_[1] for p_ in pts]
+        anc = max(1.0, max(xs) - min(xs))
+        alt = max(1.0, max(ys) - min(ys))
+
+        # ESCALA: se elige la mayor de la lista que deje el tramo dentro del
+        # panel con margen. Escala continua llenaría mejor el hueco, pero el
+        # dibujo cambiaría de tamaño cada fotograma; cuantizada se queda
+        # quieta durante tramos largos y salta pocas veces, que es lo que
+        # permite leerla. La regla de abajo dice siempre cuál está en uso.
+        util_w, util_h = (pw - 48) * 0.92, (ph - 62) * 0.92
+        ppm = self.PLAN_ESCALAS[0]
+        for e in self.PLAN_ESCALAS:
+            if anc * e <= util_w and alt * e <= util_h:
+                ppm = e
+        # ...con histéresis: si la escala elegida cambia, se acepta solo si
+        # es un cambio sostenido (evita el parpadeo justo en el umbral)
+        if not hasattr(self, "_plan_ppm"):
+            self._plan_ppm, self._plan_ppm_n = ppm, 0
+        if ppm != self._plan_ppm:
+            self._plan_ppm_n += 1
+            if self._plan_ppm_n > 12:
+                self._plan_ppm, self._plan_ppm_n = ppm, 0
+        else:
+            self._plan_ppm_n = 0
+        ppm = self._plan_ppm
+
+        # ENCUADRE automático. Hace falta porque a 1 km el trazado puede
+        # volver sobre sí mismo y quedarse DETRAS del coche: en Silverstone,
+        # desde el km 0,9 el tramo llega a −536 m en Y, medio kilómetro por
+        # detrás. Con el coche clavado abajo, todo eso caía fuera.
+        mx = (min(xs) + max(xs)) / 2.0
+        my = (min(ys) + max(ys)) / 2.0
+        ox_t = x0 + pw / 2.0 - mx * ppm
+        oy_t = y0 + (ph + 18) / 2.0 + my * ppm
+        if not hasattr(self, "_plan_o"):
+            self._plan_o = [ox_t, oy_t]
+        self._plan_o[0] += (ox_t - self._plan_o[0]) * 0.10
+        self._plan_o[1] += (oy_t - self._plan_o[1]) * 0.10
+        cx, cy = self._plan_o                 # aquí queda el coche
+
+        def dentro(px, py, m=2):
+            return (x0 + m <= px <= x0 + pw - m
+                    and y0 + m <= py <= y0 + ph - m)
+
+        def color_radio(k):
+            if abs(k) < 1e-6:
+                return (110, 225, 110)
+            R = 1.0 / abs(k)
+            if R < 80.0:
+                return (255, 85, 65)       # cerrada: frenada fuerte
+            if R < 200.0:
+                return (250, 200, 60)      # media
+            return (110, 225, 110)         # abierta o recta
+
+        # de lejos a cerca, para que lo inminente quede dibujado ENCIMA
+        n = len(pts)
+        for idx in range(n - 1, -1, -1):
+            x, y, k, _s = pts[idx]
+            px, py = cx + x * ppm, cy - y * ppm
+            if not dentro(px, py):
+                continue
+            col = color_radio(k)
+            # lo lejano se atenúa y adelgaza: da profundidad y deja claro
+            # de un vistazo qué es inminente y qué queda lejos
+            f = 1.0 - 0.6 * (idx / max(1, n - 1))
+            g = 3 + int(3 * f)
+            # saturar a 255: sin esto, el rojo cercano (255) mas el realce
+            # se pasaba de byte y salia un trazo magenta
+            self._fill(px - g // 2, py - g // 2, g, g,
+                       (min(255, int(col[0] * f + 40)),
+                        min(255, int(col[1] * f + 40)),
+                        min(255, int(col[2] * f + 40)), 240))
+
+        # EL COCHE: triángulo blanco apuntando hacia delante (arriba)
+        for k in range(11):
+            self._fill(cx - k // 2, cy - k + 5, max(1, k), 2,
+                       (255, 255, 255, 255))
+
+        # RADIOS de las curvas más cerradas
+        n_lab = int(getattr(cfg, "MAP_AHEAD_LABELS", 5))
+        usadas = []
+        if n_lab > 0:
+            curvas = track.corners_ahead(
+                car_state.s, cfg.MAP_AHEAD_M, 6.0, cfg.MAP_AHEAD_R_MAX,
+                n_lab, getattr(cfg, "MAP_AHEAD_SMOOTH_M", 18.0))
+            for s_ap, radio, signo in curvas:
+                j = int((s_ap - car_state.s) / 6.0)
+                if not 0 <= j < n:
+                    continue
+                x, y, _k, _s = pts[j]
+                px, py = cx + x * ppm, cy - y * ppm
+                if not dentro(px, py, 10):
+                    continue
+                # la etiqueta va al EXTERIOR de la curva, donde no hay
+                # pista: dentro taparía justamente el ápice
+                a, b = pts[max(0, j - 2)], pts[min(n - 1, j + 2)]
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                ln = math.hypot(dx, dy) or 1.0
+                oxn, oyn = -signo * dy / ln, signo * dx / ln
+                txt = f"{radio:.0f}"
+                tw = font.text_width(txt, 2)
+                lx = px + oxn * 26 - tw / 2
+                ly = py - oyn * 26 - 8
+                lx = max(x0 + 3, min(x0 + pw - tw - 6, lx))
+                ly = max(y0 + 24, min(y0 + ph - 34, ly))
+                # si dos etiquetas se solapan, se desplaza la nueva
+                for (ux, uy, uw) in usadas:
+                    if abs(lx - ux) < (tw + uw) / 2 + 6 and abs(ly - uy) < 20:
+                        ly = uy + 22 if ly >= uy else uy - 22
+                        ly = max(y0 + 24, min(y0 + ph - 34, ly))
+                usadas.append((lx, ly, tw))
+                col = color_radio(1.0 / max(1.0, radio))
+                self._fill(px - 3, py - 3, 7, 7, (255, 255, 255, 255))
+                self._fill(lx - 4, ly - 3, tw + 8, 20, (0, 0, 0, 205))
+                font.draw_text(self.r, txt, lx, ly, 2,
+                               (col[0], col[1], col[2], 255))
+
+        # cabecera y regla de referencia (con la escala realmente en uso)
+        font.draw_text(self.r, f"{int(cfg.MAP_AHEAD_M)} M POR DELANTE",
+                       x0 + 10, y0 + 8, 2, (200, 215, 240, 255))
+        metros = 200 if 200 * ppm < pw * 0.45 else 100
+        bar = int(metros * ppm)
+        by = y0 + ph - 14
+        self._fill(x0 + 12, by, bar, 2, (215, 215, 215, 210))
+        self._fill(x0 + 12, by - 4, 1, 10, (215, 215, 215, 210))
+        self._fill(x0 + 12 + bar, by - 4, 1, 10, (215, 215, 215, 210))
+        font.draw_text(self.r, f"{metros} M", x0 + 18 + bar, by - 7, 2,
+                       (185, 185, 185, 255))
 
     def draw_telemetry(self, car_state, steering=0.0, sim_time=0.0):
         """Superposición F2 rediseñada:

@@ -95,6 +95,10 @@ def main(argv=None):
              car_name, "SECO",
              wrong_way=args.contrario,
              lap_valid=not args.sin_cronometrar)
+    if cfg.MINIMAP:
+        hud.draw_minimap(track, st)
+    if cfg.MAP_AHEAD:
+        hud.draw_plan_ahead(track, st)
     if args.telemetria:
         hud.draw_telemetry(st, args.volante, 12.0)
 

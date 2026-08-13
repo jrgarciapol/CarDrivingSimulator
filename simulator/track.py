@@ -241,6 +241,84 @@ class Track:
         self._map_aspect = ((max_x - min_x) / span, (max_y - min_y) / span)
         return self._map_pts
 
+    def forward_plan(self, s0: float, largo: float = 1000.0,
+                     paso: float = 6.0):
+        """Planta del tramo que VIENE, en coordenadas locales del coche.
+
+        Integra la curvatura hacia delante desde s0. El coche queda en el
+        origen mirando hacia +y, así que el resultado se puede pintar tal
+        cual en pantalla sin más que escalar: es un plano egocéntrico, como
+        las notas de un copiloto.
+
+        Devuelve [(x, y, kappa, s)] en metros. Convenio de curvatura:
+        kappa > 0 = curva a la DERECHA, que aquí sale a +x.
+        """
+        pts = []
+        x = y = h = 0.0
+        s = s0
+        n = max(1, int(largo / paso))
+        for _ in range(n):
+            k = self.kappa_at(s)
+            pts.append((x, y, k, s))
+            x += math.sin(h) * paso
+            y += math.cos(h) * paso
+            h += k * paso
+            s += paso
+        return pts
+
+    def corners_ahead(self, s0: float, largo: float = 1000.0,
+                      paso: float = 6.0, r_max: float = 600.0,
+                      max_n: int = 6, suave_m: float = 18.0):
+        """Curvas del tramo que viene, de la más cerrada a la más abierta.
+
+        Una curva es un tramo CONTINUO con curvatura por encima del umbral
+        (radio < r_max); su radio característico es el del punto de máxima
+        curvatura, que es el ápice. Sin agrupar por tramos continuos, cada
+        segmento de 4 m contaría como una curva distinta y saldrían decenas
+        de etiquetas encima de la misma curva.
+
+        Devuelve [(s_apice, radio, signo)] ordenado por estación, con signo
+        +1 a derechas y −1 a izquierdas.
+        """
+        n = max(1, int(largo / paso))
+        ks = [self.kappa_at(s0 + i * paso) for i in range(n)]
+        # SUAVIZADO sobre una longitud FISICA (no un número de muestras):
+        # los trazados importados vienen de un eje medido por GPS y su
+        # curvatura tiene picos de ruido. Sin suavizar, un pico aislado se
+        # confunde con una curva cerradísima: en Silverstone salía un radio
+        # de 18 m donde no hay ninguna curva de menos de 25.
+        # Con +-18 m los radios detectados coinciden con los reales del
+        # circuito (24, 29, 30, 37, 44, 48 m frente a The Loop 25, Village
+        # 30, Vale 40, Luffield 50).
+        win = max(1, int(suave_m / max(1e-6, paso)))
+        sm = []
+        for i in range(n):
+            a = max(0, i - win)
+            b = min(n, i + win + 1)
+            sm.append(sum(ks[a:b]) / (b - a))
+        umbral = 1.0 / max(1.0, r_max)
+        curvas = []
+        i = 0
+        while i < n:
+            if abs(sm[i]) < umbral:
+                i += 1
+                continue
+            j = i
+            mejor = i
+            signo = 1.0 if sm[i] > 0 else -1.0
+            # el tramo dura mientras siga curvando EN EL MISMO SENTIDO
+            while j < n and abs(sm[j]) >= umbral and \
+                    (1.0 if sm[j] > 0 else -1.0) == signo:
+                if abs(sm[j]) > abs(sm[mejor]):
+                    mejor = j
+                j += 1
+            curvas.append((s0 + mejor * paso, 1.0 / abs(sm[mejor]), signo))
+            i = j
+        # se quedan las MAS CERRADAS (las que obligan a frenar), y luego se
+        # devuelven en orden de recorrido
+        curvas.sort(key=lambda c: c[1])
+        return sorted(curvas[:max_n], key=lambda c: c[0])
+
     def heading_at(self, s: float) -> float:
         """Rumbo absoluto de la carretera (rad) integrado desde la meta;
         para el parallax del fondo."""

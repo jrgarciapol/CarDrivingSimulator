@@ -23,7 +23,8 @@ Teclado (siempre activo):
   C              cambiar vista: sin coche / trasera / coche completo
   E              arrancar / parar el motor
   T              camara lenta (1x / 0.5x / 0.25x / 0.1x)
-  M              mostrar/ocultar el plano del circuito
+  M              mostrar/ocultar el plano del circuito completo
+  N              mostrar/ocultar la planta del tramo que viene
   ESC            salir
 """
 
@@ -271,6 +272,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     view_mode = cfg.VIEW_MODE   # 0 sin coche, 1 trasera, 2 coche completo
     time_idx = 0                # indice en TIME_SCALES (camara lenta)
     show_minimap = cfg.MINIMAP
+    show_plan = cfg.MAP_AHEAD      # planta del tramo que viene (tecla N)
     sim_time = 0.0              # tiempo de simulacion (para la telemetria)
     surface = "road"
     frame = 0
@@ -304,6 +306,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                     time_idx = (time_idx + 1) % len(cfg.TIME_SCALES)
                 elif sym == sdl2.SDLK_m:
                     show_minimap = not show_minimap
+                elif sym == sdl2.SDLK_n:
+                    show_plan = not show_plan
                 elif sym == sdl2.SDLK_r:
                     car.reset(car.state.s)
                     # recolocar el coche INVALIDA la vuelta en curso: si no,
@@ -462,6 +466,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             particles.draw(renderer, scene, track)
         if show_minimap:
             hud.draw_minimap(track, car.state)
+        if show_plan:
+            hud.draw_plan_ahead(track, car.state)
         if sim_time < record_banner_until:
             from . import font as font_mod
             txt = "NUEVO RECORD"

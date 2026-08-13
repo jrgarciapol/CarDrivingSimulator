@@ -1408,6 +1408,83 @@ def main():
     cfg.TOE_FRONT_DEG, cfg.TOE_REAR_DEG = _toe
 
     # ------------------------------------------------------------------
+    print("--- Planta del tramo que viene ---")
+    _tf = cfg.TRACK_FILE
+    cfg.TRACK_FILE = ""
+    tp = Track()
+
+    # la planta es la INTEGRAL de la curvatura: en una recta sale recta y
+    # el coche mira hacia +y (arriba en pantalla)
+    pl = tp.forward_plan(0.0, 200.0, 5.0)
+    recta = all(abs(p[0]) < 0.5 for p in pl[:20])
+    avanza = pl[10][1] > pl[2][1] > 0.0
+    results.append(check("en recta la planta sale recta y hacia delante",
+                         recta and avanza,
+                         f"x={pl[10][0]:.2f} m, y={pl[10][1]:.1f} m"))
+
+    # una curva a la DERECHA (kappa > 0) debe salir hacia +x
+    class CurvaDcha(FlatTrack):
+        length = 4000.0
+
+        def kappa_at(self, s):
+            return 1.0 / 100.0        # radio 100 m a derechas
+
+    # CurvaDcha no hereda de Track: se invoca el metodo sobre ella
+    pl = Track.forward_plan(CurvaDcha(), 0.0, 300.0, 5.0)
+    results.append(check("curvatura positiva = curva a la derecha",
+                         pl[-1][0] > 20.0,
+                         f"tras 300 m se ha desplazado {pl[-1][0]:.0f} m a la dcha"))
+
+    # el radio dibujado coincide con el real: en un circulo de radio R, tras
+    # recorrer un cuarto de vuelta el punto esta a (R, R)
+    R = 100.0
+    pl = Track.forward_plan(CurvaDcha(), 0.0, 2 * math.pi * R / 4.0, 1.0)
+    err = math.hypot(pl[-1][0] - R, pl[-1][1] - R)
+    results.append(check("la planta reproduce el radio real",
+                         err < 3.0,
+                         f"error {err:.2f} m en un cuarto de circulo de {R:.0f} m"))
+
+    # DETECCION DE CURVAS: una curva de radio conocido se detecta con su
+    # radio, y no se parte en varias
+    cs = Track.corners_ahead(CurvaDcha(), 0.0, 400.0, 6.0, 600.0, 6, 18.0)
+    results.append(check("una curva constante se detecta como UNA sola",
+                         len(cs) == 1 and abs(cs[0][1] - R) < 6.0
+                         and cs[0][2] > 0,
+                         f"{len(cs)} curva(s), R={cs[0][1]:.0f} m" if cs else "ninguna"))
+
+    # las rectas no se etiquetan
+    cs = tp.corners_ahead(0.0, 300.0, 6.0, 400.0, 6, 18.0)
+    results.append(check("una recta no genera curvas",
+                         cs == [], f"detectadas {len(cs)}"))
+
+    # SUAVIZADO: en un circuito real, sin el, un pico de ruido del eje GPS
+    # se toma por una curva cerradisima
+    cfg.TRACK_FILE = "tracks/silverstone.csv"
+    sv = Track()
+    crudo = sv.corners_ahead(0.0, sv.length, 6.0, 600.0, 30, 0.0)
+    suave = sv.corners_ahead(0.0, sv.length, 6.0, 600.0, 30, 18.0)
+    r_crudo = min(c[1] for c in crudo)
+    r_suave = min(c[1] for c in suave)
+    results.append(check("el suavizado quita los picos de ruido del trazado",
+                         r_suave > r_crudo * 1.2 and r_suave > 20.0,
+                         f"radio minimo {r_crudo:.0f} m -> {r_suave:.0f} m "
+                         f"(Silverstone real: The Loop ~25 m)"))
+
+    # se etiquetan las MAS CERRADAS, que son las que obligan a frenar
+    top = sv.corners_ahead(0.0, sv.length, 6.0, 400.0, 4, 18.0)
+    resto = sv.corners_ahead(0.0, sv.length, 6.0, 400.0, 30, 18.0)
+    results.append(check("se eligen las curvas mas cerradas",
+                         len(top) == 4
+                         and max(c[1] for c in top)
+                         <= sorted(c[1] for c in resto)[3] + 0.01,
+                         f"4 mas cerradas: "
+                         + ", ".join(f"{c[1]:.0f}" for c in sorted(top, key=lambda c: c[1]))))
+    # ...y se devuelven en ORDEN DE RECORRIDO, para dibujarlas seguidas
+    results.append(check("las curvas se devuelven en orden de recorrido",
+                         all(top[i][0] < top[i + 1][0] for i in range(len(top) - 1))))
+    cfg.TRACK_FILE = _tf
+
+    # ------------------------------------------------------------------
     print("--- Garaje: los 8 coches ---")
     snapshot = {k: getattr(cfg, k) for k in garage.CAR_KEYS
                 if hasattr(cfg, k)}

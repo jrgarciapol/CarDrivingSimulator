@@ -243,13 +243,53 @@ El simulador corre **nativo** en SteamOS, sin Proton: es Python + SDL2 y el
 force feedback usa `SDL_Haptic`, que en Linux se apoya en la interfaz de
 force feedback de evdev.
 
+### Instalación
+
+En modo Escritorio, abre una consola en la carpeta del proyecto y ejecuta:
+
 ```bash
-# el sistema de archivos de SteamOS es inmutable: instalar en el usuario
-pip install --user -r requirements.txt
-python3 -m simulator.main --rendimiento
+bash tools/instalar_steamdeck.sh
+./jugar.sh
 ```
 
-Ajustes pensados para ella:
+> **`pip: command not found`.** Es lo normal en una Steam Deck y no falla
+> nada del juego: **SteamOS trae Python 3 pero su imagen viene sin pip**,
+> porque el sistema de archivos raíz es de solo lectura. A menudo tampoco
+> existe `python3 -m pip`. El script de arriba lo resuelve: usa pip si
+> está, si no lo activa con `ensurepip`, y si tampoco, lo descarga con el
+> `get-pip.py` oficial. Después crea un entorno virtual en `.venv` dentro
+> del proyecto, que es lo más limpio en un sistema inmutable: no toca nada
+> del sistema y se deshace con `rm -rf .venv`.
+
+Instala **solo lo que el juego necesita** (`pysdl2`, `pysdl2-dll`,
+`numpy`). El `matplotlib` de `requirements.txt` es únicamente para los
+editores de trazado de `tools/`, que no se manejan con un mando: son unos
+70 MB que en la Deck no pintan nada.
+
+**Lo que NO conviene hacer** es `sudo steamos-readonly disable` y tirar de
+`pacman`. Funciona, pero cada actualización de SteamOS reemplaza la
+partición del sistema y se pierde, además de dejar el equipo en un estado
+que Valve no da por soportado.
+
+Si prefieres aislarlo del todo, **distrobox** viene de serie en SteamOS y
+es la opción más robusta ante actualizaciones:
+
+```bash
+distrobox create --name sim --image archlinux:latest
+distrobox enter sim
+sudo pacman -S --needed python python-pip sdl2
+pip install pysdl2 numpy && python -m simulator.main --rendimiento
+```
+
+### Añadirlo a la interfaz de Steam
+
+Con `jugar.sh` creado: **Steam → Añadir un juego → Añadir un juego que no
+sea de Steam** y elige `jugar.sh`. Es una aplicación **nativa** de Linux,
+así que **no** hay que forzar ninguna herramienta de compatibilidad
+(Proton). Así se puede lanzar desde el modo Consola, con los controles del
+mando ya mapeados.
+
+### Ajustes pensados para la Deck
 
 - **Resolución automática** (`WINDOW_AUTO`): la ventana se encaja en la
   pantalla manteniendo la proporción. En una Deck, 1920×1080 pasa a

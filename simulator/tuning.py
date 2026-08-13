@@ -151,9 +151,12 @@ def _recompute_derived():
     cfg.CAR_CG_TO_REAR = cfg.WHEELBASE * cfg.WEIGHT_DIST_FRONT
 
 
-def run_tuning(renderer):
+def run_tuning(renderer, wheel=None):
     """Editor de configuración. Vuelve con ESC/ENTER (los cambios quedan
-    aplicados sobre cfg; el coche/circuito los recogen al REempezar)."""
+    aplicados sobre cfg; el coche/circuito los recogen al REempezar).
+
+    `wheel` permite navegarlo con el MANDO: sin él, un usuario de Steam Deck
+    que entrase aquí quedaría atrapado sin poder salir (no hay teclado)."""
     W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
     entries = get_entries()
     sel = 0
@@ -161,6 +164,16 @@ def run_tuning(renderer):
     n_rows = (H - 260) // 26
     rect = sdl2.SDL_Rect()
     event = sdl2.SDL_Event()
+
+    def ajustar(direccion):
+        """Sube (+1) o baja (−1) el valor seleccionado un paso normal."""
+        e = entries[sel]
+        cur = getattr(cfg, e["name"], e["default"])
+        if e["is_bool"]:
+            setattr(cfg, e["name"], not cur)
+        else:
+            v = cur + _step(e, False) * direccion
+            setattr(cfg, e["name"], int(round(v)) if e["is_int"] else v)
 
     def _fill(x, y, w, h, color):
         sdl2.SDL_SetRenderDrawColor(renderer, color[0], color[1], color[2],
@@ -206,6 +219,22 @@ def run_tuning(renderer):
             elif sym == sdl2.SDLK_F5:
                 for e in entries:
                     setattr(cfg, e["name"], e["default"])
+
+        # navegacion con el MANDO (cruceta/stick): sube/baja, ajusta con
+        # izq/der y sale con A o B. Asi no se queda uno atrapado en la Deck
+        if wheel is not None:
+            for a in wheel.menu_nav():
+                if a in ("ok", "back"):
+                    _recompute_derived()
+                    return
+                if a == "up":
+                    sel = (sel - 1) % len(entries)
+                elif a == "down":
+                    sel = (sel + 1) % len(entries)
+                elif a == "left":
+                    ajustar(-1)
+                elif a == "right":
+                    ajustar(1)
 
         # mantener la selección a la vista (con margen para las cabeceras
         # de sección, que también consumen filas)

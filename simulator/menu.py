@@ -34,8 +34,12 @@ def _fill(renderer, rect, x, y, w, h, color):
     sdl2.SDL_RenderFillRect(renderer, rect)
 
 
-def run_menu(renderer):
-    """Devuelve dict con la selección, o None si el usuario sale."""
+def run_menu(renderer, wheel=None):
+    """Devuelve dict con la selección, o None si el usuario sale.
+
+    `wheel` (opcional) permite navegar el menú con el MANDO: sin él, en una
+    Steam Deck el menú solo respondería al teclado y no se podría ni elegir
+    coche ni empezar."""
     W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
     cars = garage.list_cars()
     tracks = _list_tracks()
@@ -66,48 +70,76 @@ def run_menu(renderer):
     rect = sdl2.SDL_Rect()
     event = sdl2.SDL_Event()
 
+    # teclado y mando producen las MISMAS seis acciones, procesadas en un
+    # solo sitio: asi el menu funciona igual con flechas o con la cruceta
+    def cambiar(step):
+        nonlocal i_car, i_wf, i_wr, i_trk, i_cnd
+        if row == 0:
+            i_car = (i_car + step) % len(cars)
+            i_wf, i_wr = serie_idx(i_car)       # su rueda de serie
+        elif row in (1, 2):
+            whl = wheels_for(i_car)
+            if whl:
+                if row == 1:
+                    i_wf = (i_wf + step) % len(whl)
+                else:
+                    i_wr = (i_wr + step) % len(whl)
+        elif row == 3:
+            i_trk = (i_trk + step) % len(tracks)
+        elif row == 4:
+            i_cnd = (i_cnd + step) % len(conds)
+
+    def activar():
+        """None = seguir en el menu; dict = EMPEZAR con esa seleccion."""
+        nonlocal row
+        if row == 5:                            # AJUSTES AVANZADOS
+            from .tuning import run_tuning
+            run_tuning(renderer, wheel)
+            return None
+        if row == rows - 1:                     # EMPEZAR
+            whl = wheels_for(i_car)
+            s_f, s_r = serie_idx(i_car)
+            cambia = whl and (i_wf != s_f or i_wr != s_r)
+            return {"car": cars[i_car], "track": tracks[i_trk],
+                    "cond": conds[i_cnd],
+                    "wheel": whl[i_wf][0] if cambia else None,
+                    "wheel_rear": whl[i_wr][0] if cambia else None}
+        row = (row + 1) % rows
+        return None
+
+    _TECLAS = {
+        sdl2.SDLK_ESCAPE: "back", sdl2.SDLK_UP: "up", sdl2.SDLK_DOWN: "down",
+        sdl2.SDLK_RETURN: "ok", sdl2.SDLK_KP_ENTER: "ok",
+        sdl2.SDLK_LEFT: "left", sdl2.SDLK_RIGHT: "right",
+    }
+
     while True:
+        acciones = []
         while sdl2.SDL_PollEvent(ctypes.byref(event)):
             if event.type == sdl2.SDL_QUIT:
                 return None
             if event.type == sdl2.SDL_KEYDOWN and not event.key.repeat:
-                sym = event.key.keysym.sym
-                if sym == sdl2.SDLK_ESCAPE:
-                    return None
-                if sym == sdl2.SDLK_UP:
-                    row = (row - 1) % rows
-                elif sym == sdl2.SDLK_DOWN:
-                    row = (row + 1) % rows
-                elif sym in (sdl2.SDLK_RETURN, sdl2.SDLK_KP_ENTER):
-                    if row == 5:            # AJUSTES AVANZADOS
-                        from .tuning import run_tuning
-                        run_tuning(renderer)
-                    elif row == rows - 1:
-                        whl = wheels_for(i_car)
-                        s_f, s_r = serie_idx(i_car)
-                        cambia = whl and (i_wf != s_f or i_wr != s_r)
-                        return {"car": cars[i_car], "track": tracks[i_trk],
-                                "cond": conds[i_cnd],
-                                "wheel": whl[i_wf][0] if cambia else None,
-                                "wheel_rear": whl[i_wr][0] if cambia else None}
-                    else:
-                        row = (row + 1) % rows
-                elif sym in (sdl2.SDLK_LEFT, sdl2.SDLK_RIGHT):
-                    step = 1 if sym == sdl2.SDLK_RIGHT else -1
-                    if row == 0:
-                        i_car = (i_car + step) % len(cars)
-                        i_wf, i_wr = serie_idx(i_car)   # su rueda de serie
-                    elif row in (1, 2):
-                        whl = wheels_for(i_car)
-                        if whl:
-                            if row == 1:
-                                i_wf = (i_wf + step) % len(whl)
-                            else:
-                                i_wr = (i_wr + step) % len(whl)
-                    elif row == 3:
-                        i_trk = (i_trk + step) % len(tracks)
-                    elif row == 4:
-                        i_cnd = (i_cnd + step) % len(conds)
+                a = _TECLAS.get(event.key.keysym.sym)
+                if a:
+                    acciones.append(a)
+        if wheel is not None:
+            acciones.extend(wheel.menu_nav())   # cruceta/stick del mando
+
+        for a in acciones:
+            if a == "back":
+                return None
+            if a == "up":
+                row = (row - 1) % rows
+            elif a == "down":
+                row = (row + 1) % rows
+            elif a == "left":
+                cambiar(-1)
+            elif a == "right":
+                cambiar(1)
+            elif a == "ok":
+                sel = activar()
+                if sel is not None:
+                    return sel
 
         # ------------------------------------------------ dibujo
         sdl2.SDL_SetRenderDrawColor(renderer, 14, 18, 26, 255)
@@ -150,8 +182,9 @@ def run_menu(renderer):
             rec_txt = "RECORD: --:--.-  (SIN VUELTAS TODAVIA)"
         font.draw_text(renderer, rec_txt, 150, y + 40, 2, (120, 230, 120, 255))
 
-        font.draw_text(renderer,
-                       "FLECHAS: ELEGIR   ENTER: CONTINUAR   ESC: SALIR",
-                       150, H - 60, 2, (150, 150, 150, 255))
+        ayuda = "FLECHAS: ELEGIR   ENTER: CONTINUAR   ESC: SALIR"
+        if wheel is not None and getattr(wheel, "es_mando", False):
+            ayuda = "CRUCETA/STICK: ELEGIR   A: CONTINUAR   B: SALIR"
+        font.draw_text(renderer, ayuda, 150, H - 60, 2, (150, 150, 150, 255))
         sdl2.SDL_RenderPresent(renderer)
         sdl2.SDL_Delay(16)

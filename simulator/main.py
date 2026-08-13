@@ -203,7 +203,7 @@ def main(argv=None):
     # tocar los AJUSTES AVANZADOS) sin cerrar el programa; ESC en el menú sale.
     while True:
         if not args.frames:
-            sel = run_menu(renderer)
+            sel = run_menu(renderer, wheel)
             if sel is None:
                 sound.close()
                 ffb.close()

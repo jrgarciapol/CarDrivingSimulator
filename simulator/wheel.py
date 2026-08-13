@@ -127,6 +127,7 @@ class WheelInput:
         self.clutch = 0.0
         self._prev_buttons = {}
         self._prev_acciones = {}
+        self._prev_menu = {}
 
     def _open_device(self):
         modo = str(getattr(cfg, "INPUT_MODE", "auto")).lower()
@@ -226,6 +227,43 @@ class WheelInput:
         prev = self._prev_acciones.get(accion, False)
         self._prev_acciones[accion] = now
         return now and not prev
+
+    def menu_nav(self):
+        """Navegación de menús con el MANDO: devuelve el conjunto de
+        acciones recién pulsadas (flancos) entre {up, down, left, right, ok,
+        back}. Sin esto, en una Steam Deck lanzada desde Steam el juego
+        recibe un gamepad pero el MENU solo escucha el teclado, asi que el
+        usuario se queda atascado en la pantalla de seleccion sin poder
+        elegir coche ni empezar.
+
+        Se leen la cruceta Y el stick izquierdo (con zona muerta y flanco),
+        para que valga cualquiera de los dos."""
+        if self.kind != MANDO or not self.controller:
+            return set()
+        sdl2.SDL_GameControllerUpdate()
+        c = self.controller
+
+        def boton(b):
+            return bool(sdl2.SDL_GameControllerGetButton(c, b))
+
+        lx = _axis_to_norm(sdl2.SDL_GameControllerGetAxis(
+            c, sdl2.SDL_CONTROLLER_AXIS_LEFTX))
+        ly = _axis_to_norm(sdl2.SDL_GameControllerGetAxis(
+            c, sdl2.SDL_CONTROLLER_AXIS_LEFTY))
+        dz = 0.6                        # umbral alto: solo empujes claros
+        estado = {
+            "up": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_UP) or ly < -dz,
+            "down": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_DOWN) or ly > dz,
+            "left": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_LEFT) or lx < -dz,
+            "right": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_RIGHT) or lx > dz,
+            "ok": boton(sdl2.SDL_CONTROLLER_BUTTON_A)
+            or boton(sdl2.SDL_CONTROLLER_BUTTON_START),
+            "back": boton(sdl2.SDL_CONTROLLER_BUTTON_B),
+        }
+        flancos = {k for k, v in estado.items()
+                   if v and not self._prev_menu.get(k, False)}
+        self._prev_menu = estado
+        return flancos
 
     def _leer_mando(self, speed_kmh: float, dt: float):
         """Lee el mando: stick izquierdo a la dirección (pasando por

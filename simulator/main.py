@@ -12,6 +12,13 @@ Controles con mando (Steam Deck, XBox, PlayStation):
   gatillos       acelerador (derecho) / freno (izquierdo), analogicos
   L1 / R1        bajar / subir marcha
   A B X Y        motor / recolocar / vista / cambio automatico
+  cruceta        ARRIBA telemetria, IZQ plano, DER planta, ABAJO trazada
+  START          volver al menu
+
+En una Steam Deck, LANZA EL JUEGO DESDE STEAM (anadelo como juego externo):
+Steam Input le da un mando de Xbox y los gatillos funcionan. Fuera de Steam
+el mando no se anuncia como gamepad. Se puede forzar el modo de entrada con
+--mando / --volante / --teclado (o INPUT_MODE en config.py).
 Teclado (siempre activo):
   flechas        conducir (si no hay volante)
   A / Z          subir / bajar marcha
@@ -130,7 +137,21 @@ def main(argv=None):
                         help="forzar el tamano de ventana, p.ej. 1280x800")
     parser.add_argument("--completa", action="store_true",
                         help="arrancar en pantalla completa")
+    parser.add_argument("--mando", action="store_true",
+                        help="forzar lectura como MANDO (gamepad)")
+    parser.add_argument("--volante", action="store_true",
+                        help="forzar lectura como VOLANTE")
+    parser.add_argument("--teclado", action="store_true",
+                        help="forzar teclado (ignorar mando/volante)")
     args = parser.parse_args(argv)
+
+    # las banderas fuerzan el modo de entrada por encima de la deteccion
+    if args.mando:
+        cfg.INPUT_MODE = "mando"
+    elif args.volante:
+        cfg.INPUT_MODE = "volante"
+    elif args.teclado:
+        cfg.INPUT_MODE = "teclado"
 
     if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO | sdl2.SDL_INIT_JOYSTICK |
                      sdl2.SDL_INIT_GAMECONTROLLER |
@@ -182,7 +203,7 @@ def main(argv=None):
     # tocar los AJUSTES AVANZADOS) sin cerrar el programa; ESC en el menú sale.
     while True:
         if not args.frames:
-            sel = run_menu(renderer)
+            sel = run_menu(renderer, wheel)
             if sel is None:
                 sound.close()
                 ffb.close()
@@ -243,6 +264,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         print("  stick izquierdo = direccion | gatillos = gas y freno")
         print("  L1/R1 = marchas | A = motor | B = recolocar | X = vista"
               " | Y = automatico")
+        print("  cruceta: ARRIBA telemetria | IZQ plano | DER planta | ABAJO"
+              " trazada | START menu")
         print("Vibracion:", "activa" if ffb.ok else "desactivada")
     elif wheel.connected:
         print(f"Volante detectado: {wheel.name} "
@@ -344,6 +367,18 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         if wheel.action_edge("reset"):
             car.reset(car.state.s)
             timer.invalidate()         # igual que la tecla R
+        # paneles del HUD por la CRUCETA del mando (la Deck no tiene F1/F2)
+        if wheel.action_edge("telemetry"):
+            show_telemetry = not show_telemetry
+        if wheel.action_edge("minimap"):
+            show_minimap = not show_minimap
+        if wheel.action_edge("plan"):
+            show_plan = not show_plan
+        if wheel.action_edge("line"):
+            show_line = not show_line
+        if wheel.action_edge("menu"):      # START = volver al menu (como ESC)
+            to_menu = True
+            running = False
 
         # cambio automático (las levas siguen funcionando en manual)
         if auto_gear and car.auto_shift(wheel.throttle):

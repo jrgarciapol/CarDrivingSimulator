@@ -292,13 +292,30 @@ sudo pacman -S --needed python python-pip sdl2
 pip install pysdl2 numpy && python -m simulator.main --rendimiento
 ```
 
-### Añadirlo a la interfaz de Steam
+### Añadirlo a Steam — IMPRESCINDIBLE para que el mando funcione
 
-Con `jugar.sh` creado: **Steam → Añadir un juego → Añadir un juego que no
-sea de Steam** y elige `jugar.sh`. Es una aplicación **nativa** de Linux,
-así que **no** hay que forzar ninguna herramienta de compatibilidad
-(Proton). Así se puede lanzar desde el modo Consola, con los controles del
-mando ya mapeados.
+Fuera de Steam, la Deck **no anuncia su mando como un gamepad**: el juego lo
+confundiría con un volante (el stick haría de dirección y los gatillos no
+responderían). Quien lo convierte en un mando de Xbox de verdad es **Steam
+Input**, y solo actúa si el juego se lanza desde Steam.
+
+1. En modo Escritorio: **Steam → Añadir un juego → Añadir un juego que no
+   sea de Steam → EXAMINAR** y elige `jugar.sh` (si no ves los `.sh`, pon el
+   filtro en *Todos los archivos*).
+2. Es una aplicación **nativa** de Linux: **no** fuerces ninguna herramienta
+   de compatibilidad (Proton).
+3. Lánzalo **desde Steam** (Modo Juego o Escritorio). Ahora los gatillos
+   (R2 gas, L2 freno), el stick y los botones funcionan.
+
+Si necesitas jugar sin Steam, puedes **forzar** el modo de entrada con
+`--mando`, `--volante` o `--teclado` (o `INPUT_MODE` en `config.py`). Ojo:
+`--mando` solo funciona si SDL reconoce el gamepad; en una Deck fuera de
+Steam no lo reconoce, así que la vía buena sigue siendo lanzarlo desde Steam.
+
+**Mando completo (la cruceta suple a las teclas F1/F2, que la Deck no
+tiene):** stick izquierdo dirección · R2/L2 gas y freno · R1/L1 marchas ·
+A motor · B recolocar · X vista · Y automático · cruceta ↑ telemetría,
+← plano, → planta, ↓ trazada · START volver al menú.
 
 ### Ajustes pensados para la Deck
 

@@ -128,6 +128,7 @@ class WheelInput:
         self._prev_buttons = {}
         self._prev_acciones = {}
         self._prev_menu = {}
+        self._rep = {}                  # temporizadores de auto-repeticion
 
     def _open_device(self):
         modo = str(getattr(cfg, "INPUT_MODE", "auto")).lower()
@@ -228,16 +229,16 @@ class WheelInput:
         self._prev_acciones[accion] = now
         return now and not prev
 
-    def menu_nav(self):
+    def menu_nav(self, dt=0.0):
         """Navegación de menús con el MANDO: devuelve el conjunto de
-        acciones recién pulsadas (flancos) entre {up, down, left, right, ok,
-        back}. Sin esto, en una Steam Deck lanzada desde Steam el juego
-        recibe un gamepad pero el MENU solo escucha el teclado, asi que el
-        usuario se queda atascado en la pantalla de seleccion sin poder
-        elegir coche ni empezar.
+        acciones activas este frame entre {up, down, left, right, ok, back}.
+        Sin esto, en una Steam Deck lanzada desde Steam el juego recibe un
+        gamepad pero el MENU solo escucha el teclado, asi que el usuario se
+        queda atascado en la seleccion sin poder elegir coche ni empezar.
 
-        Se leen la cruceta Y el stick izquierdo (con zona muerta y flanco),
-        para que valga cualquiera de los dos."""
+        Se leen la cruceta Y el stick izquierdo. Las DIRECCIONES tienen
+        auto-repeticion: al mantenerlas, tras una pausa breve se repiten
+        solas (mover rapido por una lista larga); ok/back son solo flanco."""
         if self.kind != MANDO or not self.controller:
             return set()
         sdl2.SDL_GameControllerUpdate()
@@ -259,11 +260,25 @@ class WheelInput:
             "ok": boton(sdl2.SDL_CONTROLLER_BUTTON_A)
             or boton(sdl2.SDL_CONTROLLER_BUTTON_START),
             "back": boton(sdl2.SDL_CONTROLLER_BUTTON_B),
+            "def": boton(sdl2.SDL_CONTROLLER_BUTTON_X),   # valor por defecto
+            "reset": boton(sdl2.SDL_CONTROLLER_BUTTON_Y),  # todo por defecto
         }
-        flancos = {k for k, v in estado.items()
-                   if v and not self._prev_menu.get(k, False)}
+        out = set()
+        _DELAY, _INT = 0.35, 0.06       # pausa inicial y ritmo de repeticion
+        for k, v in estado.items():
+            prev = self._prev_menu.get(k, False)
+            if v and not prev:
+                out.add(k)              # flanco: siempre dispara
+                self._rep[k] = -_DELAY
+            elif v and prev and k in ("up", "down", "left", "right"):
+                self._rep[k] = self._rep.get(k, 0.0) + dt
+                if self._rep[k] >= 0.0:
+                    out.add(k)          # repeticion al mantener
+                    self._rep[k] -= _INT
+            elif not v:
+                self._rep[k] = 0.0
         self._prev_menu = estado
-        return flancos
+        return out
 
     def _leer_mando(self, speed_kmh: float, dt: float):
         """Lee el mando: stick izquierdo a la dirección (pasando por

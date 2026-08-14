@@ -47,6 +47,7 @@ from . import garage
 from . import render as render_mod
 from .audio import EngineSound
 from .menu import run_menu
+from . import settings
 from .timing import LapTimer
 from .physics import Car
 from .render import Hud, Renderer
@@ -195,6 +196,9 @@ def main(argv=None):
     # restaurarla al volver al menú (si no, se acumularían)
     _cond_base = {k: getattr(cfg, k)
                   for k in ("TIRE_MU", "TIRE_MU_GRASS", "ROLLING_RESIST")}
+    # ajustes guardados de sesiones anteriores (configuracion global +
+    # ultima seleccion de coche/circuito/asfalto)
+    settings.load()
     wheel = WheelInput()
     ffb = ForceFeedback(wheel)
     sound = EngineSound()
@@ -203,7 +207,7 @@ def main(argv=None):
     # tocar los AJUSTES AVANZADOS) sin cerrar el programa; ESC en el menú sale.
     while True:
         if not args.frames:
-            sel = run_menu(renderer, wheel)
+            sel = run_menu(renderer, wheel, settings.last)
             if sel is None:
                 sound.close()
                 ffb.close()
@@ -228,6 +232,15 @@ def main(argv=None):
             condition = sel["cond"]
             garage.apply_condition(condition)
             render_mod.set_condition(condition)
+            # EL REGLAJE DEL USUARIO SE APLICA AL FINAL, despues de load_car
+            # y apply_condition, para que sus cambios (caster, toe, muelles)
+            # GANEN a los del archivo del coche. Sin esto, load_car los pisaba.
+            settings.apply_car()
+            settings.apply_config()
+            # recordar la seleccion para el proximo arranque
+            car_ref = sel["car"][1] if sel["car"] is not None else ""
+            settings.remember(car_ref, sel["track"][1], condition,
+                              sel.get("wheel"), sel.get("wheel_rear"))
 
         to_menu = run_session(renderer, window, wheel, ffb, sound,
                               car_name, condition, args)

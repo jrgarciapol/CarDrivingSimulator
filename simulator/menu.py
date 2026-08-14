@@ -13,6 +13,7 @@ import sdl2
 from . import config as cfg
 from . import font
 from . import garage
+from . import settings
 
 
 def _list_tracks():
@@ -34,12 +35,11 @@ def _fill(renderer, rect, x, y, w, h, color):
     sdl2.SDL_RenderFillRect(renderer, rect)
 
 
-def run_menu(renderer, wheel=None):
+def run_menu(renderer, wheel=None, last=None):
     """Devuelve dict con la selección, o None si el usuario sale.
 
-    `wheel` (opcional) permite navegar el menú con el MANDO: sin él, en una
-    Steam Deck el menú solo respondería al teclado y no se podría ni elegir
-    coche ni empezar."""
+    `wheel` (opcional) permite navegar el menú con el MANDO. `last` es la
+    última selección guardada, para recuperarla al arrancar."""
     W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
     cars = garage.list_cars()
     tracks = _list_tracks()
@@ -50,6 +50,18 @@ def run_menu(renderer, wheel=None):
     i_car = min(2, len(cars) - 1)   # DEPORTIVO por defecto
     i_trk = 0
     i_cnd = 0
+    # recuperar la ultima seleccion guardada (coche/circuito/asfalto)
+    if last:
+        for k, c in enumerate(cars):
+            if c[1] == last.get("car"):
+                i_car = k
+                break
+        for k, t in enumerate(tracks):
+            if t[1] == last.get("track"):
+                i_trk = k
+                break
+        if last.get("cond") in conds:
+            i_cnd = conds.index(last["cond"])
     wheels_cache = {}
 
     def wheels_for(i):
@@ -64,7 +76,22 @@ def run_menu(renderer, wheel=None):
         opts = [o[0] for o in wheels_for(i)]
         return tuple(opts.index(s) if s in opts else 0 for s in specs)
 
+    def aplicar_coche():
+        """Carga el coche seleccionado en cfg (con la configuracion global y
+        el reglaje vivo encima), para que la pantalla de AJUSTES parta SIEMPRE
+        de los valores reales del coche elegido. Cambiar de coche descarta el
+        reglaje del anterior (settings.set_car_path)."""
+        path = cars[i_car][1]
+        settings.set_car_path(path)
+        try:
+            garage.load_car(path)
+        except (OSError, ValueError):
+            return
+        settings.apply_config()
+        settings.apply_car()
+
     i_wf, i_wr = serie_idx(i_car)   # monturas delante / detrás
+    aplicar_coche()                 # deja cfg reflejando el coche elegido
     row = 0
     rows = 7
     rect = sdl2.SDL_Rect()
@@ -77,6 +104,7 @@ def run_menu(renderer, wheel=None):
         if row == 0:
             i_car = (i_car + step) % len(cars)
             i_wf, i_wr = serie_idx(i_car)       # su rueda de serie
+            aplicar_coche()                     # y su reglaje/valores en cfg
         elif row in (1, 2):
             whl = wheels_for(i_car)
             if whl:
@@ -118,12 +146,14 @@ def run_menu(renderer, wheel=None):
         while sdl2.SDL_PollEvent(ctypes.byref(event)):
             if event.type == sdl2.SDL_QUIT:
                 return None
-            if event.type == sdl2.SDL_KEYDOWN and not event.key.repeat:
+            if event.type == sdl2.SDL_KEYDOWN:
                 a = _TECLAS.get(event.key.keysym.sym)
-                if a:
+                # las DIRECCIONES admiten repeticion del teclado (mantener
+                # pulsado = moverse rapido); ok/back solo en el flanco
+                if a and not (event.key.repeat and a in ("ok", "back")):
                     acciones.append(a)
         if wheel is not None:
-            acciones.extend(wheel.menu_nav())   # cruceta/stick del mando
+            acciones.extend(wheel.menu_nav(0.016))  # cruceta/stick del mando
 
         for a in acciones:
             if a == "back":

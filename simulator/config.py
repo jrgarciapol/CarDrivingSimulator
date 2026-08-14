@@ -210,6 +210,18 @@ TOE_REAR_DEG = 0.15          # ídem eje trasero. Casi siempre CONVERGENTE y
 CASTER_CAMBER_GAIN = 1.0     # cuánta de la caída por caster llega a la rueda
                              # (1 = geometría ideal, 0 = desactivado). Bajarlo
                              # simula una geometría que la desperdicia [0 .. 1.5]
+STATIC_CAMBER_FRONT_DEG = -1.0   # grados de CAIDA ESTATICA del eje delantero,
+                             # la del reglaje de alineación. NEGATIVA = la
+                             # rueda abraza al coche por arriba. Se pone para
+                             # que la rueda EXTERIOR quede plana cuando la
+                             # carrocería se tumbe en curva: más agarre en
+                             # apoyo, a cambio de menos en recta y de
+                             # desgastar el hombro interior. Turismo -0.5,
+                             # deportivo -1.5, circuito -3 a -4 [-5 .. 1]
+STATIC_CAMBER_REAR_DEG = -1.2    # ídem eje trasero; suele ser algo MENOS
+                             # negativa que la delantera porque el eje
+                             # trasero balancea menos y necesita tracción
+                             # [-5 .. 1]
 
 # Derivados de la geometría (no editar: se calculan del reparto)
 CAR_CG_TO_FRONT = WHEELBASE * (1.0 - WEIGHT_DIST_FRONT)
@@ -333,18 +345,6 @@ TIRE_TRAIL_NEG_FRAC = 0.18   # cuánto llega a hacerse NEGATIVO el avance
                              # neumático pasado el pico, en fracción del
                              # valor a deriva cero. Acentúa el aviso de
                              # subviraje en el volante [0 .. 0.4]
-STATIC_CAMBER_FRONT_DEG = -1.0   # grados de CAIDA ESTATICA del eje delantero,
-                             # la del reglaje de alineación. NEGATIVA = la
-                             # rueda abraza al coche por arriba. Se pone para
-                             # que la rueda EXTERIOR quede plana cuando la
-                             # carrocería se tumbe en curva: más agarre en
-                             # apoyo, a cambio de menos en recta y de
-                             # desgastar el hombro interior. Turismo -0.5,
-                             # deportivo -1.5, circuito -3 a -4 [-5 .. 1]
-STATIC_CAMBER_REAR_DEG = -1.2    # ídem eje trasero; suele ser algo MENOS
-                             # negativa que la delantera porque el eje
-                             # trasero balancea menos y necesita tracción
-                             # [-5 .. 1]
 TIRE_CAMBER_PATCH = 18.0     # pérdida de agarre por radián CUADRADO de
                              # inclinación contra el asfalto: la rueda tumbada
                              # no apoya plana, la carga se concentra en un

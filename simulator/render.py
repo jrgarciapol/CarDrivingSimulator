@@ -177,16 +177,25 @@ class Renderer:
         if cam_back == 0.0:
             cam_y += car_state.heave
             pitch_px = camera_pitch_px(car_state)
-            # TEMBLOR visual (solo cámara): baches (velocidad vertical del
-            # chasis) y patinaje de rueda sacuden la cabeza. Se filtra para
-            # que no sea un ruido blanco molesto.
+            # TEMBLOR visual (solo cámara). Se alimenta de lo que de verdad
+            # sacude al piloto: la FUERZA G (frenada o curva fuertes), los
+            # BACHES/pianos (velocidad vertical del chasis) y el patinaje o
+            # bloqueo de rueda. Antes usaba solo heave_v, que frenando es
+            # casi cero, por eso no se notaba ni cambiaba con el parámetro.
+            # Temblor 2D (vertical + lateral) filtrado para no ser ruido.
+            self._cam_shake_x = getattr(self, "_cam_shake_x", 0.0)
             if cfg.CAMERA_SHAKE > 0.0:
                 bump = abs(getattr(car_state, "heave_v", 0.0))
-                spin = max(abs(sr) for sr in car_state.slip_ratio)
-                amp = cfg.CAMERA_SHAKE * min(0.035,
-                                             0.010 * bump + 0.020 * max(0.0, spin - 0.3))
-                self._cam_shake = getattr(self, "_cam_shake", 0.0) * 0.55 \
-                    + float(np.random.uniform(-amp, amp)) * 0.45
+                slip = max(abs(sr) for sr in car_state.slip_ratio)
+                g = math.hypot(getattr(car_state, "ax", 0.0),
+                               getattr(car_state, "ay", 0.0)) / 9.81
+                intensity = (5.0 * bump + 2.5 * max(0.0, slip - 0.15)
+                             + 2.0 * max(0.0, g - 0.4))
+                amp = cfg.CAMERA_SHAKE * 0.006 * min(3.5, intensity)
+                self._cam_shake = getattr(self, "_cam_shake", 0.0) * 0.5 \
+                    + float(np.random.uniform(-amp, amp)) * 0.5
+                self._cam_shake_x = self._cam_shake_x * 0.5 \
+                    + float(np.random.uniform(-amp, amp)) * 0.5
                 cam_y += self._cam_shake
         else:
             pitch_px = 0.0
@@ -300,6 +309,9 @@ class Renderer:
             self._cam_lean = getattr(self, "_cam_lean", 0.0)
             self._cam_lean += (car_state.ay - self._cam_lean) * 0.20
             cx = cx + cfg.CAMERA_GLEAN * 0.006 * self._cam_lean
+        # componente LATERAL del temblor (la vertical va en cam_y)
+        if onboard and cfg.CAMERA_SHAKE > 0.0:
+            cx = cx + getattr(self, "_cam_shake_x", 0.0)
         # ojo del conductor: la cámara interior va cam_forward metros por
         # delante del punto del coche, a lo largo del eje de la carretera
         # (el puesto de conducción, no el centro del vehículo)

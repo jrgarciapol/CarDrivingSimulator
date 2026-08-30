@@ -289,7 +289,8 @@ ENGINE_INERTIA = 0.15            # kg·m², inercia rotacional del motor y
                                  # volante: multiplicada por el desarrollo
                                  # al cuadrado, hace que acelerar/retener
                                  # en 1a cueste más que en 6a [0.05 .. 3]
-ENGINE_MODEL = "legacy"          # "legacy": el régimen sigue a las ruedas con
+ENGINE_MODEL = "legacy"          # opciones {legacy | inertia}.
+                                 # "legacy": el régimen sigue a las ruedas con
                                  # un filtro de 0.12 s. "inertia": el cigüeñal
                                  # es un grado de libertad propio (I·dw/dt =
                                  # combustión − freno motor − embrague) con un

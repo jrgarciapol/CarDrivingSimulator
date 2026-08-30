@@ -518,8 +518,11 @@ class ForceFeedback:
             mag = cfg.FFB_GRASS_MAGNITUDE * min(1.0, speed_ms / 10.0)
             period_ms = 45
         elif speed_ms > 5.0:
-            mag = cfg.FFB_ROAD_TEXTURE * min(1.0, speed_ms / 40.0)
-            period_ms = max(10, int(600.0 / max(5.0, speed_ms)))
+            # textura del asfalto, AMPLIFICADA en las zonas de firme rugoso o
+            # dañado (road_roughness): en un parche roto el volante rasca más
+            rough = getattr(car_state, "road_roughness", 0.0)
+            mag = cfg.FFB_ROAD_TEXTURE * min(1.0, speed_ms / 40.0) * (1.0 + 4.0 * rough)
+            period_ms = max(8, int(600.0 / max(5.0, speed_ms)))
         else:
             # vibración del motor al ralentí
             mag = cfg.FFB_ENGINE_IDLE

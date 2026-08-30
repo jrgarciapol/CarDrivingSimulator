@@ -336,16 +336,36 @@ class Track:
     def vcurv_at(self, s: float) -> float:
         return self._vcurv[self._index_at(s)]
 
+    def damage_at(self, s: float) -> float:
+        """Cuánto está DAÑADO el asfalto en este tramo: 0 = firme sano,
+        1 = parche muy roto. Determinista y de variación lenta con la
+        posición (los baches malos vienen por zonas, no aislados), para que
+        cada circuito tenga siempre sus mismos tramos rotos."""
+        # ruido lento (dos senos incomensurables) umbralizado: la mayor parte
+        # del firme está sano y de vez en cuando aparece una zona rota
+        z = (math.sin(s * 0.0131) * math.sin(s * 0.0041 + 1.7)
+             + 0.4 * math.sin(s * 0.0233 + 0.6))
+        return max(0.0, (z - 0.30)) / 0.70
+
     def bump_at(self, s: float, n: float, surface: str) -> float:
         """Altura del microrrelieve bajo una rueda (m). Determinista en
         función de la posición: cada rueda ve su propio bache."""
+        rough = cfg.ROAD_ROUGHNESS
         if surface == "kerb":
             # piano corrugado: dientes de ~40 cm
             return 0.028 * max(0.0, math.sin(s * (2 * math.pi / 0.4)))
         if surface == "grass":
-            return 0.020 * math.sin(s * 3.7) + 0.016 * math.sin(s * 9.3 + n * 2.1)
-        # asfalto: rugosidad leve
-        return 0.005 * math.sin(s * 2.9) + 0.003 * math.sin(s * 7.1 + n * 0.8)
+            # hierba: irregular, con montículos y alta frecuencia -> zarandea
+            base = (0.020 * math.sin(s * 3.7) + 0.016 * math.sin(s * 9.3 + n * 2.1)
+                    + 0.012 * math.sin(s * 23.0 + n * 5.0))
+            return base * rough
+        # asfalto: rugosidad leve de base + ZONAS DAÑADAS (firme roto) que
+        # añaden baches más grandes y de más frecuencia por tramos
+        smooth = 0.004 * math.sin(s * 2.9) + 0.002 * math.sin(s * 7.1 + n * 0.8)
+        dmg = self.damage_at(s)
+        broken = dmg * (0.012 * math.sin(s * 17.0)
+                        + 0.009 * math.sin(s * 41.0 + n * 3.0))
+        return (smooth + broken) * rough
 
     def surface_at(self, n: float, s: float):
         """Devuelve (superficie, mu) según la posición lateral.

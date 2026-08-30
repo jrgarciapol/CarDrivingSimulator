@@ -170,6 +170,7 @@ class CarState:
                                                # (estática + balanceo + gain
                                                # + caster); 0 = apoya plana
         self.wheel_surface = ["road"] * 4
+        self.road_roughness = 0.0              # 0 firme liso .. 1 muy rugoso
         # motor
         self.rpm = cfg.ENGINE_IDLE_RPM
         self.gear = 1         # 1..6; 0 = punto muerto; -1 = marcha atrás
@@ -554,6 +555,11 @@ class Car:
             mu *= max(0.72, 1.0 - cfg.TIRE_TEMP_SENS * dev * dev)
             mu_wheel[i] = mu * self._w_mu[i]  # huella ancha: algo más de mu
             bump[i] = track.bump_at(s_i, n_i, surf)
+        # RUGOSIDAD sentida: cuánto se desnivela el firme bajo las cuatro
+        # ruedas (0 liso .. 1 muy rugoso). Alimenta el temblor de cámara y la
+        # vibración del volante, además del zarandeo físico por la suspensión.
+        st.road_roughness = min(1.0, max(0.0, (max(bump) - min(bump)) - 0.006)
+                                / 0.025)
 
         # --- suspensión: chasis <-> masa no suspendida <-> asfalto ------
         # Cada rueda tiene su propio GDL vertical (zu): el muelle y el

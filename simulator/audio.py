@@ -211,22 +211,24 @@ class EngineSound:
         # --- neumáticos: patinaje de tracción (wheelspin) -----------------
         self._spin_lp += (max(0.0, min(1.0, spin)) - self._spin_lp) * 0.30
         sp = self._spin_lp
-        if sp > 0.01:
-            # zumbido GRAVE y rugoso (la rueda gira rápido sobre el asfalto),
-            # el tono sube con el patinaje; banda media áspera y un flutter
-            # que da la sensación de agarre intermitente. Nada que ver con el
-            # silbido agudo del scrub lateral.
+        if sp > 0.04:
+            # patinaje de tracción: un "growl" grave con la goma rasgando el
+            # asfalto. Antes era una SIERRA cruda (2*ph-1) que zumbaba muy
+            # áspera al arrancar a fondo; ahora es un tono redondo (fundamental
+            # + un poco de 2º armónico) apoyado sobre todo en el ruido de la
+            # goma, con un flutter suave. El tono sube con el patinaje.
             fb = 90.0 + 150.0 * sp
             phb = self._ph_spin + np.cumsum(np.full(n, fb)) / rate
             self._ph_spin = float(phb[-1] % 1.0)
-            buzz = 2.0 * (phb % 1.0) - 1.0
+            phw = phb % 1.0
+            buzz = np.sin(2 * np.pi * phw) + 0.3 * np.sin(4 * np.pi * phw)
             band = self._f_spin(np.random.uniform(-1, 1, n))
-            flut = self._ph_flut + t * (55.0 / rate)
+            flut = self._ph_flut + t * (48.0 / rate)
             self._ph_flut = float(flut[-1] % 1.0)
-            flutter = 0.55 + 0.45 * np.sin(2 * np.pi * flut)
+            flutter = 0.65 + 0.35 * np.sin(2 * np.pi * flut)
             gv = cfg.SCREECH_VOLUME * sp * cfg.AUDIO_VOLUME
-            # más zumbido y menos siseo: un "growl" grave, no un agudo
-            wave += (0.85 * buzz + 0.5 * band) * flutter * gv
+            # menos zumbido y más ruido de goma: rasga, no petardea
+            wave += (0.35 * buzz + 0.7 * band) * flutter * gv * 0.85
 
         # --- neumáticos: bloqueo en frenada (skid) ------------------------
         self._lock_lp += (max(0.0, min(1.0, lock)) - self._lock_lp) * 0.28

@@ -345,7 +345,10 @@ class Track:
         # del firme está sano y de vez en cuando aparece una zona rota
         z = (math.sin(s * 0.0131) * math.sin(s * 0.0041 + 1.7)
              + 0.4 * math.sin(s * 0.0233 + 0.6))
-        return max(0.0, (z - 0.30)) / 0.70
+        # umbral ALTO: los parches rotos son RAROS (~1 de cada 9 del firme
+        # está algo dañado) pero, donde aparecen, pegan fuerte (ver bump_at).
+        # Acotado a 1.0.
+        return min(1.0, max(0.0, (z - 0.80)) / 0.35)
 
     def bump_at(self, s: float, n: float, surface: str) -> float:
         """Altura del microrrelieve bajo una rueda (m). Determinista en
@@ -363,8 +366,11 @@ class Track:
         # añaden baches más grandes y de más frecuencia por tramos
         smooth = 0.004 * math.sin(s * 2.9) + 0.002 * math.sin(s * 7.1 + n * 0.8)
         dmg = self.damage_at(s)
-        broken = dmg * (0.012 * math.sin(s * 17.0)
-                        + 0.009 * math.sin(s * 41.0 + n * 3.0))
+        # parche roto BESTIAL: baches grandes de baja frecuencia (hoyos) más
+        # rugosidad fina encima; hasta ~5 cm, más que un piano
+        broken = dmg * (0.024 * math.sin(s * 4.3)
+                        + 0.016 * math.sin(s * 13.0)
+                        + 0.012 * math.sin(s * 37.0 + n * 3.0))
         return (smooth + broken) * rough
 
     def surface_at(self, n: float, s: float):

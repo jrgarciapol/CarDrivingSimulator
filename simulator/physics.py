@@ -555,11 +555,17 @@ class Car:
             mu *= max(0.72, 1.0 - cfg.TIRE_TEMP_SENS * dev * dev)
             mu_wheel[i] = mu * self._w_mu[i]  # huella ancha: algo más de mu
             bump[i] = track.bump_at(s_i, n_i, surf)
-        # RUGOSIDAD sentida: cuánto se desnivela el firme bajo las cuatro
-        # ruedas (0 liso .. 1 muy rugoso). Alimenta el temblor de cámara y la
-        # vibración del volante, además del zarandeo físico por la suspensión.
-        st.road_roughness = min(1.0, max(0.0, (max(bump) - min(bump)) - 0.006)
-                                / 0.025)
+        # RUGOSIDAD sentida (0 liso .. 1 roto): amplifica el temblor de cámara
+        # y la vibración del volante. Se toma del DAÑO real del firme (raro en
+        # el asfalto, alto en piano/hierba), no del desnivel bruto, para que
+        # solo suba en los parches malos y no en todo el asfalto.
+        if "kerb" in st.wheel_surface:
+            st.road_roughness = 0.85
+        elif "grass" in st.wheel_surface:
+            st.road_roughness = 0.70
+        else:
+            dmg_fn = getattr(track, "damage_at", None)
+            st.road_roughness = dmg_fn(st.s) if dmg_fn else 0.0
 
         # --- suspensión: chasis <-> masa no suspendida <-> asfalto ------
         # Cada rueda tiene su propio GDL vertical (zu): el muelle y el

@@ -438,22 +438,35 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         # ------------------------------------------------ force feedback
         ffb.update(frame_dt, car.state, surface, abs(car.state.vx))
 
-        # chirrido de neumáticos: cuánto excede del pico de agarre la
-        # rueda que más desliza (la hierba no chirría)
+        # neumáticos: se separan TRES deslizamientos físicos, cada uno con
+        # su propio sonido (la hierba no chirría). El scrub es lateral
+        # (deriva en curva), el spin es longitudinal en la rueda MOTRIZ con
+        # gas (patinaje de tracción) y el lock es longitudinal frenando
+        # (bloqueo). Así el wheelspin de la salida de curva no suena igual
+        # que el arrastre lateral ni que un bloqueo de frenada.
         st = car.state
-        over = 0.0
+        peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
+        peak_s = cfg.TIRE_PEAK_SLIP_RATIO
+        driven = car._driven_wheels()
+        scrub_r = spin_r = lock_r = 0.0
         if abs(st.vx) > 4.0:
-            peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
             for i in range(4):
                 if st.wheel_surface[i] == "grass":
                     continue
-                over = max(over,
-                           abs(st.slip_ratio[i]) / cfg.TIRE_PEAK_SLIP_RATIO,
-                           abs(st.slip_angle[i]) / peak_a)
-        # el chirrido arranca justo en el pico de agarre: también suena
-        # el empuje de subviraje, no solo los derrapes grandes (onset a
-        # 0.92 con pendiente firme: el subviraje al límite ya canta)
-        screech = max(0.0, min(1.0, (over - 0.92) * 2.1))
+                scrub_r = max(scrub_r, abs(st.slip_angle[i]) / peak_a)
+                sr = st.slip_ratio[i]
+                if sr > 0.0 and i in driven and wheel.throttle > 0.15:
+                    spin_r = max(spin_r, sr / peak_s)       # patina de tracción
+                if sr < 0.0 and wheel.brake > 0.15:
+                    lock_r = max(lock_r, -sr / peak_s)      # bloqueo en frenada
+        # el sonido arranca justo en el pico de agarre (onset a 0.92): así
+        # también canta el empuje al límite, no solo los derrapes grandes
+        def _onset(x):
+            return max(0.0, min(1.0, (x - 0.92) * 2.1))
+        scrub = _onset(scrub_r)
+        spin = _onset(spin_r)
+        lock = _onset(lock_r)
+        screech = max(scrub, spin, lock)   # compat / nivel global
         # ADAS: alimenta los avisos con el balance de la física, pero solo
         # en pista (fuera, en la hierba, todo desliza y no es un aviso útil)
         adas_u = st.understeer
@@ -461,7 +474,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         if abs(st.n) > track.half_at(st.s) + cfg.KERB_WIDTH:
             adas_u = adas_o = 0.0
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
-                     abs(st.vx), adas_u, adas_o)
+                     abs(st.vx), adas_u, adas_o, gear=st.gear,
+                     scrub=scrub, spin=spin, lock=lock, brake=wheel.brake)
 
         # ------------------------------------------------ render
         sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)

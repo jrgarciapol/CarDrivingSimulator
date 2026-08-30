@@ -154,6 +154,13 @@ class Renderer:
         n_segs = len(segs)
         L = cfg.SEGMENT_LENGTH
         f = cfg.CAMERA_DEPTH
+        # efectos de cámara SOLO en las vistas a bordo (cam_back == 0); son
+        # puramente visuales y no tocan la física
+        onboard = (cam_back == 0.0)
+        if onboard and cfg.CAMERA_FOV_SPEED > 0.0:
+            # el campo de visión se abre un poco con la velocidad (bajar f =
+            # más ancho): sensación de vértigo al acelerar
+            f *= 1.0 - cfg.CAMERA_FOV_SPEED * min(1.0, speed / 60.0)
         half_w = getattr(track, "half_w", cfg.ROAD_HALF_WIDTH)
         kerb_w = cfg.KERB_WIDTH
 
@@ -170,11 +177,29 @@ class Renderer:
         if cam_back == 0.0:
             cam_y += car_state.heave
             pitch_px = camera_pitch_px(car_state)
+            # TEMBLOR visual (solo cámara): baches (velocidad vertical del
+            # chasis) y patinaje de rueda sacuden la cabeza. Se filtra para
+            # que no sea un ruido blanco molesto.
+            if cfg.CAMERA_SHAKE > 0.0:
+                bump = abs(getattr(car_state, "heave_v", 0.0))
+                spin = max(abs(sr) for sr in car_state.slip_ratio)
+                amp = cfg.CAMERA_SHAKE * min(0.035,
+                                             0.010 * bump + 0.020 * max(0.0, spin - 0.3))
+                self._cam_shake = getattr(self, "_cam_shake", 0.0) * 0.55 \
+                    + float(np.random.uniform(-amp, amp)) * 0.45
+                cam_y += self._cam_shake
         else:
             pitch_px = 0.0
         if yaw_gain is None:
             yaw_gain = cfg.CAMERA_YAW_GAIN
         psi_c = car_state.psi * yaw_gain
+        # MIRAR A LA CURVA: la cámara gira hacia donde gira el coche
+        # (guiñada), anticipando el vértice. Suavizado para que no dé tirones.
+        if onboard and cfg.CAMERA_LOOK_GAIN > 0.0:
+            tgt = max(-0.35, min(0.35, cfg.CAMERA_LOOK_GAIN * car_state.yaw_rate))
+            self._cam_look = getattr(self, "_cam_look", 0.0)
+            self._cam_look += (tgt - self._cam_look) * 0.15
+            psi_c += self._cam_look
         cp, sp = math.cos(psi_c), math.sin(psi_c)
 
         # --- centro de la carretera en el plano local del coche ---------
@@ -268,6 +293,13 @@ class Renderer:
 
         # desplazar al coche (está a +n del centro) y girar por el rumbo
         cx = cx - car_state.n
+        # BALANCEO DE LA CABEZA: con fuerza g lateral la cabeza del piloto cae
+        # hacia FUERA de la curva. Se desplaza la cámara en el mundo (unos cm)
+        # en sentido contrario a la aceleración lateral. Solo visual.
+        if onboard and cfg.CAMERA_GLEAN > 0.0:
+            self._cam_lean = getattr(self, "_cam_lean", 0.0)
+            self._cam_lean += (car_state.ay - self._cam_lean) * 0.20
+            cx = cx + cfg.CAMERA_GLEAN * 0.006 * self._cam_lean
         # ojo del conductor: la cámara interior va cam_forward metros por
         # delante del punto del coche, a lo largo del eje de la carretera
         # (el puesto de conducción, no el centro del vehículo)

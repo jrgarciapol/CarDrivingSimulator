@@ -441,6 +441,17 @@ class Renderer:
         # fluye hacia el coche y da sensación de movimiento
         tex = 0.94 + 0.12 * (((seg_idx * 2654435761) % 977) / 977.0)
         road_c = np.clip(road_c * tex[:, None], 0, 255)
+        # FIRME DAÑADO visible: los parches rotos (damage_at) se ven más
+        # oscuros y moteados, como asfalto viejo o remendado. Mismo criterio
+        # que la física, así que lo que se ve roto es lo que zarandea.
+        dmg_fn = getattr(track, "damage_at", None)
+        if dmg_fn is not None:
+            dmg_seg = np.array([dmg_fn(si * cfg.SEGMENT_LENGTH)
+                                for si in seg_idx])
+            mottle = 1.0 + 0.22 * dmg_seg * (
+                ((seg_idx * 40503) % 331) / 331.0 - 0.5)
+            dark = (1.0 - 0.36 * dmg_seg) * mottle
+            road_c = np.clip(road_c * dark[:, None], 0, 255)
         kerb_c = np.where(par2[:, None].astype(bool),
                           np.array(KERB[0]), np.array(KERB[1]))
         kerb_c = np.where(kerb_flag[:, None], kerb_c, grass_c)

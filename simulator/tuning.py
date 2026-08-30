@@ -28,6 +28,8 @@ from . import font
 _EXCLUDE = {"WINDOW_WIDTH", "WINDOW_HEIGHT", "PHYSICS_HZ"}
 
 _RANGE_RE = re.compile(r"\[\s*(-?\d+\.?\d*)\s*\.\.\s*(-?\d+\.?\d*)\s*\]")
+#: opciones de un parametro de TEXTO, p.ej.  {legacy | inertia}
+_ENUM_RE = re.compile(r"\{([^}]+)\}")
 
 _TRANS = str.maketrans("áéíóúüñÁÉÍÓÚÜÑ", "aeiouunAEIOUUN")
 
@@ -91,6 +93,21 @@ def _parse_config():
                         and not isinstance(val, bool),
                         "is_bool": isinstance(val, bool),
                     })
+            elif isinstance(val, str):
+                # parametro de OPCIONES: se edita si el comentario lista sus
+                # valores entre llaves, p.ej.  {legacy | inertia}
+                enum = _ENUM_RE.search(desc)
+                if enum and name not in _EXCLUDE:
+                    opts = [o.strip() for o in enum.group(1).split("|")
+                            if o.strip()]
+                    desc = _ENUM_RE.sub("", desc)
+                    entries.append({
+                        "name": name, "default": val, "lo": None, "hi": None,
+                        "desc": _ascii(" ".join(desc.split())),
+                        "section": _ascii(section),
+                        "is_int": False, "is_bool": False,
+                        "is_enum": True, "options": opts,
+                    })
             i = j
             continue
         i += 1
@@ -121,6 +138,8 @@ def _step(e, big):
 
 
 def _fmt(v):
+    if isinstance(v, str):
+        return v
     if isinstance(v, bool):
         return "SI" if v else "NO"
     if isinstance(v, int):
@@ -315,7 +334,11 @@ def run_tuning(renderer, wheel=None):
 
     def ajustar(e, direccion, big=False):
         cur = getattr(cfg, e["name"], e["default"])
-        if e["is_bool"]:
+        if e.get("is_enum"):
+            opts = e["options"]
+            idx = opts.index(cur) if cur in opts else 0
+            v = opts[(idx + direccion) % len(opts)]
+        elif e["is_bool"]:
             v = not cur
         else:
             v = cur + _step(e, big) * direccion

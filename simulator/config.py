@@ -532,6 +532,12 @@ ABS_SLIP_TARGET = 0.14       # deslizamiento al que actúa el ABS [0.10 .. 0.20]
 TRACK_FILE = "tracks/silverstone.csv"
 ROAD_HALF_WIDTH = 5.4        # m, semiancho del asfalto [3.5 .. 8]
 KERB_WIDTH = 1.1             # m de piano a cada lado [0.5 .. 2]
+ROAD_ROUGHNESS = 1.0         # rugosidad del firme: escala el microrrelieve
+                             # (baches finos) del asfalto, incluidas ZONAS
+                             # DAÑADAS aleatorias por tramos (parches de firme
+                             # roto, más rugosos). Zarandea el coche, la cámara
+                             # y el volante. 0 = firme perfectamente liso
+                             # [0 .. 3]
 SEGMENT_LENGTH = 4.0         # m por segmento (no cambiar si se usan
                              # circuitos importados)
 DRAW_DISTANCE = 220          # segmentos dibujados; bajar si va lento

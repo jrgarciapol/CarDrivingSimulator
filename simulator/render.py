@@ -189,8 +189,9 @@ class Renderer:
                 slip = max(abs(sr) for sr in car_state.slip_ratio)
                 g = math.hypot(getattr(car_state, "ax", 0.0),
                                getattr(car_state, "ay", 0.0)) / 9.81
+                rough = getattr(car_state, "road_roughness", 0.0)
                 intensity = (5.0 * bump + 2.5 * max(0.0, slip - 0.15)
-                             + 2.0 * max(0.0, g - 0.4))
+                             + 2.0 * max(0.0, g - 0.4) + 2.5 * rough)
                 amp = cfg.CAMERA_SHAKE * 0.006 * min(3.5, intensity)
                 self._cam_shake = getattr(self, "_cam_shake", 0.0) * 0.5 \
                     + float(np.random.uniform(-amp, amp)) * 0.5

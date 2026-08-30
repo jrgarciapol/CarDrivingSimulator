@@ -430,3 +430,18 @@ tests/
 - **No detecta el volante**: prueba otro puerto USB y comprueba que aparece en
   *Dispositivos e impresoras* → *Configuración del dispositivo de juego*.
 - **Va lento**: reduce `WINDOW_WIDTH/HEIGHT` o `DRAW_DISTANCE` en `config.py`.
+
+## Licencia
+
+Copyright (C) 2026 Jesús Rafael García Pol
+
+Este programa es software libre: puedes redistribuirlo y/o modificarlo bajo
+los términos de la **Licencia Pública General de GNU (GNU GPL) versión 3**,
+publicada por la Free Software Foundation. Se distribuye con la esperanza de
+que sea útil, pero **SIN NINGUNA GARANTÍA**. El texto completo está en el
+archivo [`LICENSE`](LICENSE) y en <https://www.gnu.org/licenses/>.
+
+En la práctica esto significa que cualquiera puede usar, estudiar y mejorar
+este simulador, pero **si lo distribuye o publica una versión modificada
+debe mantener esta misma licencia, conservar la autoría y publicar también
+su código fuente**: no se puede convertir en un producto cerrado.

@@ -144,6 +144,9 @@ def main(argv=None):
                         help="forzar lectura como VOLANTE")
     parser.add_argument("--teclado", action="store_true",
                         help="forzar teclado (ignorar mando/volante)")
+    parser.add_argument("--motor", choices=["legacy", "inertia"],
+                        help="modelo de motor: legacy (regimen por filtro) o "
+                        "inertia (cigueñal con inercia + embrague)")
     args = parser.parse_args(argv)
 
     # las banderas fuerzan el modo de entrada por encima de la deteccion
@@ -153,6 +156,9 @@ def main(argv=None):
         cfg.INPUT_MODE = "volante"
     elif args.teclado:
         cfg.INPUT_MODE = "teclado"
+    if args.motor:
+        cfg.ENGINE_MODEL = args.motor
+        print(f"Modelo de motor: {args.motor}")
 
     if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO | sdl2.SDL_INIT_JOYSTICK |
                      sdl2.SDL_INIT_GAMECONTROLLER |

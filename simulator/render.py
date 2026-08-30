@@ -1375,13 +1375,19 @@ class Hud:
             else:
                 tcol = (255, 75, 55, 255)
             # aro de 3 px de grosor y bien tupido (cada 3°) para que la
-            # temperatura sea inconfundible
+            # temperatura sea inconfundible. El límite de agarre NO es un
+            # círculo sino una ELIPSE: el neumático aguanta más deslizamiento
+            # longitudinal que lateral (TIRE_LONG_GRIP_RATIO), así que el eje
+            # vertical (longitudinal) se estira ese factor. El aro marca a la
+            # vez la temperatura y el límite real de agarre.
+            ratio_l = cfg.TIRE_LONG_GRIP_RATIO
+            ry = radius * ratio_l                 # semieje longitudinal (vertical)
             for deg in range(0, 360, 3):
                 a = math.radians(deg)
                 self._fill(cx + radius * math.cos(a) - 2,
-                           cy + radius * math.sin(a) - 2, 4, 4, tcol)
+                           cy + ry * math.sin(a) - 2, 4, 4, tcol)
             self._fill(cx - radius, cy, radius * 2, 1, (70, 70, 70))
-            self._fill(cx, cy - radius, 1, radius * 2, (70, 70, 70))
+            self._fill(cx, cy - int(ry), 1, int(ry) * 2, (70, 70, 70))
             font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)
 
             a_n = car_state.slip_angle[i] / peak_a
@@ -1408,7 +1414,7 @@ class Hud:
             # el COLOR usa el valor instantáneo (sin el suavizado de la
             # posición, que retrasaba el aviso frente al oído): ámbar
             # justo donde empieza el chirrido, rojo pasado el pico
-            rho_inst = math.hypot(a_n, s_n)
+            rho_inst = math.hypot(a_n, s_n / ratio_l)
             if rho_inst > 1.0:
                 color = (255, 70, 50)
             elif rho_inst > 0.93:

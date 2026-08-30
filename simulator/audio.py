@@ -162,11 +162,16 @@ class EngineSound:
             intake = self._f_intake(np.random.uniform(-1, 1, n)) \
                 * (0.10 + 0.45 * throttle)             # aspiración
 
-            body = ((0.30 + 0.14 * ld) * saw
-                    + (0.16 + 0.14 * ld) * h2
-                    + (0.08 + 0.09 * ld) * h3
-                    + 0.24 * rumble
-                    + (0.9 + 1.2 * ld) * body_pulse
+            # el pulso de combustión da cuerpo, pero a bajas vueltas (fire_hz
+            # ~30 Hz en 1a/2a) domina y suena a petardeo: se mantiene SUAVE y
+            # se atenúa con el régimen bajo. El tono principal son los
+            # armónicos, que es lo que suena "a motor".
+            pulse_atten = min(1.0, r / 2600.0)
+            body = ((0.36 + 0.10 * ld) * saw
+                    + (0.20 + 0.10 * ld) * h2
+                    + (0.10 + 0.07 * ld) * h3
+                    + 0.26 * rumble
+                    + (0.14 + 0.28 * ld) * pulse_atten * body_pulse
                     + intake) * cyc_var
             vol = cfg.AUDIO_VOLUME * (0.20 + 0.45 * throttle + 0.10 * ld
                                       + 0.08 * min(1.0, r / 7000.0))

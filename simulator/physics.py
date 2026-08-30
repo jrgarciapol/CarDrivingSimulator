@@ -201,6 +201,7 @@ class Car:
     def __init__(self):
         self.state = CarState()
         self._shift_cooldown = 0.0
+        self._shift_cut = 0.0                      # corte de par en el cambio
         self._brake_scale = [1.0, 1.0, 1.0, 1.0]   # modulación del ABS
         self._fy_state = [0.0, 0.0, 0.0, 0.0]      # relaxation length
         self._prev_bump = [0.0, 0.0, 0.0, 0.0]
@@ -262,6 +263,7 @@ class Car:
         self._steer_rate_lp = 0.0
         self._torque_lp = 0.0
         self._auto_dwell = 0.0
+        self._shift_cut = 0.0
 
     # ------------------------------------------------------------------
     def shift_up(self):
@@ -271,6 +273,7 @@ class Car:
         if st.gear < len(cfg.GEAR_RATIOS):
             st.gear += 1
             self._shift_cooldown = 0.25
+            self._shift_cut = cfg.SHIFT_CUT_TIME    # corte de par del cambio
             return True
         return False
 
@@ -281,6 +284,7 @@ class Car:
         if st.gear > -1:
             st.gear -= 1
             self._shift_cooldown = 0.25
+            self._shift_cut = cfg.SHIFT_CUT_TIME    # corte de par del cambio
             return True
         return False
 
@@ -480,6 +484,9 @@ class Car:
             # diferencia entre ruedas es 2·transfer: de ahí el factor 0.5.
             # Sin él, un "45 %" bloquearía en realidad el 90 %.
             t_lock = 0.5 * (cfg.DIFF_PRELOAD + rampa * abs(t_axle))
+            # los discos tienen una CAPACIDAD máxima: con mucho par de eje el
+            # bloqueo no crece sin fin, satura en DIFF_MAX_LOCK
+            t_lock = min(t_lock, getattr(cfg, "DIFF_MAX_LOCK", 1.0e4))
         # La banda de transición no puede ser más estrecha de lo que el paso
         # de integración es capaz de resolver: si un solo paso puede cambiar
         # la diferencia de giro más de lo que mide la banda, el bloqueo
@@ -496,6 +503,7 @@ class Car:
              track):
         st = self.state
         self._shift_cooldown = max(0.0, self._shift_cooldown - dt)
+        self._shift_cut = max(0.0, self._shift_cut - dt)
         self._auto_dwell = max(0.0, self._auto_dwell - dt)
 
         m = cfg.CAR_MASS
@@ -790,6 +798,15 @@ class Car:
                     t_engine = 0.0          # sin freno motor con embrague abierto
 
             t_wheel_total = t_engine * ratio * cfg.DRIVELINE_EFF
+
+        # CORTE DE PAR en el cambio: durante los primeros ms tras engranar,
+        # el par a las ruedas cae casi a cero (embrague/inyección) y se
+        # recupera de forma progresiva. Es el tirón real de cada cambio; sin
+        # esto el cambio era instantáneo y liso.
+        if self._shift_cut > 0.0 and cfg.SHIFT_CUT_TIME > 0.0:
+            frac = min(1.0, self._shift_cut / cfg.SHIFT_CUT_TIME)
+            t_wheel_total *= 1.0 - 0.9 * frac
+
         split_f, split_r = self._axle_torque_split()
         t_fl, t_fr = self._diff_torques(t_wheel_total * split_f,
                                         st.omega[FL], st.omega[FR],

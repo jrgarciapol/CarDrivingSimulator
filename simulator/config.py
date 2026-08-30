@@ -269,6 +269,11 @@ DIFF_LOCK_BAND = 0.5         # rad/s de diferencia de giro en que el bloqueo
                              # bajarlo lo hace más brusco [0.1 .. 2.0]
 DIFF_LSD_COEFF = 18.0        # Nm·s/rad, solo para DIFF_TYPE = "viscous"
                              # [5 .. 40]
+DIFF_MAX_LOCK = 500.0        # N·m, TOPE de par que el autoblocante (lsd) es
+                             # capaz de transferir de una rueda a la otra: la
+                             # capacidad de los discos. Con mucho par de eje el
+                             # bloqueo no crece sin fin, satura aquí. Alto = casi
+                             # como bloqueado a plena carga [100 .. 2000]
 
 # ===========================================================================
 # MOTOR
@@ -307,6 +312,11 @@ CLUTCH_LOCK_RPM = 1200.0         # rpm de rueda-equivalente por encima del
                                  # cual el embrague queda del todo engranado
                                  # [800 .. 2000]
 GEAR_RATIOS = [3.62, 2.19, 1.51, 1.17, 0.95, 0.81]  # desarrollos 1a..6a
+SHIFT_CUT_TIME = 0.10            # s que dura el CORTE DE PAR en cada cambio de
+                                 # marcha: durante ese instante el par a las
+                                 # ruedas cae casi a cero (embrague/inyección),
+                                 # dando el tirón real del cambio. 0 = cambio
+                                 # instantáneo sin corte [0 .. 0.3]
 FINAL_DRIVE = 3.70               # relación del grupo final [3.0 .. 4.5]
 GEARING_KEEP_ON_WHEEL_CHANGE = True  # al calzar otra rueda, reescalar el
                                  # grupo final para CONSERVAR el desarrollo

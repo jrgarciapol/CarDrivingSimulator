@@ -147,6 +147,9 @@ def main(argv=None):
     parser.add_argument("--motor", choices=["legacy", "inertia"],
                         help="modelo de motor: legacy (regimen por filtro) o "
                         "inertia (cigueñal con inercia + embrague)")
+    parser.add_argument("--neumatico", choices=["legacy", "brush"],
+                        help="modelo de neumatico: legacy (curva compartida) o "
+                        "brush (curvas long/lat separadas)")
     args = parser.parse_args(argv)
 
     # las banderas fuerzan el modo de entrada por encima de la deteccion
@@ -159,6 +162,9 @@ def main(argv=None):
     if args.motor:
         cfg.ENGINE_MODEL = args.motor
         print(f"Modelo de motor: {args.motor}")
+    if args.neumatico:
+        cfg.TIRE_MODEL = args.neumatico
+        print(f"Modelo de neumatico: {args.neumatico}")
 
     if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO | sdl2.SDL_INIT_JOYSTICK |
                      sdl2.SDL_INIT_GAMECONTROLLER |

@@ -326,6 +326,24 @@ TIRE_MU_GRASS = 0.80         # agarre en hierba; alto = salidas de pista
 TIRE_B = 2.07                # rigidez de la curva combinada (pico en rho=1)
 TIRE_C = 1.4                 # forma de la curva: pasado el pico el agarre
                              # cae a sin(C*pi/2) (~81 % con 1.4) [1.2 .. 1.6]
+TIRE_MODEL = "legacy"        # opciones {legacy | brush}.
+                             # "legacy": longitudinal y lateral comparten la
+                             # MISMA forma de curva (B, C de arriba); solo
+                             # cambia la escala de la elipse. "brush": cada eje
+                             # tiene SU propia curva (los cuatro parametros de
+                             # abajo) y la forma se interpola segun la
+                             # direccion del deslizamiento. Solo afecta si vale
+                             # "brush". Legacy = poner los pares long=lat.
+TIRE_B_LONG = 2.40           # rigidez LONGITUDINAL (brush): mas alta = el pico
+                             # de traccion/frenada llega antes y mas marcado
+                             # [1.5 .. 3.5]
+TIRE_C_LONG = 1.50           # forma LONGITUDINAL (brush): mas alta = la rueda
+                             # bloqueada/patinando pierde mas agarre [1.2 .. 1.8]
+TIRE_B_LAT = 1.90            # rigidez LATERAL (brush): mas baja = entrada en
+                             # curva mas progresiva y avisada [1.5 .. 3.0]
+TIRE_C_LAT = 1.35            # forma LATERAL (brush): baja = el agarre lateral
+                             # cae poco al pasar el pico -> derrapes mas
+                             # controlables [1.2 .. 1.6]
 TIRE_PEAK_SLIP_ANGLE_DEG = 7.0   # deriva del pico de agarre lateral
                                  # [5 .. 10]
 TIRE_PEAK_SLIP_RATIO = 0.12      # deslizamiento longitudinal del pico

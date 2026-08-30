@@ -230,11 +230,11 @@ CAR_CG_TO_REAR = WHEELBASE * WEIGHT_DIST_FRONT
 # ===========================================================================
 # TRANSMISIÓN Y TRACCIÓN
 # ===========================================================================
-DRIVE_TYPE = "RWD"           # "RWD" propulsión trasera | "FWD" delantera |
-                             # "AWD" total
+DRIVE_TYPE = "RWD"           # TRACCION {RWD | FWD | AWD}: "RWD" propulsión
+                             # trasera | "FWD" delantera | "AWD" total
 AWD_FRONT_SPLIT = 0.40       # en AWD, fracción del par al eje delantero
                              # [0.2 .. 0.6]
-DIFF_TYPE = "lsd"            # diferencial del eje motriz:
+DIFF_TYPE = "lsd"            # diferencial {open | lsd | locked | viscous}:
                              #   "open"    abierto (pierde tracción por la
                              #             rueda interior descargada)
                              #   "lsd"     autoblocante de DISCOS con rampas
@@ -546,7 +546,7 @@ CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
                              # respecto a la carretera: 1.0 = geométrico
                              # exacto, más alto = giro de vista más
                              # perceptible al derrapar o girar [1.0 .. 2.5]
-CAMERA_LOOK_GAIN = 0.7       # MIRAR A LA CURVA: la cámara gira hacia donde
+CAMERA_LOOK_GAIN = 0.22      # MIRAR A LA CURVA: la cámara gira hacia donde
                              # gira el coche, anticipando el vértice (rad de
                              # giro extra por rad/s de guiñada, limitado a
                              # ~20°). 0 = desactivado [0 .. 1.5]

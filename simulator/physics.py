@@ -797,6 +797,11 @@ class Car:
         # --- fuerzas de neumático por rueda -----------------------------
         peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
         peak_s = cfg.TIRE_PEAK_SLIP_RATIO
+        tire_brush = getattr(cfg, "TIRE_MODEL", "legacy") == "brush"
+        # rigidez longitudinal para el régimen de rodadura estable (más abajo):
+        # en brush usa la forma longitudinal propia, en legacy la compartida
+        tb_long = cfg.TIRE_B_LONG if tire_brush else cfg.TIRE_B
+        tc_long = cfg.TIRE_C_LONG if tire_brush else cfg.TIRE_C
         fx_w = [0.0] * 4
         fy_w = [0.0] * 4
         grip_used = [0.0] * 4
@@ -866,7 +871,18 @@ class Car:
                 fx, fy_ss = 0.0, 0.0
                 grip_used[i] = 0.0
             else:
-                f_total = tire_force_magnitude(rho, mu_i, st.fz[i])
+                if tire_brush:
+                    # cada eje tiene SU curva: la forma (B, C) se interpola
+                    # segun cuanto del deslizamiento es longitudinal (w) o
+                    # lateral (1-w). Longitudinal puro -> B_long/C_long;
+                    # lateral puro -> B_lat/C_lat. La elipse sigue acoplando
+                    # ambos (no se puede el maximo en los dos a la vez).
+                    w = (s_e * s_e) / (rho * rho)
+                    bb = w * cfg.TIRE_B_LONG + (1.0 - w) * cfg.TIRE_B_LAT
+                    cc = w * cfg.TIRE_C_LONG + (1.0 - w) * cfg.TIRE_C_LAT
+                    f_total = mu_i * st.fz[i] * math.sin(cc * math.atan(bb * rho))
+                else:
+                    f_total = tire_force_magnitude(rho, mu_i, st.fz[i])
                 fx = f_total * (s_e / rho) * ratio_l
                 fy_ss = -f_total * (a_n / rho)
                 grip_used[i] = min(1.0, rho)
@@ -1004,7 +1020,7 @@ class Car:
                 # exponencial exacta al deslizamiento de equilibrio, que
                 # transmite el par aplicado al suelo. Incondicionalmente
                 # estable a cualquier dt.
-                k_v = grip_force * cfg.TIRE_C * cfg.TIRE_B / (peak_s * denom)
+                k_v = grip_force * tc_long * tb_long / (peak_s * denom)
                 tau = i_eff / (k_v * R_w[i] * R_w[i])
                 omega_eq = (v_along + (t_app / R_w[i]) / k_v) / R_w[i]
                 blend = math.exp(-dt / tau) if tau > 1e-6 else 0.0

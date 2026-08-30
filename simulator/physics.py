@@ -207,6 +207,8 @@ class Car:
         self._bump_kick = 0.0
         self._kick_lp = 0.0
         self._limiter_cut = False
+        # régimen del cigüeñal (rad/s) para ENGINE_MODEL="inertia"
+        self._omega_e = cfg.ENGINE_IDLE_RPM * 2.0 * math.pi / 60.0
         self._fx_tires = 0.0
         self._steer_prev = 0.0
         self._steer_rate_lp = 0.0
@@ -252,6 +254,7 @@ class Car:
         self._bump_kick = 0.0
         self._kick_lp = 0.0
         self._limiter_cut = False
+        self._omega_e = cfg.ENGINE_IDLE_RPM * 2.0 * math.pi / 60.0
         self._fx_tires = 0.0
         self._fy_tires = 0.0
         self._fy_front = 0.0
@@ -323,6 +326,65 @@ class Car:
         if gear < 0:
             return -cfg.REVERSE_RATIO * cfg.FINAL_DRIVE
         return 0.0
+
+    def _engine_inertia(self, st, throttle, ratio, om_mean, rpm_wheels, dt):
+        """Motor con INERCIA de cigüeñal + embrague (ENGINE_MODEL='inertia').
+
+        A diferencia del filtro de 1er orden del modo 'legacy', el régimen es
+        un grado de libertad de verdad:
+
+            I_e · dω/dt = combustión − freno motor − embrague
+
+        El embrague es un acoplamiento tipo muelle (par = rigidez·deslizamiento)
+        limitado a una capacidad y escalado por el ENGRANE, que crece con el gas
+        y con la velocidad: parado y sin gas está suelto (el motor no tira al
+        ralentí), y en marcha queda del todo acoplado (en régimen estacionario
+        el par a la rueda coincide con el del modo legacy). Así emergen el
+        acelerón libre en punto muerto, el patinaje/flare del embrague en la
+        salida y reducciones con el régimen subiendo por sí solo.
+
+        Devuelve (par_total_a_las_ruedas, clutch_slipping). El cigüeñal es un
+        GDL propio, así que se devuelve clutch_slipping=True para que la rueda
+        NO cargue además la inercia del motor reflejada (sería contarla dos
+        veces): aquí el motor y la rueda son dos masas acopladas por el
+        embrague, no una sola inercia equivalente."""
+        two_pi = 2.0 * math.pi
+        idle_w = cfg.ENGINE_IDLE_RPM * two_pi / 60.0
+        lim_w = cfg.ENGINE_LIMITER_RPM * two_pi / 60.0
+        we = self._omega_e
+        rpm_now = we * 60.0 / two_pi
+        # limitador con histéresis, sobre el régimen real del cigüeñal
+        if rpm_now >= cfg.ENGINE_LIMITER_RPM:
+            self._limiter_cut = True
+        elif rpm_now < cfg.ENGINE_LIMITER_RPM - 300.0:
+            self._limiter_cut = False
+        st.limiter_on = self._limiter_cut
+        eff_throttle = 0.0 if st.limiter_on else throttle
+        # par interno del cigüeñal: combustión menos freno motor
+        engine_brake = cfg.ENGINE_BRAKE_COEFF * (rpm_now / cfg.ENGINE_LIMITER_RPM)
+        if st.engine_on:
+            t_int = engine_torque(rpm_now) * eff_throttle \
+                - engine_brake * (1.0 - eff_throttle)
+        else:
+            t_int = -(engine_brake + 20.0) if ratio != 0.0 else 0.0
+        # embrague
+        if ratio == 0.0:
+            t_clutch = 0.0                         # punto muerto: motor libre
+        else:
+            omega_ws = om_mean * ratio             # vel. lado motor de las ruedas
+            eng = min(1.0, max(1.5 * throttle,
+                               rpm_wheels / cfg.CLUTCH_LOCK_RPM))
+            cap = eng * cfg.CLUTCH_CAPACITY
+            t_clutch = max(-cap, min(cap, cfg.CLUTCH_STIFFNESS * (we - omega_ws)))
+        # integrar el cigüeñal
+        we += (t_int - t_clutch) / cfg.ENGINE_INERTIA * dt
+        if st.engine_on:
+            we = max(idle_w, min(lim_w, we))       # ni cala ni pasa del corte
+        else:
+            we = max(0.0, min(lim_w, we))
+        self._omega_e = we
+        st.rpm = we * 60.0 / two_pi
+        return t_clutch * ratio * cfg.DRIVELINE_EFF, True
 
     def _driven_wheels(self):
         if cfg.DRIVE_TYPE == "FWD":
@@ -660,41 +722,48 @@ class Car:
         driven = self._driven_wheels()
         vx_abs = abs(st.vx)
 
+        om_mean = 0.0
         if ratio != 0.0 and driven:
             om_mean = sum(st.omega[i] for i in driven) / len(driven)
             rpm_wheels = abs(om_mean) * abs(ratio) * 60.0 / (2.0 * math.pi)
         else:
             rpm_wheels = 0.0
-        clutch_slipping = rpm_wheels < cfg.ENGINE_IDLE_RPM
-        # el régimen tiene inercia: no sigue instantáneamente a las ruedas
-        if st.engine_on:
-            rpm_target = max(cfg.ENGINE_IDLE_RPM, rpm_wheels)
+
+        if getattr(cfg, "ENGINE_MODEL", "legacy") == "inertia":
+            # el cigüeñal es un grado de libertad propio + embrague de verdad
+            t_wheel_total, clutch_slipping = self._engine_inertia(
+                st, throttle, ratio, om_mean, rpm_wheels, dt)
         else:
-            # motor parado: en marcha lo arrastran las ruedas, si no cae a 0
-            rpm_target = rpm_wheels if ratio != 0.0 else 0.0
-        st.rpm += (rpm_target - st.rpm) * min(1.0, dt / 0.12)
-        # limitador con histéresis
-        if st.rpm >= cfg.ENGINE_LIMITER_RPM:
-            self._limiter_cut = True
-        elif st.rpm < cfg.ENGINE_LIMITER_RPM - 300.0:
-            self._limiter_cut = False
-        st.limiter_on = self._limiter_cut
-        eff_throttle = 0.0 if st.limiter_on else throttle
-        st.rpm = min(st.rpm, cfg.ENGINE_LIMITER_RPM)
+            clutch_slipping = rpm_wheels < cfg.ENGINE_IDLE_RPM
+            # el régimen sigue a las ruedas con inercia (filtro de 0.12 s)
+            if st.engine_on:
+                rpm_target = max(cfg.ENGINE_IDLE_RPM, rpm_wheels)
+            else:
+                # motor parado: en marcha lo arrastran las ruedas, si no cae a 0
+                rpm_target = rpm_wheels if ratio != 0.0 else 0.0
+            st.rpm += (rpm_target - st.rpm) * min(1.0, dt / 0.12)
+            # limitador con histéresis
+            if st.rpm >= cfg.ENGINE_LIMITER_RPM:
+                self._limiter_cut = True
+            elif st.rpm < cfg.ENGINE_LIMITER_RPM - 300.0:
+                self._limiter_cut = False
+            st.limiter_on = self._limiter_cut
+            eff_throttle = 0.0 if st.limiter_on else throttle
+            st.rpm = min(st.rpm, cfg.ENGINE_LIMITER_RPM)
 
-        # par del motor: positivo con gas, freno motor al levantar
-        t_engine = engine_torque(st.rpm) * eff_throttle
-        engine_brake = cfg.ENGINE_BRAKE_COEFF * (st.rpm / cfg.ENGINE_LIMITER_RPM)
-        t_engine -= engine_brake * (1.0 - eff_throttle)
-        if not st.engine_on:
-            # motor parado: no empuja y arrastra (compresión) si va engranado
-            t_engine = -(engine_brake + 20.0) if ratio != 0.0 else 0.0
-        if clutch_slipping:
-            t_engine *= 0.75            # embrague patinando en la salida
-            if t_engine < 0.0:
-                t_engine = 0.0          # sin freno motor con embrague abierto
+            # par del motor: positivo con gas, freno motor al levantar
+            t_engine = engine_torque(st.rpm) * eff_throttle
+            engine_brake = cfg.ENGINE_BRAKE_COEFF * (st.rpm / cfg.ENGINE_LIMITER_RPM)
+            t_engine -= engine_brake * (1.0 - eff_throttle)
+            if not st.engine_on:
+                # motor parado: no empuja y arrastra (compresión) si va engranado
+                t_engine = -(engine_brake + 20.0) if ratio != 0.0 else 0.0
+            if clutch_slipping:
+                t_engine *= 0.75            # embrague patinando en la salida
+                if t_engine < 0.0:
+                    t_engine = 0.0          # sin freno motor con embrague abierto
 
-        t_wheel_total = t_engine * ratio * cfg.DRIVELINE_EFF
+            t_wheel_total = t_engine * ratio * cfg.DRIVELINE_EFF
         split_f, split_r = self._axle_torque_split()
         t_fl, t_fr = self._diff_torques(t_wheel_total * split_f,
                                         st.omega[FL], st.omega[FR],

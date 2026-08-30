@@ -289,6 +289,22 @@ ENGINE_INERTIA = 0.15            # kg·m², inercia rotacional del motor y
                                  # volante: multiplicada por el desarrollo
                                  # al cuadrado, hace que acelerar/retener
                                  # en 1a cueste más que en 6a [0.05 .. 3]
+ENGINE_MODEL = "legacy"          # "legacy": el régimen sigue a las ruedas con
+                                 # un filtro de 0.12 s. "inertia": el cigüeñal
+                                 # es un grado de libertad propio (I·dw/dt =
+                                 # combustión − freno motor − embrague) con un
+                                 # embrague de verdad; emergen el acelerón en
+                                 # punto muerto, el patinaje del embrague en la
+                                 # salida y un régimen que ya no va pegado a
+                                 # las ruedas. Solo afecta si vale "inertia".
+CLUTCH_CAPACITY = 400.0          # Nm, par máximo que el embrague transmite
+                                 # (por encima del par motor) [200 .. 800]
+CLUTCH_STIFFNESS = 60.0          # Nm por rad/s de deslizamiento: rigidez del
+                                 # acoplamiento. Alto = engrana firme (poco
+                                 # deslizamiento en régimen) [20 .. 120]
+CLUTCH_LOCK_RPM = 1200.0         # rpm de rueda-equivalente por encima del
+                                 # cual el embrague queda del todo engranado
+                                 # [800 .. 2000]
 GEAR_RATIOS = [3.62, 2.19, 1.51, 1.17, 0.95, 0.81]  # desarrollos 1a..6a
 FINAL_DRIVE = 3.70               # relación del grupo final [3.0 .. 4.5]
 GEARING_KEEP_ON_WHEEL_CHANGE = True  # al calzar otra rueda, reescalar el

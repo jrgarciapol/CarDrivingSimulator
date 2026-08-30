@@ -546,6 +546,19 @@ CAMERA_YAW_GAIN = 1.6        # cuánto sigue la cámara el rumbo del coche
                              # respecto a la carretera: 1.0 = geométrico
                              # exacto, más alto = giro de vista más
                              # perceptible al derrapar o girar [1.0 .. 2.5]
+CAMERA_LOOK_GAIN = 0.7       # MIRAR A LA CURVA: la cámara gira hacia donde
+                             # gira el coche, anticipando el vértice (rad de
+                             # giro extra por rad/s de guiñada, limitado a
+                             # ~20°). 0 = desactivado [0 .. 1.5]
+CAMERA_FOV_SPEED = 0.12      # el campo de visión se abre con la velocidad:
+                             # sensación de vértigo al acelerar. 0 = fijo
+                             # [0 .. 0.3]
+CAMERA_GLEAN = 1.0           # la cabeza del piloto cae hacia FUERA con la
+                             # fuerza g lateral (balanceo de la cabeza en
+                             # curva). Solo visual. 0 = desactivado [0 .. 3]
+CAMERA_SHAKE = 1.0           # temblor visual por baches y patinaje. SOLO
+                             # visual: no toca la física ni las cargas.
+                             # 0 = imagen quieta [0 .. 3]
 RACING_LINE = True           # trazada ideal (tecla L): verde = margen,
                              # ámbar = al límite, rojo = no llegas a frenar
 MINIMAP = True               # plano del circuito COMPLETO arriba a la

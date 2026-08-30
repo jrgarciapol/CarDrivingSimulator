@@ -1,13 +1,25 @@
-"""Sonido sintetizado en tiempo real.
+"""Sonido sintetizado en tiempo real, acoplado a la física.
 
 - Motor: tren de pulsos de encendido (4 cilindros / 4 tiempos) con varios
-  armónicos, retumbo de medio orden, aspiración con el gas y crepitar en
-  retención. El tono sigue a las RPM y el volumen al acelerador.
-- Neumáticos: chirrido con dos formantes (~800 y ~1250 Hz) con vibrato y
-  trémolo, más soplo de ruido en banda; el nivel sigue al deslizamiento.
+  armónicos cuya amplitud sigue a la CARGA (no suena igual en vacío que a
+  plena carga), un cuerpo de combustión redondeado que da el retumbo grave,
+  variación de ciclo a ciclo (un motor real no repite ciclos idénticos),
+  aspiración con el gas y crepitar en retención.
+- Neumáticos: TRES sonidos físicos distintos, cada uno con su nivel propio
+  tomado del deslizamiento real de cada rueda:
+    * scrub  = chirrido lateral (deriva en curva): dos formantes agudos.
+    * spin   = patinaje de tracción (rueda motriz girando de más): zumbido
+               rugoso y grave con banda ancha; suena en la salida de curva.
+    * lock   = bloqueo en frenada (rueda casi parada deslizando): derrape
+               de banda ancha, más grave y estable.
+  Así el wheelspin de una salida de curva NO suena igual que el arrastre de
+  una curva rápida ni que un bloqueo de frenada.
 - Viento: ruido grave que crece con el cuadrado de la velocidad.
 - ADAS: pitido de aviso de subviraje/sobreviraje cuya frecuencia de
   repetición sube con la severidad (tonos distintos para cada uno).
+
+Todos los filtros son VECTORIZADOS (media móvil continua entre bloques): sin
+bucles muestra a muestra, para que sea barato también en la Steam Deck.
 
 Si numpy o el dispositivo de audio no están disponibles, el simulador
 funciona igualmente sin sonido.
@@ -45,12 +57,18 @@ class EngineSound:
         self.device = 0
         self._ph_fire = 0.0      # fase del orden de encendido
         self._ph_half = 0.0      # fase del medio orden (retumbo)
+        self._ph_rough = 0.0     # fase de la variación de ciclo
         self._ph_sq1 = 0.0
         self._ph_sq2 = 0.0
         self._ph_vib = 0.0
         self._ph_trem = 0.0
-        self._screech_lp = 0.0
+        self._ph_spin = 0.0      # fase del zumbido de wheelspin
+        self._ph_flut = 0.0      # fase del flutter del wheelspin
         self._rpm_lp = 900.0
+        self._load_lp = 0.0      # carga del motor suavizada
+        self._scrub_lp = 0.0     # nivel de chirrido lateral
+        self._spin_lp = 0.0      # nivel de patinaje de tracción
+        self._lock_lp = 0.0      # nivel de bloqueo en frenada
         self._adas_ph = 0.0      # fase del tono del pitido ADAS
         self._adas_rp = 0.0      # fase de repetición del pitido [0..1)
         self._adas_lvl = 0.0     # severidad suavizada del aviso
@@ -59,9 +77,12 @@ class EngineSound:
             return
         # filtros continuos (uno por fuente de ruido)
         self._f_intake = _Cont(6)
+        self._f_body = _Cont(6)      # redondea el pulso de combustión (grave)
         self._f_pop = _Cont(3)
-        self._f_band_hi = _Cont(3)
+        self._f_band_hi = _Cont(3)   # scrub: siseo agudo
         self._f_band_lo = _Cont(10)
+        self._f_spin = _Cont(8)      # wheelspin: banda media rugosa
+        self._f_lock = _Cont(22)     # bloqueo: banda grave (derrape oscuro)
         self._f_wind = _Cont(12)
         spec = sdl2.SDL_AudioSpec(cfg.AUDIO_RATE, sdl2.AUDIO_S16, 1, 1024)
         obtained = sdl2.SDL_AudioSpec(0, 0, 0, 0)
@@ -76,10 +97,20 @@ class EngineSound:
 
     def update(self, rpm: float, throttle: float, screech: float = 0.0,
                engine_on: bool = True, speed: float = 0.0,
-               understeer: float = 0.0, oversteer: float = 0.0):
-        """Encola audio si la cola se está quedando corta. Llamar cada frame."""
+               understeer: float = 0.0, oversteer: float = 0.0, *,
+               gear: int = 0, scrub: float = None, spin: float = 0.0,
+               lock: float = 0.0, brake: float = 0.0):
+        """Encola audio si la cola se está quedando corta. Llamar cada frame.
+
+        Parámetros nuevos (opcionales, keyword) para acoplar el sonido de los
+        neumáticos a la física por rueda: `scrub` (deriva lateral), `spin`
+        (patinaje de tracción) y `lock` (bloqueo en frenada), todos 0..1. Si
+        no se pasan, se usa `screech` como chirrido lateral (compatibilidad
+        con la llamada antigua)."""
         if not self.ok:
             return
+        if scrub is None:                 # compat: sin desglose -> todo scrub
+            scrub = screech
         queued = sdl2.SDL_GetQueuedAudioSize(self.device)
         target_bytes = int(cfg.AUDIO_RATE * 0.09) * 2
         if queued >= target_bytes:
@@ -93,37 +124,69 @@ class EngineSound:
         # --- motor -------------------------------------------------------
         # ligera inercia del tono para que no "salte" entre frames
         self._rpm_lp += (rpm - self._rpm_lp) * 0.35
-        if engine_on:
-            f = max(25.0, self._rpm_lp / 60.0 * 2.0)   # orden de encendido
+        if engine_on and self._rpm_lp > 50.0:
+            r = self._rpm_lp
+            f = max(25.0, r / 60.0 * 2.0)              # orden de encendido
             ph = self._ph_fire + t * (f / rate)
             ph_h = self._ph_half + t * (f * 0.5 / rate)
             self._ph_fire = float(ph[-1] % 1.0)
             self._ph_half = float(ph_h[-1] % 1.0)
 
+            # CARGA aproximada (el par no llega aquí directamente): gas más
+            # régimen. Modula la mezcla de armónicos: un motor sin carga suena
+            # más "limpio" que a fondo.
+            load = throttle * (0.35 + 0.65 * min(1.0, r / 5000.0))
+            self._load_lp += (load - self._load_lp) * 0.10
+            ld = self._load_lp
+
+            # variación ciclo a ciclo: un motor real no repite ciclos idénticos
+            rough = self._ph_rough + t * (5.7 / rate)
+            self._ph_rough = float(rough[-1] % 1.0)
+            cyc_var = 0.94 + 0.06 * np.sin(2.0 * np.pi * rough)
+
             saw = 2.0 * (ph % 1.0) - 1.0               # fundamental áspera
             h2 = np.sin(2.0 * np.pi * ph * 2.0)        # 2º armónico
             h3 = np.sin(2.0 * np.pi * ph * 3.0)        # 3º armónico
-            rumble = np.sin(2.0 * np.pi * ph_h)        # retumbo de escape
+            rumble = np.sin(2.0 * np.pi * ph_h)        # retumbo de medio orden
+
+            # CUERPO de combustión: pulso sin^2 estrecho por cada encendido,
+            # redondeado con un paso bajo -> golpe grave y cálido en vez de
+            # una sierra pura. Se centra restando su ciclo de trabajo nominal
+            # para que no meta continua (thump de DC).
+            pw = 0.16
+            z = (ph % 1.0) / pw
+            comb = np.where(z < 1.0, np.sin(np.pi * np.clip(z, 0.0, 1.0)) ** 2,
+                            0.0) - pw
+            body_pulse = self._f_body(comb)
+
             intake = self._f_intake(np.random.uniform(-1, 1, n)) \
                 * (0.10 + 0.45 * throttle)             # aspiración
-            body = 0.42 * saw + 0.24 * h2 + 0.12 * h3 + 0.28 * rumble + intake
-            vol = cfg.AUDIO_VOLUME * (0.20 + 0.50 * throttle
-                                      + 0.10 * self._rpm_lp / 7000.0)
+
+            body = ((0.30 + 0.14 * ld) * saw
+                    + (0.16 + 0.14 * ld) * h2
+                    + (0.08 + 0.09 * ld) * h3
+                    + 0.24 * rumble
+                    + (0.9 + 1.2 * ld) * body_pulse
+                    + intake) * cyc_var
+            vol = cfg.AUDIO_VOLUME * (0.20 + 0.45 * throttle + 0.10 * ld
+                                      + 0.08 * min(1.0, r / 7000.0))
             wave += body * vol
             # crepitar en retención (soltar gas con el motor alto)
-            if throttle < 0.08 and self._rpm_lp > 3200.0:
+            if throttle < 0.08 and r > 3200.0:
                 pops = np.random.uniform(0, 1, n)
                 mask = (pops > 0.985).astype(float)
                 wave += self._f_pop(mask * np.random.uniform(-1, 1, n)) \
                     * cfg.AUDIO_VOLUME * 0.9
+        else:
+            self._load_lp *= 0.97
 
-        # --- chirrido de neumáticos ---------------------------------------
-        self._screech_lp += (max(0.0, min(1.0, screech)) - self._screech_lp) * 0.22
-        lvl = self._screech_lp
-        if lvl > 0.01:
+        # --- neumáticos: chirrido lateral (scrub) -------------------------
+        self._scrub_lp += (max(0.0, min(1.0, scrub)) - self._scrub_lp) * 0.22
+        sc = self._scrub_lp
+        if sc > 0.01:
             # silbido agudo de fricción: dos formantes altos con vibrato
             # suave y siseo en banda alta; el tono sube al deslizar más
-            pitch = 1.0 + 0.20 * lvl
+            pitch = 1.0 + 0.20 * sc
             vib = self._ph_vib + t * (38.0 / rate)
             self._ph_vib = float(vib[-1] % 1.0)
             wob = 1.0 + 0.035 * np.sin(2 * np.pi * vib)
@@ -137,8 +200,38 @@ class EngineSound:
             tones = 0.62 * np.sin(2 * np.pi * ph1) + 0.38 * np.sin(2 * np.pi * ph2)
             raw = np.random.uniform(-1, 1, n)
             hiss = self._f_band_hi(raw) - self._f_band_lo(raw)  # siseo agudo
-            sv = cfg.SCREECH_VOLUME * lvl * cfg.AUDIO_VOLUME
+            sv = cfg.SCREECH_VOLUME * sc * cfg.AUDIO_VOLUME
             wave += (0.70 * tones + 1.1 * hiss) * tremolo * sv
+
+        # --- neumáticos: patinaje de tracción (wheelspin) -----------------
+        self._spin_lp += (max(0.0, min(1.0, spin)) - self._spin_lp) * 0.30
+        sp = self._spin_lp
+        if sp > 0.01:
+            # zumbido GRAVE y rugoso (la rueda gira rápido sobre el asfalto),
+            # el tono sube con el patinaje; banda media áspera y un flutter
+            # que da la sensación de agarre intermitente. Nada que ver con el
+            # silbido agudo del scrub lateral.
+            fb = 90.0 + 150.0 * sp
+            phb = self._ph_spin + np.cumsum(np.full(n, fb)) / rate
+            self._ph_spin = float(phb[-1] % 1.0)
+            buzz = 2.0 * (phb % 1.0) - 1.0
+            band = self._f_spin(np.random.uniform(-1, 1, n))
+            flut = self._ph_flut + t * (55.0 / rate)
+            self._ph_flut = float(flut[-1] % 1.0)
+            flutter = 0.55 + 0.45 * np.sin(2 * np.pi * flut)
+            gv = cfg.SCREECH_VOLUME * sp * cfg.AUDIO_VOLUME
+            # más zumbido y menos siseo: un "growl" grave, no un agudo
+            wave += (0.85 * buzz + 0.5 * band) * flutter * gv
+
+        # --- neumáticos: bloqueo en frenada (skid) ------------------------
+        self._lock_lp += (max(0.0, min(1.0, lock)) - self._lock_lp) * 0.28
+        lk = self._lock_lp
+        if lk > 0.01:
+            # derrape de banda ancha, grave y ESTABLE (la rueda casi parada
+            # arrastra la goma): un "shhhh" continuo sin el tono del chirrido.
+            skid = self._f_lock(np.random.uniform(-1, 1, n))
+            gv = cfg.SCREECH_VOLUME * lk * cfg.AUDIO_VOLUME
+            wave += skid * 1.4 * gv
 
         # --- viento -------------------------------------------------------
         wind_lvl = min(1.0, (speed / 52.0) ** 2)
@@ -183,6 +276,9 @@ class EngineSound:
             else:
                 self._adas_rp = 0.0
 
+        # limitador suave: la saturación dura del int16 mete distorsión
+        # desagradable; tanh comprime los picos sin recortar bruscamente
+        wave = np.tanh(wave * 1.1) / 1.1
         samples = np.clip(wave * 32767.0, -32767, 32767).astype(np.int16)
         buf = samples.tobytes()
         sdl2.SDL_QueueAudio(self.device, buf, len(buf))

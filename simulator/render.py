@@ -159,8 +159,12 @@ class Renderer:
         onboard = (cam_back == 0.0)
         if onboard and cfg.CAMERA_FOV_SPEED > 0.0:
             # el campo de visión se abre un poco con la velocidad (bajar f =
-            # más ancho): sensación de vértigo al acelerar
-            f *= 1.0 - cfg.CAMERA_FOV_SPEED * min(1.0, speed / 60.0)
+            # más ancho): sensación de vértigo al acelerar.
+            # ACOTADO: sin el suelo, un CAMERA_FOV_SPEED alto llevaba el
+            # factor a cero o a NEGATIVO al coger velocidad, y con f<0 la
+            # proyección se invierte: la carretera aparecía espejada en la
+            # parte de arriba y la hierba subía tapando la pantalla.
+            f *= max(0.55, 1.0 - cfg.CAMERA_FOV_SPEED * min(1.0, speed / 60.0))
         half_w = getattr(track, "half_w", cfg.ROAD_HALF_WIDTH)
         kerb_w = cfg.KERB_WIDTH
 

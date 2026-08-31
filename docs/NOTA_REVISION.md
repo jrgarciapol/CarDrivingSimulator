@@ -37,7 +37,10 @@ simulator/tracks/     circuitos: silverstone, spa (TUM + relieve/peralte
                       sintéticos), óvalo peraltado de diseño
 tools/import_track.py importador TUM → formato interno (+ modo --enriquecer)
 tools/make_oval.py    generador del óvalo peraltado
-tests/test_physics.py 45 pruebas de comportamiento físico, sin SDL ni volante
+tests/                162 pruebas: comportamiento (test_physics), magnitudes
+                      contra primeros principios (test_referencia_fisica),
+                      integrador (test_integrador), modelos seleccionables de
+                      neumático y motor, transmisión y reglajes
 ```
 
 ## Modelo físico (resumen; detalle en docs/FISICA.md)
@@ -60,14 +63,21 @@ vive en coordenadas locales de la carretera (s, n, psi).
   a la carga, **camber thrust** por balanceo con **camber gain**
   geométrico por compresión, **temperatura** por rueda (fricción calienta,
   el aire enfría, parábola de rendimiento) y *relaxation length* lateral.
+  Modelo **seleccionable** (`TIRE_MODEL`): `legacy` (curva compartida) o
+  `brush` (curvas longitudinal/lateral separadas con mezcla direccional).
 - **Ruedas**: velocidad angular propia; integrador **híbrido** (rodadura:
   relajación exponencial exacta al equilibrio, incondicionalmente estable;
   deslizamiento profundo: explícito con captura y bloqueo). **Inercia
   efectiva** con el motor reflejado por el cuadrado de la desmultiplicación
   cuando el embrague está acoplado.
-- **Transmisión**: RWD/FWD/AWD, diferencial viscoso por eje con tope
-  (abierto/LSD/bloqueado), freno motor, limitador con histéresis, inercia
-  de régimen, cambio automático conmutable con umbrales relativos al corte.
+- **Transmisión**: RWD/FWD/AWD; diferencial por eje con cuatro tipos
+  (`open`/`lsd`/`locked`/`viscous`), el LSD sensible al par con **precarga**
+  (`DIFF_PRELOAD`) y **rampas separadas** de aceleración/retención
+  (`DIFF_RAMP_POWER`/`DIFF_RAMP_COAST`) y **tope de capacidad**
+  (`DIFF_MAX_LOCK`); **corte de par al cambiar** (`SHIFT_CUT_TIME`); freno
+  motor, limitador con histéresis; motor **seleccionable** (`ENGINE_MODEL`):
+  `legacy` (régimen filtrado) o `inertia` (cigüeñal con inercia + embrague);
+  cambio automático conmutable con umbrales relativos al corte.
 - **Frenos**: reparto configurable, par que supera el agarre a propósito
   (sin ABS bloquea), ABS por rueda opcional.
 - **Carretera**: pendiente y curvatura vertical (gravedad, descarga en
@@ -99,7 +109,8 @@ vive en coordenadas locales de la carretera (s, n, psi).
   desgaste y presión de neumáticos, geometría de dirección completa
   (caster/convergencia), embrague con pedal y calado real, colisiones,
   rivales con IA.
-- El diferencial es viscoso con tope, no un Salisbury con precarga/rampas.
+- El LSD modela precarga y rampas de aceleración/retención con tope de
+  capacidad, pero no la histéresis térmica de los discos ni su desgaste.
 - A <1 m/s la guiñada pasa a un modelo cinemático amortiguado (evitar la
   singularidad de los deslizamientos).
 
@@ -107,7 +118,9 @@ vive en coordenadas locales de la carretera (s, n, psi).
 
 ```
 pip install -r requirements.txt
-python tests/test_physics.py                    # 45 pruebas de comportamiento
+python tests/test_physics.py                    # 120 pruebas de comportamiento
+python tests/test_referencia_fisica.py          # magnitudes vs primeros principios
+python tests/test_integrador.py                 # convergencia + energía
 SDL_VIDEODRIVER=dummy python -m simulator.main --frames 300   # humo headless
 ```
 

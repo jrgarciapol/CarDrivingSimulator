@@ -26,14 +26,17 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   desconectable por configuración.
 - Neumáticos con curva combinada tipo Pacejka (círculo de fricción continuo),
   **sensibilidad a la carga** y retardo de respuesta lateral (*relaxation
-  length*).
+  length*). El modelo del neumático es **seleccionable** (`TIRE_MODEL`):
+  `legacy` (una curva compartida) o `brush` (curvas longitudinal y lateral
+  separadas, con mezcla direccional).
 - **Suspensión completa**: altura, cabeceo y balanceo con muelle y
   amortiguador por rueda y barras estabilizadoras por eje. La transferencia
   de carga (frenar carga el morro, la curva carga las ruedas exteriores)
   emerge de la suspensión; apurando, la rueda interior puede llegar a
   levantarse.
 - **Tracción configurable**: propulsión (RWD), delantera (FWD) o total (AWD),
-  con **diferencial** abierto, autoblocante o bloqueado por eje.
+  con **diferencial** abierto, autoblocante (con tope de capacidad
+  `DIFF_MAX_LOCK`), bloqueado o viscoso por eje.
 - Motor con curva de par, **freno motor**, limitador con histéresis y caja de
   6 marchas + marcha atrás con levas.
 - **Pendientes y rasantes físicas**: las subidas frenan, las bajadas empujan
@@ -44,7 +47,11 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   rápidas y más peso en el volante).
 - **Geometría anti-dive/anti-squat** e **inercia del motor acoplada** a las
   ruedas motrices (en 1ª cuesta mucho más hacer patinar; al reducir se
-  siente la retención del volante motor).
+  siente la retención del volante motor). El motor es **seleccionable**
+  (`ENGINE_MODEL`): `legacy` (régimen filtrado) o `inertia` (el cigüeñal como
+  grado de libertad propio: acelerón libre en punto muerto y patinaje del
+  embrague en la arrancada). El cambio da un **tirón de corte de par** real
+  (`SHIFT_CUT_TIME`).
 - **Camber thrust**: al tumbarse la carrocería en el apoyo las ruedas se
   inclinan y pierden agarre — los coches altos y blandos subviran más.
 - **Peralte** con física completa: la gravedad empuja hacia el vértice, la
@@ -60,12 +67,20 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   rueda exterior en el apoyo (cada coche según su geometría).
 - Superficie por rueda: con dos ruedas en la hierba el coche tira hacia ese
   lado, como en la realidad.
+- **Firme con rugosidad**: zonas de asfalto dañado (deterministas por
+  posición, escalables con `ROAD_ROUGHNESS`) con baches grandes que hacen
+  fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
+  en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **45 pruebas físicas** (`python tests/test_physics.py`):
-  0-100 en ~7 s, frenada 100-0 en ~39 m con ABS (y peor sin él), subviraje
+- Verificado con una batería de **162 pruebas** (`python tests/`): 120 de
+  comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
-  peralte, etc. El modelo está explicado ecuación a ecuación en
-  [`docs/FISICA.md`](docs/FISICA.md).
+  peralte…), más pruebas de **magnitudes contra primeros principios**
+  (transferencias de carga), de **convergencia y energía del integrador**, de
+  los modelos de neumático y motor, de la transmisión y de los reglajes. El
+  modelo está explicado ecuación a ecuación en
+  [`docs/FISICA.md`](docs/FISICA.md); la última tanda de mejoras, en
+  [`docs/EVOLUCION_v3.3.md`](docs/EVOLUCION_v3.3.md).
 
 **Entorno:** renderizador **3D real** (proyección en perspectiva de la malla
 de la carretera por triángulos, con malla adaptativa, peralte inclinando la
@@ -365,7 +380,9 @@ Otros ajustes útiles en `config.py`:
 | `FFB_SMOOTHING_S` | Súbelo si el volante da bandazos en recta |
 | `AERO_DOWNFORCE` | Carga aerodinámica (súbelo para sentir un GT/fórmula) |
 | `DRIVE_TYPE` | `"RWD"` propulsión, `"FWD"` delantera, `"AWD"` total |
-| `DIFF_TYPE` | Diferencial: `"open"`, `"lsd"` o `"locked"` |
+| `DIFF_TYPE` | Diferencial: `"open"`, `"lsd"`, `"locked"` o `"viscous"` |
+| `TIRE_MODEL` | Neumático: `"legacy"` (curva compartida) o `"brush"` (long/lat separadas) |
+| `ENGINE_MODEL` | Motor: `"legacy"` (régimen filtrado) o `"inertia"` (cigüeñal con inercia) |
 | `ABS_ENABLED` | `False` para frenar sin ayudas (bloqueos reales) |
 | `TIRE_MU` | Agarre del asfalto (baja a ~0.7 para "lluvia") |
 | `TIRE_REAR_GRIP_FACTOR` | <1.0 hace el coche sobrevirador (drift) |
@@ -417,8 +434,18 @@ docs/
   FISICA.md        el modelo físico explicado para un ingeniero
   NOTA_REVISION.md orientación para revisores del código
 tests/
-  test_physics.py  bateria de 45 pruebas del modelo fisico (sin volante)
+  test_physics.py           120 pruebas de comportamiento del modelo fisico
+  test_referencia_fisica.py magnitudes contra primeros principios (transferencias)
+  test_integrador.py        convergencia temporal y energia del integrador
+  test_neumatico_brush.py   curvas long/lat separadas (TIRE_MODEL brush)
+  test_motor_inercia.py     cigueñal con inercia + embrague (ENGINE_MODEL)
+  test_transmision.py       corte de par al cambiar + diferenciales
+  test_settings.py          persistencia de reglajes y guardado de coches
 ```
+
+Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,
+`DIFF_TYPE`) y el resto de reglajes se pueden cambiar desde el menú de
+**AJUSTES** del juego, sin editar `config.py`.
 
 ## Solución de problemas
 

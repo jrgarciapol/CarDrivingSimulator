@@ -273,6 +273,18 @@ def tire_force_magnitude(rho, mu, fz):
 con `TIRE_B = 2.07`, `TIRE_C = 1.4` en `simulator/config.py:183-184`, y el
 pico situado en `rho = 1`.
 
+> **Modelo seleccionable (`TIRE_MODEL`).** Lo anterior —una sola forma de
+> curva (`B`, `C`) compartida por el eje longitudinal y el lateral— es el modo
+> `legacy`. En el modo `brush` cada eje tiene **su propia forma**
+> (`TIRE_B_LONG/C_LONG` y `TIRE_B_LAT/C_LAT`) y la mezcla se interpola según la
+> dirección del deslizamiento (§9): la longitudinal queda más rígida y con
+> pico más marcado (límite de tracción/frenada más nítido) y la lateral más
+> progresiva y con caída más suave (entrada avisada). En rigor es un **modelo
+> híbrido de deslizamiento independiente** (curvas separadas + mezcla
+> direccional + elipse), no un *brush model* que reparta la tensión cortante
+> en la huella. Las curvas reales de ambos modos, con los valores de
+> `config.py`, están dibujadas en `docs/img/curvas_neumatico.png`.
+
 ---
 
 ## 5. El par autoalineante y los dos avances
@@ -802,6 +814,12 @@ Es exactamente el planteamiento del modelo de deslizamiento combinado
 estándar, y garantiza que la transición entre frenar, girar y acelerar sea
 continua y físicamente coherente.
 
+Con `TIRE_MODEL = "brush"` (§4) el único cambio es que `B` y `C` dejan de ser
+constantes: se interpolan según cuánto del deslizamiento combinado es
+longitudinal frente a lateral (`w = s_e²/ρ²`), de modo que un bloqueo de
+frenada ve la curva longitudinal (más rígida) y una curva sostenida ve la
+lateral (más progresiva), sin romper la continuidad de la elipse.
+
 ---
 
 ## 10. Transferencia de carga y sensibilidad a la carga
@@ -1092,8 +1110,11 @@ Todos editables en vivo desde **AJUSTES AVANZADOS** (menú principal), o en
 
 | Parámetro | Valor | Qué gobierna |
 |---|---|---|
-| `TIRE_B` | 2.07 | Rigidez de la curva combinada (pendiente inicial) |
-| `TIRE_C` | 1.4 | Forma: cuánto cae el agarre pasado el pico |
+| `TIRE_MODEL` | legacy | Curva compartida (`legacy`) o curvas long/lat separadas (`brush`) |
+| `TIRE_B` | 2.07 | Rigidez de la curva combinada (pendiente inicial, modo `legacy`) |
+| `TIRE_C` | 1.4 | Forma: cuánto cae el agarre pasado el pico (modo `legacy`) |
+| `TIRE_B_LONG` / `_LAT` | 2.40 / 1.90 | Rigidez de las curvas longitudinal / lateral (modo `brush`) |
+| `TIRE_C_LONG` / `_LAT` | 1.50 / 1.35 | Forma de las curvas longitudinal / lateral (modo `brush`) |
 | `TIRE_PEAK_SLIP_ANGLE_DEG` | 7.0 | Deriva del pico de agarre lateral |
 | `TIRE_PEAK_SLIP_RATIO` | 0.12 | Deslizamiento longitudinal del pico |
 | `TIRE_LONG_GRIP_RATIO` | 1.10 | Excentricidad de la elipse de fricción |

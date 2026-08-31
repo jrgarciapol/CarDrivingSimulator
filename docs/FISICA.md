@@ -254,6 +254,18 @@ cruzado frena peor — el comportamiento que castiga pasarse del límite. El
 factor `λ` da al neumático un 10 % más de capacidad longitudinal que
 lateral (elipse en vez de círculo).
 
+**Modo seleccionable `TIRE_MODEL`.** Lo anterior es el modo `legacy`: una sola
+forma de curva (`B`, `C`) para longitudinal y lateral. En el modo `brush` —un
+**modelo híbrido de deslizamiento independiente**, no un brush model que
+reparta la tensión cortante en la huella— cada eje tiene su propia forma: `B`
+y `C` se interpolan entre los valores longitudinales (`TIRE_B_LONG`,
+`TIRE_C_LONG`) y laterales (`TIRE_B_LAT`, `TIRE_C_LAT`) según la dirección del
+deslizamiento (`w = (s_n/λ)²/ρ²`), manteniendo la misma elipse de combinación.
+Así la longitudinal es más rígida y de pico más marcado, y la lateral más
+progresiva. Con los pares long = lat es idéntico a `legacy`. La calibración de
+ambos (picos en `μ·Fz` a deslizamientos realistas) está en
+`docs/img/curvas_neumatico.png`.
+
 ### Sensibilidad a la carga
 
 ```
@@ -540,6 +552,19 @@ como suma de ondas senoidales cerradas sobre la vuelta (pendiente máxima
 combinada ~9 %). El óvalo (`tools/make_oval.py`) tiene peralte de diseño de
 hasta 18°.
 
+**Rugosidad y zonas dañadas** — el asfalto no es liso. Una función
+determinista por posición (`damage_at(s)`) marca **parches de firme roto**:
+el circuito está sano la mayor parte del tiempo (~11 % dañado) y de vez en
+cuando aparece un tramo con baches grandes (hasta ~5 cm, más bruscos que un
+piano). Todo escalado por `ROAD_ROUGHNESS`. No es un efecto cosmético: el
+bache entra en el muelle vertical del neumático (`bump_at`), así que en un
+parche roto la **`Fz` fluctúa** (una rueda puede oscilar el doble de carga) y
+la suspensión trabaja el triple de recorrido — y como la carga varía, **el
+agarre varía con ella**. La misma señal de rugosidad (`road_roughness`, 0..1)
+alimenta el **temblor de cámara** y multiplica la **textura del FFB** en el
+volante, y el asfalto dañado se dibuja más oscuro y moteado: se ve, se siente
+y afecta a la física con el mismo criterio.
+
 ## 8. Motor y transmisión
 
 **Curva de par** paramétrica (`engine_torque`): sube del 47 % del par
@@ -556,6 +581,20 @@ primer orden con τ = 0.12 s hacia `rpm_ruedas` (o hacia el ralentí si es
 mayor). **Limitador** con histéresis de 300 rpm (corta la inyección, no
 "clava" la aguja). **Embrague** automático simplificado: por debajo del
 régimen de ralentí equivalente patina (75 % del par, sin freno motor).
+
+**Modo seleccionable `ENGINE_MODEL`.** Lo anterior (filtro de 0,12 s) es el
+modo `legacy`. En `inertia` el cigüeñal es un grado de libertad propio,
+`I_e·dω/dt = combustión − freno motor − embrague`: **en marcha** va rígido con
+las ruedas (idéntico a legacy, que ya maneja el wheelspin), pero en **punto
+muerto** y en la **salida desde parado** el motor sube de vueltas por su
+cuenta y el embrague patina (par limitado, escalado con el gas y la
+velocidad). Emergen el acelerón libre en punto muerto y el flare del embrague
+en la arrancada — fenómenos que en `legacy` eran artificiales.
+
+**Corte de par en el cambio** (`SHIFT_CUT_TIME`): al engranar una marcha, el
+par a las ruedas cae casi a cero unos milisegundos y se recupera de forma
+progresiva. Es el tirón real de cada cambio; con el motor `inertia` se nota
+especialmente.
 
 **Transmisión**: `T_rueda = T_motor·ratio·grupo·η`, repartido entre ejes
 según `DRIVE_TYPE` (`AWD_FRONT_SPLIT` configurable) y dentro de cada eje por
@@ -587,7 +626,10 @@ El `tanh` reproduce el rozamiento **seco** de los discos (satura, no crece
 sin fin) sin el corte en seco que haría oscilar la integración. Su
 **banda** se ensancha con el par de bloqueo: si un solo paso pudiera
 cambiar la diferencia de giro más de lo que mide la banda, el bloqueo
-oscilaría de un extremo a otro y las ruedas nunca se estabilizarían.
+oscilaría de un extremo a otro y las ruedas nunca se estabilizarían. La
+**capacidad máxima** de transferencia la fija `DIFF_MAX_LOCK`: los discos
+tienen un límite, así que con mucho par de eje el bloqueo satura ahí en vez
+de crecer indefinidamente.
 
 El acoplamiento **viscoso** (`"viscous"`) es el modelo anterior y se
 conserva porque es lo que monta un turismo de tracción total permanente:
@@ -667,8 +709,11 @@ t_mec(R)  = R·tan(CASTER_ANGLE_DEG) + STEER_TRAIL_OFFSET
 
 ## 11. Validación
 
-`python tests/test_physics.py` — **45 pruebas** sin SDL ni volante, en
-cinco bloques:
+La batería completa son **162 pruebas** sin SDL ni volante, repartidas en
+siete archivos. Cada cambio de modelo se contrasta; nada se da por bueno
+"porque se siente mejor".
+
+**`test_physics.py` — 120 pruebas** de comportamiento, en cinco bloques:
 
 - **Aceleración y frenada**: 0–100 en rango realista, distancia de frenada
   con ABS (33–60 m desde 100), sin ABS bloquea y frena más largo, con las
@@ -689,8 +734,36 @@ cinco bloques:
   la goma y el aire la enfría, la goma fría agarra menos, el camber gain
   recupera agarre en el apoyo.
 
-Más el par de FFB en rango, 60 s de conducción autónoma sin divergencias y
-una pasada de aceleración+frenada con los **8 coches** del garaje
-(umbrales por coche: la fórmula supera 190 km/h donde el autobús pasa de
-40). Como prueba de humo del juego completo:
+**Validación de primeros principios** — además del comportamiento, se
+contrastan las **magnitudes** contra la teoría clásica:
+
+- **`test_referencia_fisica.py` (9)**: carga estática = reparto de peso
+  (exacto), transferencia longitudinal `ΔFz = m·a·h/L` (±1 %), transferencia
+  lateral `ΔFz = m·a·h/vía` (±3 %), conservación `ΣFz = m·g + downforce`.
+- **`test_integrador.py` (6)**: **convergencia temporal** (480/960/1920 Hz —
+  el error se reduce a la mitad al doblar la frecuencia; 480 Hz está
+  convergido) y **energía** (en coasting la velocidad solo baja, una
+  suspensión perturbada amortigua, un corrugado queda acotado — el integrador
+  no crea energía). Con datos se decidió **no** implementar un
+  predictor-corrector: a 480 Hz ya convergido, su coste/beneficio es malo.
+
+**Modelos seleccionables**:
+
+- **`test_neumatico_brush.py` (6)**: en `brush` las curvas long/lat son
+  realmente distintas, con 0-100 razonable y ~0,92 g lateral, y la cadena de
+  cargas sigue intacta.
+- **`test_motor_inercia.py` (5)**: el cigüeñal con inercia + embrague (punto
+  muerto, arrancada).
+- **`test_transmision.py` (5)**: el corte de par baja la aceleración tras el
+  cambio; el diferencial abierto reparte 50/50, el LSD transfiere a la rueda
+  que agarra y satura en `DIFF_MAX_LOCK`.
+
+**`test_settings.py` (11)**: persistencia de reglajes y guardado de coches.
+
+La **calibración del neumático** se documenta además con una figura de las
+curvas reales del modelo (`docs/img/curvas_neumatico.png`, generada por
+`docs/img/fuentes/curvas_neumatico.py`): confirma que los picos coinciden con
+μ·Fz (lateral) y μ·Fz·ratio (longitudinal) en deslizamientos realistas.
+
+Como prueba de humo del juego completo:
 `SDL_VIDEODRIVER=dummy python -m simulator.main --frames 300`.

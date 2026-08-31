@@ -43,24 +43,16 @@ def main():
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     fig, axes = plt.subplots(2, 3, figsize=(15, 8),
                              gridspec_kw={"height_ratios": [3, 1]})
-    # escala comun para comparar tamanos reales
-    spans = []
     data = []
     for name, fn, col in TRACKS:
         kap, elev = load(os.path.join(root, "simulator/tracks", fn))
         x, y = plan(kap)
         data.append((name, col, kap, elev, x, y))
-        spans.append(max(max(x) - min(x), max(y) - min(y)))
-    span = max(spans) * 1.08
 
     for j, (name, col, kap, elev, x, y) in enumerate(data):
         ax = axes[0][j]
-        ax.plot(x, y, color=col, lw=2.6, solid_capstyle="round")
-        ax.plot(x[0], y[0], "ko", ms=7)
-        cx = (max(x) + min(x)) / 2
-        cy = (max(y) + min(y)) / 2
-        ax.set_xlim(cx - span / 2, cx + span / 2)
-        ax.set_ylim(cy - span / 2, cy + span / 2)
+        ax.plot(x, y, color=col, lw=1.6, solid_capstyle="round")
+        ax.plot(x[0], y[0], "ko", ms=6)
         ax.set_aspect("equal")
         Rs = [1 / abs(k) for k in kap if abs(k) > 1e-6]
         ax.set_title(f"{name}   {len(kap)*SEG/1000:.2f} km\n"
@@ -77,8 +69,8 @@ def main():
         ax2.grid(alpha=0.25)
         ax2.tick_params(labelsize=7)
 
-    fig.suptitle("Tres carreteras a escala comun  -  Norma 3.1-IC   "
-                 "(A-120 autovia · C-90 puerto · C-50 montana)",
+    fig.suptitle("Tres carreteras (~30 min a Vp)  -  Norma 3.1-IC   "
+                 "(A-120 autovia · C-90 puerto · C-50 montana)  -  curvas izq/dcha",
                  fontweight="bold", fontsize=13)
     plt.tight_layout(rect=(0, 0, 1, 0.96))
     out = os.path.join(root, "docs/img/carreteras.png")

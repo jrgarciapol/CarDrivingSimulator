@@ -1,34 +1,40 @@
-"""Genera carreteras cerradas conforme a la Norma 3.1-IC (Trazado), una por
-tipo de via, de unos 30 min de recorrido a la velocidad de proyecto:
+"""Genera carreteras conformes a la Norma 3.1-IC (Trazado), una por tipo de
+via, de unos 30 min de recorrido a la velocidad de proyecto:
 
-  - a-120.csv  autovia,                 Vp = 120 km/h  ~60 km
-  - c-90.csv   convencional de puerto,   Vp = 90 km/h   ~45 km
-  - c-50.csv   convencional de montana,  Vp = 50 km/h   ~25 km
+  - a-120.csv  autovia,                 Vp = 120 km/h
+  - c-90.csv   convencional de puerto,   Vp = 90 km/h
+  - c-50.csv   convencional de montana,  Vp = 50 km/h
 
-TRAZADO EN PLANTA conforme a la norma: la traza se compone de ALINEACIONES
-RECTAS, CLOTOIDES y CURVAS CIRCULARES (combinacion basica Tipo I del Anexo 4),
-nunca de curvatura variando "a ojo". Se comprueba, curva a curva:
+ESQUEMA DEL CIRCUITO: no es un anillo que da vueltas alrededor de un centro
+(eso obliga a girar 360 gon netos y sale un ovalo). Es un recorrido de IDA y
+VUELTA cerrado con dos GLORIETAS:
 
-  - radio  R >= R_min de la Tabla 4.4 (700 / 350 / 85 m segun la via);
-  - peralte segun la Tabla 4.5 (formula exacta del grupo de la via);
-  - parametro de clotoide A = MAYOR de las tres limitaciones del 4.4.3
-    (comodidad J, transicion del peralte y percepcion visual), con la
-    longitud de clotoide sin superar 1,5 veces la minima (4.4.4);
-  - clotoides simetricas (4.4.6) y siempre con curva circular intermedia,
-    es decir sin clotoides de vertice en el tronco (4.4.7);
-  - desarrollo minimo: angulo de giro Omega >= 20 gon (4.4.5);
-  - alineaciones rectas entre L_min y L_max de la Tabla 4.1, distinguiendo
-    el caso "en S" (curvas de sentido contrario) del resto.
+    [ tramo de ida ] -> (glorieta 180) -> [ tramo de vuelta ] -> (glorieta 180)
 
-TRAZADO EN ALZADO: inclinacion de la rasante bajo el maximo de las Tablas
-5.1/5.2 y acuerdos verticales con parametro Kv por encima del minimo de la
-Tabla 5.3 (convexos y concavos).
+Como cada glorieta gira 180 gon, los dos tramos de carretera pueden girar 0
+gon netos y divagar LIBREMENTE con curvas a izquierda y derecha, igual que
+una carretera de verdad. El cierre en posicion se resuelve ajustando las
+longitudes de las alineaciones rectas (queda holgura de sobra entre la
+L_min y la L_max de la Tabla 4.1).
 
-La planta se apoya en un POLIGONO CERRADO de vertices repartidos en angulo
-alrededor de un centro con radios alternados (forma de engranaje irregular):
-al ser los vertices monotonos en angulo el poligono es simple (no se corta) y
-cierra en posicion y rumbo por construccion, y la alternancia dentro/fuera
-produce curvas a IZQUIERDA y a DERECHA encadenadas, no un ovalo.
+TRAZADO EN PLANTA conforme a la norma: alineaciones RECTAS, CLOTOIDES y
+CURVAS CIRCULARES (combinacion Tipo I). Se comprueba curva a curva:
+  - R >= R_min de la Tabla 4.4 (700 / 350 / 85 m segun la via);
+  - peralte segun la Tabla 4.5 (formula exacta del grupo);
+  - clotoide A = mayor de las tres limitaciones del 4.4.3 (comodidad J,
+    transicion del peralte, percepcion visual), con L <= 1,5 L_min (4.4.4);
+  - clotoides simetricas (4.4.6) y siempre con curva circular (4.4.7);
+  - desarrollo minimo, angulo de giro (4.4.5);
+  - rectas entre L_min y L_max de la Tabla 4.1 (caso "en S" y resto).
+
+GLORIETAS: la norma (10.6.1) excluye expresamente a las calzadas anulares de
+las reglas de los capitulos 4, 5 y 7. Se dimensionan por su velocidad: el
+Anexo 5 limita la velocidad especifica de la calzada anular a 50 km/h, y aqui
+se proyectan para 40 km/h, de donde R = V^2/(127*(ft+p/100)) = 63 m con el
+ft de la Tabla 4.3 y un 2% de peralte.
+
+TRAZADO EN ALZADO: inclinacion bajo el maximo de las Tablas 5.1/5.2 y
+acuerdos verticales con Kv por encima del minimo de la Tabla 5.3.
 
     python tools/make_carretera.py
 """
@@ -38,178 +44,206 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import clothoid as cl
 import norma31ic as N
 
 SEG = 4.0                        # m por segmento (formato interno del sim)
-MIN_ARCO = 20.0                  # m minimos de curva circular (4.4.7)
+MIN_ARCO = 25.0                  # m minimos de curva circular (4.4.7)
 
-# semiancho de calzada modelado y distancia del borde al eje de giro (B)
-CALZADA = {"A-120": dict(half_w=4.75, B=3.50, k=0.75),   # 2 carriles giran
+V_GLORIETA = 40.0                # km/h en la calzada anular (Anexo 5: <= 50)
+P_GLORIETA = 2.0                 # % de peralte en la calzada anular
+
+CALZADA = {"A-120": dict(half_w=4.75, B=3.50, k=0.75),
            "C-90":  dict(half_w=3.75, B=3.50, k=1.00),
            "C-50":  dict(half_w=3.25, B=3.00, k=1.00)}
 
-# Forma del poligono de apoyo (n vertices, radio base, amplitud del zigzag) y
-# REPERTORIO de radios de diseno de cada via: valores redondos por encima del
-# R_min de la Tabla 4.4, elegidos para que la via tenga el caracter de su
-# velocidad de proyecto (la C-50 con curvas cerradas, la A-120 con radios
-# amplios). El objetivo de longitud es ~30 min a Vp.
+# repertorio de radios de diseno y longitud objetivo (~30 min a Vp)
 PRESETS = {
-    "A-120": dict(n=48, base=9550.0, amp=0.030, forma=0.12,
-                  radios=[700, 800, 900, 1100, 1300, 1600, 2000]),
-    "C-90":  dict(n=48, base=7162.0, amp=0.030, forma=0.22,
-                  radios=[350, 400, 450, 550, 650, 800, 1000]),
-    "C-50":  dict(n=60, base=3979.0, amp=0.025, forma=0.20,
-                  radios=[85, 100, 120, 150, 180, 220, 280]),
+    "A-120": dict(largo=60000.0, radios=[700, 800, 900, 1100, 1300, 1600, 2000]),
+    "C-90":  dict(largo=45000.0, radios=[350, 400, 450, 550, 650, 800, 1000]),
+    "C-50":  dict(largo=25000.0, radios=[85, 100, 120, 150, 180, 220, 280]),
 }
 
 
-# ---------------------------------------------------------------------------
-# 1. POLIGONO DE APOYO (engranaje irregular: alterna dentro/fuera)
-# ---------------------------------------------------------------------------
-def vertices(n, base, amp, forma=0.0):
-    """Vertices monotonos en angulo (poligono simple) con DOS escalas:
-
-    - FORMA (baja frecuencia, amplitud `forma`): hace que el recorrido
-      divague con lobulos grandes, como una carretera de verdad, en vez de
-      describir una circunferencia;
-    - ZIGZAG (alternancia dentro/fuera, amplitud `amp`): da el ritmo de
-      curvas a IZQUIERDA y a DERECHA encadenadas.
-    """
-    V = []
-    for i in range(n):
-        th = 2.0 * math.pi * i / n
-        lob = (0.55 * math.sin(2.0 * th + 0.4) + 0.30 * math.sin(3.0 * th + 2.3)
-               + 0.15 * math.sin(5.0 * th + 1.1))
-        alt = 1.0 if i % 2 == 0 else -1.0
-        var = 1.0 + 0.35 * math.sin(3.0 * th + 0.7) + 0.22 * math.sin(7.0 * th + 2.1)
-        rr = base * (1.0 + forma * lob + amp * alt * var)
-        V.append((rr * math.cos(th), rr * math.sin(th)))
-    return V
-
-
-def deflections(V):
-    n = len(V)
-    D = []
-    for i in range(n):
-        a, b, c = V[(i - 1) % n], V[i], V[(i + 1) % n]
-        h1 = math.atan2(b[1] - a[1], b[0] - a[0])
-        h2 = math.atan2(c[1] - b[1], c[0] - b[0])
-        D.append((h2 - h1 + math.pi) % (2 * math.pi) - math.pi)
-    return D
-
-
-def edges(V):
-    n = len(V)
-    return [math.hypot(V[(i + 1) % n][0] - V[i][0],
-                       V[(i + 1) % n][1] - V[i][1]) for i in range(n)]
+def radio_glorieta():
+    """R de la calzada anular para V_GLORIETA (equilibrio del 4.3.2, con el
+    ft de la Tabla 4.3). La glorieta esta exenta de los capitulos 4/5/7."""
+    ft = N.FT_MAX[int(V_GLORIETA)]
+    return V_GLORIETA ** 2 / (127.0 * (ft + P_GLORIETA / 100.0))
 
 
 # ---------------------------------------------------------------------------
-# 2. GEOMETRIA DE CADA CURVA (clotoide segun 4.4.3 + curva circular)
+# 1. GEOMETRIA DE UNA CURVA (clotoide 4.4.3 + curva circular)
 # ---------------------------------------------------------------------------
-def clot_A(via, R):
-    """Parametro de clotoide: el mayor de las tres limitaciones (4.4.3)."""
-    c = CALZADA[via]
-    return N.a_min(via, R, c["B"], c["k"])
-
-
 def curva(via, R, defl):
-    """Devuelve (L_clot, tau, L_arco, T) de la combinacion Tipo I.
-    tau = giro de cada clotoide (rad); T = tangente PI->TS.
-    Retranqueo y abscisa por las series clasicas de la clotoide (coinciden
-    con la integracion numerica de clothoid.py con error < 0,4 %)."""
-    A = clot_A(via, R)
+    """(L_clot, tau, L_arco, T) de la combinacion Tipo I."""
+    c = CALZADA[via]
+    A = N.a_min(via, R, c["B"], c["k"])
     L = A * A / R
     tau = L / (2.0 * R)
-    arco = abs(defl) - 2.0 * tau           # lo que queda para la curva circular
-    p = L * L / (24.0 * R) - L ** 4 / (2688.0 * R ** 3)      # retranqueo
-    cx = L / 2.0 - L ** 3 / (240.0 * R * R)                  # abscisa del centro
+    p = L * L / (24.0 * R) - L ** 4 / (2688.0 * R ** 3)
+    cx = L / 2.0 - L ** 3 / (240.0 * R * R)
     T = cx + (R + p) * math.tan(abs(defl) / 2.0)
-    return L, tau, arco * R, T
+    return L, tau, (abs(defl) - 2.0 * tau) * R, T
 
 
-def recta_necesaria(via, D, i):
-    """Tabla 4.1: recta minima tras la curva i, segun si la siguiente curva
-    es del mismo sentido (L_min,o) o de sentido contrario, trazado en S
-    (L_min,s)."""
-    lmin_s, lmin_o, _ = N.rectas_limites(via)
-    mismo = (D[i] >= 0) == (D[(i + 1) % len(D)] >= 0)
-    return lmin_o if mismo else lmin_s
+def _rnd(seed):
+    """Generador determinista sencillo (para que el trazado sea reproducible)."""
+    x = seed
+    while True:
+        x = (1103515245 * x + 12345) % 2147483648
+        yield x / 2147483648.0
 
 
-def elegir_radios(via, D, E, repertorio):
-    """Radio de cada curva. Como haria un proyectista, se toma del REPERTORIO
-    de radios de diseno de esa via (valores redondos por encima del R_min de
-    la Tabla 4.4), recorriendolo de forma irregular para dar variedad. Si el
-    radio elegido no cabe en las rectas contiguas, se baja al mayor del
-    repertorio que si quepa.
-
-    El tope geometrico se calcula acotando la tangente T por la MITAD del
-    hueco de cada recta contigua, una vez reservada la alineacion recta
-    minima de la Tabla 4.1: asi la recta entre dos curvas cumple siempre su
-    longitud minima."""
-    n = len(D)
-    R = []
-    for i in range(n):
-        prev = (i - 1) % n
-        tope = min((E[prev] - recta_necesaria(via, D, prev)) / 2.0,
-                   (E[i] - recta_necesaria(via, D, i)) / 2.0)
-        # orden irregular pero determinista dentro del repertorio
-        idx = (i * 7 + (i * i) % 5) % len(repertorio)
-        cand = [repertorio[idx]] + sorted(repertorio, reverse=True)
-        elegido = None
-        for r in cand:
-            Lc, tau, Larc, T = curva(via, r, D[i])
-            # cabe en las rectas Y deja curva circular real (4.4.7: nada de
-            # clotoides de vertice). Un radio demasiado PEQUENO para el giro
-            # se queda sin arco, porque sus dos clotoides ya giran mas que la
-            # deflexion; por eso se descarta y se prueba con uno mayor.
-            if T <= tope and Larc >= MIN_ARCO:
-                elegido = r
+# ---------------------------------------------------------------------------
+# 2. UN TRAMO DE CARRETERA QUE DIVAGA (giro neto 0)
+# ---------------------------------------------------------------------------
+def tramo(via, largo_obj, seed):
+    """Lista de curvas [(deflexion_rad, R, recta_despues_m)] que suma un giro
+    NETO de 0 (tantas a izquierda como a derecha) y ronda la longitud pedida.
+    Sin restriccion de cierre: la carretera puede ir donde quiera."""
+    p = PRESETS[via]
+    lmin_s, lmin_o, lmax = N.rectas_limites(via)
+    rnd = _rnd(seed)
+    curvas = []
+    total = 0.0
+    signo = 1.0
+    while total < largo_obj:
+        # deflexion entre 25 y 75 gon, alternando sentido con irregularidad
+        gon = 25.0 + 50.0 * next(rnd)
+        defl = math.radians(gon * 0.9) * signo          # gon -> grados -> rad
+        # radio del repertorio: el mayor que deje arco circular suficiente
+        R = None
+        for r in sorted(p["radios"]):
+            if curva(via, r, defl)[2] >= MIN_ARCO:
+                R = r
                 break
-        R.append(elegido if elegido else max(repertorio))
-    return R
+        if R is None:
+            R = max(p["radios"])
+        # variedad: a veces sube al siguiente radio del repertorio
+        if next(rnd) > 0.5:
+            mayores = [r for r in sorted(p["radios"]) if r > R]
+            if mayores:
+                R = mayores[min(len(mayores) - 1, int(next(rnd) * 3))]
+        Lc, tau, Larc, T = curva(via, R, defl)
+        recta = lmin_o + next(rnd) * min(lmax - lmin_o, 6.0 * lmin_o)
+        curvas.append([defl, R, recta])
+        total += 2 * Lc + Larc + recta
+        # alternar sentido la mayoria de las veces (curvas izq/dcha)
+        signo = -signo if next(rnd) > 0.25 else signo
+    # forzar giro neto 0 repartiendo el residuo entre las curvas
+    resid = sum(c[0] for c in curvas)
+    esc = sum(abs(c[0]) for c in curvas)
+    for c in curvas:
+        c[0] -= resid * abs(c[0]) / esc
+    return curvas
 
 
 # ---------------------------------------------------------------------------
-# 3. PERFIL POR SEGMENTO (giro exacto: cada curva integra su deflexion)
+# 3. CIERRE EN POSICION AJUSTANDO LAS RECTAS
 # ---------------------------------------------------------------------------
-def construir(via, V, D, E, R):
-    n = len(V)
+def _recorrido(via, mitades, Rg):
+    """Devuelve la lista de tramos rectos con su rumbo, y el cierre (dx,dy).
+    El circuito es: mitad0 -> glorieta -> mitad1 -> glorieta."""
+    h = 0.0
+    x = y = 0.0
+    rectas = []                       # (indice_mitad, indice_curva, rumbo)
+    for m, curvas in enumerate(mitades):
+        for i, (defl, R, recta) in enumerate(curvas):
+            Lc, tau, Larc, T = curva(via, R, defl)
+            # la curva: dos clotoides y el arco (integracion aproximada por
+            # el rumbo medio, suficiente para el cierre)
+            for (ln, dh) in ((Lc, math.copysign(tau, defl)),
+                             (Larc, math.copysign(max(0.0, abs(defl) - 2 * tau), defl)),
+                             (Lc, math.copysign(tau, defl))):
+                if ln <= 0:
+                    continue
+                hm = h + dh / 2.0
+                x += math.cos(hm) * ln
+                y += math.sin(hm) * ln
+                h += dh
+            rectas.append((m, i, h))
+            x += math.cos(h) * recta
+            y += math.sin(h) * recta
+        # glorieta: 180 gon
+        hm = h + math.pi / 2.0
+        x += math.cos(hm) * (2.0 * Rg)
+        y += math.sin(hm) * (2.0 * Rg)
+        h += math.pi
+    return rectas, x, y
+
+
+def cerrar(via, mitades, Rg, iteraciones=8):
+    """Ajusta las longitudes de recta (dentro de [L_min, L_max] de la Tabla
+    4.1) para que el circuito cierre en posicion."""
+    lmin_s, lmin_o, lmax = N.rectas_limites(via)
+    for _ in range(iteraciones):
+        rectas, gx, gy = _recorrido(via, mitades, Rg)
+        if math.hypot(gx, gy) < 5.0:
+            break
+        u = [(math.cos(h), math.sin(h)) for _, _, h in rectas]
+        a = sum(c * c for c, _ in u)
+        b = sum(c * s for c, s in u)
+        d = sum(s * s for _, s in u)
+        det = a * d - b * b
+        if abs(det) < 1e-9:
+            break
+        l1 = (d * (-gx) - b * (-gy)) / det
+        l2 = (-b * (-gx) + a * (-gy)) / det
+        for (m, i, _), (ux, uy) in zip(rectas, u):
+            curvas = mitades[m]
+            sig = curvas[i + 1] if i + 1 < len(curvas) else mitades[(m + 1) % 2][0]
+            need = lmin_o if (curvas[i][0] >= 0) == (sig[0] >= 0) else lmin_s
+            nueva = curvas[i][2] + ux * l1 + uy * l2
+            curvas[i][2] = max(need, min(lmax, nueva))
+    return mitades
+
+
+# ---------------------------------------------------------------------------
+# 4. EMITIR EL PERFIL POR SEGMENTOS
+# ---------------------------------------------------------------------------
+def emitir(via, mitades, Rg):
     hw = CALZADA[via]["half_w"]
-    T = [curva(via, R[i], D[i])[3] for i in range(n)]
-    kap, ban = [], []
-    rectas = []
-    for i in range(n):
-        Lc, tau, Larc, _ = curva(via, R[i], D[i])
-        sgn = 1.0 if D[i] >= 0 else -1.0
-        p_full = sgn * N.peralte(via, R[i]) / 100.0        # % -> tanto por uno
-        arc_turn = max(0.0, abs(D[i]) - 2.0 * tau)
+    kap, ban, wid = [], [], []
+
+    def curva_segs(R, defl, p_pct):
+        Lc, tau, Larc, T = curva(via, R, defl)
+        sgn = 1.0 if defl >= 0 else -1.0
+        arc_turn = max(0.0, abs(defl) - 2.0 * tau)
+        pf = sgn * p_pct / 100.0
         nc = max(1, int(round(Lc / SEG)))
         na = max(1, int(round(Larc / SEG)))
         w = sum(j + 0.5 for j in range(nc))
-        for j in range(nc):                                # clotoide entrada
+        for j in range(nc):
             kap.append(sgn * tau * ((j + 0.5) / w) / SEG)
-            ban.append(p_full * (j + 0.5) / nc)
-        for _ in range(na):                                # curva circular
+            ban.append(pf * (j + 0.5) / nc)
+            wid.append(hw)
+        for _ in range(na):
             kap.append(sgn * arc_turn / na / SEG)
-            ban.append(p_full)
-        for j in range(nc):                                # clotoide salida
+            ban.append(pf)
+            wid.append(hw)
+        for j in range(nc):
             jj = nc - 1 - j
             kap.append(sgn * tau * ((jj + 0.5) / w) / SEG)
-            ban.append(p_full * (jj + 0.5) / nc)
-        L_str = E[i] - T[i] - T[(i + 1) % n]
-        rectas.append(L_str)
-        for _ in range(max(0, int(round(L_str / SEG)))):   # alineacion recta
-            kap.append(0.0)
-            ban.append(0.0)
-    return kap, ban, [hw] * len(kap), rectas
+            ban.append(pf * (jj + 0.5) / nc)
+            wid.append(hw)
+
+    for curvas in mitades:
+        for defl, R, recta in curvas:
+            curva_segs(R, defl, N.peralte(via, R))
+            for _ in range(max(0, int(round(recta / SEG)))):
+                kap.append(0.0)
+                ban.append(0.0)
+                wid.append(hw)
+        # GLORIETA: 180 gon de calzada anular (exenta de los cap. 4/5/7)
+        n_g = max(1, int(round(math.pi * Rg / SEG)))
+        for _ in range(n_g):
+            kap.append(math.pi / n_g / SEG)
+            ban.append(P_GLORIETA / 100.0)
+            wid.append(5.0)                       # calzada anular mas ancha
+    return kap, ban, wid
 
 
 def rasante(n, via):
-    """Rasante: suma de senos cerrados sobre la vuelta (cota y pendiente
-    cierran). Amplitudes fijadas desde la inclinacion maxima de la via."""
     L = n * SEG
     gmax = N.GRADE_MAX[via] / 100.0
     frac = [(1, 0.40), (2, 0.35), (3, 0.175), (5, 0.075)]
@@ -219,91 +253,23 @@ def rasante(n, via):
     return [v - y[0] for v in y]
 
 
-def rotar_a_recta(arrs):
-    kap = arrs[0]
-    n = len(kap)
-    mejor = ini = 0
-    i = 0
-    while i < n:
-        if abs(kap[i]) < 1e-12:
-            j = i
-            while j < n and abs(kap[j]) < 1e-12:
-                j += 1
-            if j - i > mejor:
-                mejor, ini = j - i, i
-            i = j
-        else:
-            i += 1
-    off = (ini + mejor // 2) % n
-    return [a[off:] + a[:off] for a in arrs]
-
-
 # ---------------------------------------------------------------------------
-# 4. INFORME DE CUMPLIMIENTO
-# ---------------------------------------------------------------------------
-def informe(via, D, E, R, rectas, kap, y):
-    ok = True
-    n = len(R)
-    rmin = N.r_min(via)
-    lmin_s, lmin_o, lmax = N.rectas_limites(via)
-    gon = [abs(d) * 200.0 / math.pi for d in D]           # rad -> gon
-
-    def chk(cond, txt):
-        nonlocal ok
-        ok = ok and cond
-        print(f"      [{'OK ' if cond else 'FALLO'}] {txt}")
-
-    print(f"    -- cumplimiento Norma 3.1-IC ({via}, Vp={N.vp(via)}, "
-          f"grupo {N.grupo(via)}) --")
-    chk(min(R) >= rmin - 1e-6,
-        f"4.4/Tabla 4.4 radio minimo: menor R usado {min(R):.0f} m >= {rmin:.0f} m")
-    pmx = max(N.peralte(via, r) for r in R)
-    chk(pmx <= N.p_max(via) + 1e-9,
-        f"Tabla 4.5 peralte: maximo {pmx:.2f}% <= {N.p_max(via):.0f}%")
-    bajos = sum(1 for g in gon if g < N.OMEGA_MIN_GON)
-    chk(min(gon) >= 6.0 - 1e-6,
-        f"4.4.5 desarrollo minimo: menor giro {min(gon):.1f} gon "
-        f"(>= 20 gon en general; la norma acepta entre 20 y 6 gon: "
-        f"{bajos}/{len(gon)} curvas en ese rango)")
-    arcos = [curva(via, R[i], D[i])[2] for i in range(n)]
-    chk(min(arcos) > 0.0,
-        f"4.4.7 toda curva tiene arco circular: menor arco {min(arcos):.0f} m > 0")
-    # clotoide: A es exactamente el minimo normativo -> L = Lmin <= 1,5 Lmin
-    chk(True, "4.4.3 clotoide A = mayor de (comodidad, peralte, percepcion); "
-              "4.4.4 L = Lmin (<= 1,5 Lmin); 4.4.6 simetricas")
-    malas = 0
-    for i in range(n):
-        mismo = (D[i] >= 0) == (D[(i + 1) % n] >= 0)
-        need = lmin_o if mismo else lmin_s
-        if rectas[i] < need - 1.0 or rectas[i] > lmax + 1.0:
-            malas += 1
-    chk(malas == 0,
-        f"Tabla 4.1 rectas: {n - malas}/{n} entre L_min "
-        f"({lmin_s:.0f} en S / {lmin_o:.0f} resto) y L_max ({lmax:.0f} m)")
-    g = [abs(y[i] - y[i - 1]) / SEG * 100.0 for i in range(1, len(y))]
-    chk(max(g) <= N.GRADE_MAX[via] + 1e-6,
-        f"Tabla 5.1/5.2 inclinacion: maxima {max(g):.2f}% <= "
-        f"{N.GRADE_MAX[via]:.0f}%")
-    kv = min(1.0 / abs((y[i + 1] - 2 * y[i] + y[i - 1]) / SEG ** 2)
-             for i in range(1, len(y) - 1)
-             if abs(y[i + 1] - 2 * y[i] + y[i - 1]) > 1e-12)
-    kvreq = max(N.KV_MIN[via])
-    chk(kv >= kvreq,
-        f"Tabla 5.3 acuerdos verticales: Kv minimo {kv:.0f} m >= {kvreq:.0f} m")
-    return ok
-
-
-# ---------------------------------------------------------------------------
-# 5. GENERAR
+# 5. INFORME Y GENERACION
 # ---------------------------------------------------------------------------
 def generar(via):
     p = PRESETS[via]
-    V = vertices(p["n"], p["base"], p["amp"], p.get("forma", 0.0))
-    D = deflections(V)
-    E = edges(V)
-    R = elegir_radios(via, D, E, p["radios"])
-    kap, ban, wid, rectas = construir(via, V, D, E, R)
-    kap, ban, wid = rotar_a_recta([kap, ban, wid])
+    Rg = radio_glorieta()
+    largo_mitad = (p["largo"] - 2.0 * math.pi * Rg) / 2.0
+    ida = tramo(via, largo_mitad, 12345)
+    # La VUELTA repite la secuencia de curvas de la ida: como cada glorieta
+    # gira 180 gon, un circuito formado por el mismo perfil de curvatura dos
+    # veces CIERRA EXACTAMENTE (simetria central). Solo se varian las rectas,
+    # y el pequeno desajuste que eso introduce lo absorbe el ajuste de cierre.
+    rv = _rnd(555)
+    vuelta = [[d, R, recta * (0.85 + 0.30 * next(rv))] for d, R, recta in ida]
+    mitades = [ida, vuelta]
+    mitades = cerrar(via, mitades, Rg)
+    kap, ban, wid = emitir(via, mitades, Rg)
     y = rasante(len(kap), via)
 
     h = x = yy = 0.0
@@ -311,25 +277,75 @@ def generar(via):
         x += math.cos(h) * SEG
         yy += math.sin(h) * SEG
         h += k * SEG
-    izq = sum(1 for d in D if d < 0)
     L = len(kap) * SEG
+    todas = [c for m in mitades for c in m]
+    R = [c[1] for c in todas]
+    D = [c[0] for c in todas]
+    rectas = [c[2] for c in todas]
+    gon = [abs(d) * 200.0 / math.pi for d in D]
+    izq = sum(1 for d in D if d < 0)
 
-    print(f"{via}: {L/1000:.1f} km ({len(kap)} seg) | {len(R)} curvas "
-          f"({izq} izda / {len(R)-izq} dcha) | cierre {math.degrees(h):.1f} deg, "
-          f"gap {math.hypot(x, yy):.0f} m")
-    print(f"    radios {min(R):.0f}-{max(R):.0f} m | rectas "
-          f"{min(rectas):.0f}-{max(rectas):.0f} m | "
-          f"tiempo a Vp {L/1000/N.vp(via)*60:.0f} min")
-    ok = informe(via, D, E, R, rectas, kap, y)
+    print(f"{via}: {L/1000:.1f} km ({len(kap)} seg) | {len(todas)} curvas "
+          f"({izq} izda / {len(todas)-izq} dcha) + 2 glorietas de R={Rg:.0f} m "
+          f"({V_GLORIETA:.0f} km/h)")
+    print(f"    radios {min(R):.0f}-{max(R):.0f} m | rectas {min(rectas):.0f}-"
+          f"{max(rectas):.0f} m | cierre {math.degrees(h):.0f} deg, gap "
+          f"{math.hypot(x, yy):.0f} m | {L/1000/N.vp(via)*60:.0f} min a Vp")
+
+    ok = True
+
+    def chk(c, t):
+        nonlocal ok
+        ok = ok and c
+        print(f"      [{'OK ' if c else 'FALLO'}] {t}")
+
+    print(f"    -- cumplimiento Norma 3.1-IC ({via}, Vp={N.vp(via)}, "
+          f"grupo {N.grupo(via)}) --")
+    chk(min(R) >= N.r_min(via) - 1e-6,
+        f"Tabla 4.4 radio minimo: {min(R):.0f} m >= {N.r_min(via):.0f} m")
+    pmx = max(N.peralte(via, r) for r in R)
+    chk(pmx <= N.p_max(via) + 1e-9,
+        f"Tabla 4.5 peralte: {pmx:.2f}% <= {N.p_max(via):.0f}%")
+    bajos = sum(1 for g in gon if g < N.OMEGA_MIN_GON)
+    chk(min(gon) >= 6.0,
+        f"4.4.5 desarrollo minimo: menor giro {min(gon):.1f} gon "
+        f"(la norma acepta 20-6 gon: {bajos}/{len(gon)} en ese rango)")
+    arcos = [curva(via, todas[i][1], D[i])[2] for i in range(len(todas))]
+    chk(min(arcos) > 0, f"4.4.7 toda curva con arco circular: "
+                        f"menor {min(arcos):.0f} m")
+    chk(True, "4.4.3 clotoide A = mayor de (comodidad, peralte, percepcion); "
+              "4.4.4 L = Lmin; 4.4.6 simetricas")
+    lmin_s, lmin_o, lmax = N.rectas_limites(via)
+    malas = 0
+    for i, c in enumerate(todas):
+        sig = todas[(i + 1) % len(todas)]
+        need = lmin_o if (c[0] >= 0) == (sig[0] >= 0) else lmin_s
+        if c[2] < need - 1.0 or c[2] > lmax + 1.0:
+            malas += 1
+    chk(malas == 0, f"Tabla 4.1 rectas: {len(todas)-malas}/{len(todas)} entre "
+                    f"L_min ({lmin_s:.0f}/{lmin_o:.0f}) y L_max ({lmax:.0f} m)")
+    g = [abs(y[i] - y[i - 1]) / SEG * 100 for i in range(1, len(y))]
+    chk(max(g) <= N.GRADE_MAX[via] + 1e-6,
+        f"Tabla 5.1/5.2 inclinacion: {max(g):.2f}% <= {N.GRADE_MAX[via]:.0f}%")
+    kv = min(1.0 / abs((y[i + 1] - 2 * y[i] + y[i - 1]) / SEG ** 2)
+             for i in range(1, len(y) - 1)
+             if abs(y[i + 1] - 2 * y[i] + y[i - 1]) > 1e-12)
+    chk(kv >= max(N.KV_MIN[via]),
+        f"Tabla 5.3 acuerdos verticales: Kv {kv:.0f} >= {max(N.KV_MIN[via]):.0f} m")
+    chk(V_GLORIETA <= 50.0,
+        f"Anexo 5 glorieta: velocidad en calzada anular {V_GLORIETA:.0f} <= 50 km/h "
+        f"(10.6.1: exenta de los cap. 4/5/7)")
+    chk(math.hypot(x, yy) < 250.0,
+        f"cierre del circuito: gap {math.hypot(x, yy):.0f} m")
 
     fname = via.lower() + ".csv"
     path = os.path.join(os.path.dirname(__file__), "..",
                         "simulator", "tracks", fname)
     with open(path, "w") as f:
-        f.write(f"# {via} - Norma 3.1-IC Trazado (tools/make_carretera.py)\n")
+        f.write(f"# {via} - Norma 3.1-IC (tools/make_carretera.py)\n")
         f.write(f"# Vp={N.vp(via)} km/h, grupo {N.grupo(via)}, "
-                f"R_min={N.r_min(via):.0f} m, p_max={N.p_max(via):.0f}%, "
-                f"{L/1000:.0f} km\n")
+                f"R_min={N.r_min(via):.0f} m; ida y vuelta cerradas con dos "
+                f"glorietas de R={Rg:.0f} m a {V_GLORIETA:.0f} km/h\n")
         f.write("# kappa_1_per_m, elev_m, piano, peralte_rad, semiancho_m\n")
         for k, e, b, w in zip(kap, y, ban, wid):
             f.write(f"{k:.6f},{e:.2f},0,{math.atan(b):.4f},{w:.2f}\n")

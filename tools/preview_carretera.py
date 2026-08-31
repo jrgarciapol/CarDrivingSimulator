@@ -55,9 +55,13 @@ def main():
         ax.plot(x[0], y[0], "ko", ms=6)
         ax.set_aspect("equal")
         Rs = [1 / abs(k) for k in kap if abs(k) > 1e-6]
+        # la glorieta (R ~ 63 m) es el elemento mas cerrado; se separa para no
+        # confundirla con el radio minimo de la carretera
+        Rcar = [r for r in Rs if r > 80.0]
         ax.set_title(f"{name}   {len(kap)*SEG/1000:.2f} km\n"
-                     f"R minimo usado {min(Rs):.0f} m",
-                     fontweight="bold", color=col)
+                     f"R minimo de la carretera {min(Rcar):.0f} m\n"
+                     f"+ 2 glorietas R={min(Rs):.0f} m (40 km/h)",
+                     fontweight="bold", color=col, fontsize=10)
         ax.grid(alpha=0.2)
         ax.tick_params(labelsize=7)
 

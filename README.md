@@ -379,10 +379,15 @@ Para jugar **con volante** en la Deck:
    ```bash
    ./jugar.sh --ejes            # o --ejes --segundos 90
    ```
-   > **Teclado en la Deck**: en modo Escritorio no hay teclas físicas. El
-   > teclado virtual se abre con **STEAM + X**, y ahí `Ctrl` funciona como
-   > modificador pegajoso (pulsas `Ctrl` y luego `C`). Por eso `--ejes` se
-   > para solo pasado el tiempo: así no hace falta ningún Ctrl+C.
+   > **Sin Ctrl+C en la Deck**: el teclado virtual de Steam (**STEAM + X**)
+   > sirve para escribir, pero **no tiene tecla `Ctrl`**, así que no se puede
+   > cortar un programa con Ctrl+C. Por eso `--ejes` se **para solo** pasado
+   > el tiempo (60 s por defecto) y guarda el informe: no hace falta ninguna
+   > combinación de teclas.
+   >
+   > Si alguna vez necesitas parar algo a mano, abre otra pestaña en Konsole
+   > (*New Tab*) y ejecuta `pkill -f simulator.main`. La otra vía es conectar
+   > un teclado USB o Bluetooth al hub.
    Debe aparecer el Thrustmaster **por su nombre**, con
    `gamepad_para_SDL=no` y `force_feedback=si`. Si en su lugar sale un mando
    virtual, Steam Input sigue activo.

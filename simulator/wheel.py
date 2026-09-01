@@ -263,7 +263,9 @@ class WheelInput:
                   f"guarda el informe (no hace falta Ctrl+C).\n")
         else:
             print("Gira el volante y pisa cada pedal por separado.\n"
-                  "Ctrl+C para salir.\n")
+                  "Para salir: Ctrl+C, o desde otra pestana de la terminal\n"
+                  "'pkill -f simulator.main' (el teclado virtual de la Steam\n"
+                  "Deck no tiene tecla Ctrl).\n")
         vmin = [32767] * n_ejes
         vmax = [-32768] * n_ejes
         t0 = time.time()
@@ -291,7 +293,8 @@ class WheelInput:
                     queda = max(0.0, segundos - (time.time() - t0))
                     pie = f"  quedan {queda:4.0f} s (se para solo)"
                 else:
-                    pie = "  Ctrl+C para salir."
+                    pie = ("  Ctrl+C para salir (o 'pkill -f simulator.main' "
+                           "desde otra pestana).")
                 print("\033[H\033[J" + f"{nombre}\n\n"
                       + "\n".join(lineas)
                       + f"\n\n  botones pulsados: "

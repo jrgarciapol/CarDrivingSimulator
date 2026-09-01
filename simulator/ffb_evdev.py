@@ -189,6 +189,55 @@ def _nombre_sysfs(evento: str) -> str:
         return ""
 
 
+def _uevent(ruta_sys: str) -> dict:
+    """Lee un fichero uevent de /sys como diccionario CLAVE=valor."""
+    d = {}
+    try:
+        with open(ruta_sys) as f:
+            for linea in f:
+                if "=" in linea:
+                    k, _, v = linea.strip().partition("=")
+                    d[k] = v
+    except OSError:
+        pass
+    return d
+
+
+def hidraws():
+    """Inventario de /dev/hidraw*: nombre del aparato, VID:PID y driver.
+
+    Es la OTRA vía posible al force feedback. Los drivers de volante
+    Thrustmaster (hid-tmff2 y compañía) no inventan nada raro: mandan
+    informes HID de salida por el mismo canal que aquí queda abierto en
+    espacio de usuario. Si el núcleo no publica FF por evdev pero el volante
+    tiene un /dev/hidraw con permiso de escritura, esa puerta sigue ahí, y es
+    por donde puede estar entrando la fuerza en los juegos de Steam."""
+    out = []
+    try:
+        nodos = sorted(os.listdir("/sys/class/hidraw"),
+                       key=lambda n: int(n.replace("hidraw", "") or 0))
+    except OSError:
+        return out
+    for nodo in nodos:
+        u = _uevent(f"/sys/class/hidraw/{nodo}/device/uevent")
+        # HID_ID = bus:VVVVVVVV:PPPPPPPP en hexadecimal
+        partes = u.get("HID_ID", "").split(":")
+        vid = pid = ""
+        if len(partes) == 3:
+            vid, pid = partes[1][-4:].lower(), partes[2][-4:].lower()
+        ruta = f"/dev/{nodo}"
+        out.append({
+            "ruta": ruta,
+            "nombre": u.get("HID_NAME", ""),
+            "vid": vid,
+            "pid": pid,
+            "driver": u.get("DRIVER", ""),
+            "lectura": os.access(ruta, os.R_OK),
+            "escritura": os.access(ruta, os.W_OK),
+        })
+    return out
+
+
 def listar():
     """Inventario de /dev/input/event*: nombre, capacidades FF y permisos.
 
@@ -209,10 +258,21 @@ def listar():
             if fd >= 0:
                 nombre = _nombre(fd)
                 os.close(fd)
+        # El padre del dispositivo de entrada es el aparato HID: de ahi salen
+        # el driver que lo ha tomado y el VID:PID, que dicen en que modo esta
+        # el volante (el T300RS cambia de PID entre modo PC y modo PlayStation).
+        u = _uevent(f"/sys/class/input/{evento}/device/device/uevent")
+        partes = u.get("HID_ID", "").split(":")
+        vid = pid = ""
+        if len(partes) == 3:
+            vid, pid = partes[1][-4:].lower(), partes[2][-4:].lower()
         out.append({
             "ruta": ruta,
             "nombre": nombre,
             "ff": _mascara_sysfs(evento, "ff"),
+            "driver": u.get("DRIVER", ""),
+            "vid": vid,
+            "pid": pid,
             "lectura": os.access(ruta, os.R_OK),
             "escritura": os.access(ruta, os.W_OK),
         })

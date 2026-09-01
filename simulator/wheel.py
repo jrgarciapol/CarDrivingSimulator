@@ -234,6 +234,87 @@ class WheelInput:
         WheelInput._guardar_informe(L)
 
     @staticmethod
+    def diagnostico_ffb(indice=0):
+        """Averigua POR QUE no hay force feedback y que efectos admite.
+
+        En Linux el par del volante sale de la interfaz de force feedback de
+        evdev. Que el volante gire al enchufarlo (autocalibracion) NO
+        significa que haya FFB: eso lo hace el firmware. Para que el juego
+        pueda mandar fuerza hacen falta tres cosas, y aqui se comprueban una
+        a una: un driver que exponga la capacidad FF, permiso sobre el
+        dispositivo, y que SDL consiga abrir el haptico."""
+        import glob
+        L = []
+
+        def di(t=""):
+            print(t)
+            L.append(t)
+
+        di("\nDIAGNOSTICO DE FORCE FEEDBACK\n")
+        di(f"  hapticos que ve SDL: {sdl2.SDL_NumHaptics()}")
+        if sdl2.SDL_NumJoysticks() <= indice:
+            di("  No hay dispositivo; conecta el volante antes de arrancar.")
+            WheelInput._guardar_informe(L, "diagnostico_ffb.txt")
+            return
+        js = sdl2.SDL_JoystickOpen(indice)
+        raw = sdl2.SDL_JoystickName(js) if js else None
+        di(f"  dispositivo: "
+           f"{raw.decode('utf-8', 'replace') if raw else '?'}")
+        es_hap = bool(sdl2.SDL_JoystickIsHaptic(js)) if js else False
+        di(f"  SDL_JoystickIsHaptic: {'si' if es_hap else 'NO'}")
+        if js and es_hap:
+            hap = sdl2.SDL_HapticOpenFromJoystick(js)
+            if not hap:
+                di(f"  No se pudo abrir el haptico: "
+                   f"{sdl2.SDL_GetError().decode()}")
+                di("  Suele ser PERMISOS sobre /dev/input/event*.")
+            else:
+                q = sdl2.SDL_HapticQuery(hap)
+                efectos = [
+                    ("fuerza constante (el par del volante)",
+                     sdl2.SDL_HAPTIC_CONSTANT),
+                    ("senoidal (texturas: asfalto, pianos)",
+                     sdl2.SDL_HAPTIC_SINE),
+                    ("muelle (autocentrado)", sdl2.SDL_HAPTIC_SPRING),
+                    ("amortiguador", sdl2.SDL_HAPTIC_DAMPER),
+                ]
+                for nom, bit in efectos:
+                    di(f"    {'SI' if q & bit else 'no'}  {nom}")
+                di(f"  efectos simultaneos: "
+                   f"{sdl2.SDL_HapticNumEffectsPlaying(hap)}")
+                sdl2.SDL_HapticClose(hap)
+        if js:
+            sdl2.SDL_JoystickClose(js)
+
+        # --- causas tipicas en Linux ---------------------------------------
+        di("\n  Comprobaciones del sistema (Linux):")
+        try:
+            mods = open("/proc/modules").read()
+            for m in ("hid_tmff2", "hid_thrustmaster", "ff_memless"):
+                di(f"    modulo {m}: "
+                   f"{'CARGADO' if m in mods else 'no cargado'}")
+        except OSError:
+            di("    (no se pudo leer /proc/modules)")
+        evs = sorted(glob.glob("/dev/input/event*"))
+        legibles = sum(1 for e in evs if os.access(e, os.R_OK | os.W_OK))
+        di(f"    /dev/input/event*: {len(evs)} dispositivos, "
+           f"{legibles} con permiso de lectura+escritura")
+        if evs and legibles == 0:
+            di("    -> SIN PERMISO: el FFB necesita ESCRIBIR en el evento.")
+            di("       Anade tu usuario al grupo 'input' y reinicia sesion:")
+            di("         sudo usermod -aG input $USER")
+
+        if not es_hap:
+            di("\n  El volante NO expone force feedback al sistema.")
+            di("  En una Steam Deck, el T300RS necesita el modulo de kernel")
+            di("  hid-tmff2 (fuera del kernel oficial). Sin el, el volante se")
+            di("  lee perfectamente pero no puede recibir fuerza. Ojo: SteamOS")
+            di("  reemplaza la particion del sistema en cada actualizacion,")
+            di("  asi que hay que reinstalarlo despues de cada una.")
+        di()
+        WheelInput._guardar_informe(L, "diagnostico_ffb.txt")
+
+    @staticmethod
     def calibrar(indice=0, guardar=True):
         """Asistente de CALIBRACION: pide un mando cada vez y deduce el mapeo.
 

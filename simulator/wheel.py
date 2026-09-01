@@ -196,6 +196,81 @@ class WheelInput:
             print("  -> El juego usaria el TECLADO.")
         print()
 
+    @staticmethod
+    def monitor_ejes(indice=0, segundos=0.0):
+        """Monitor EN VIVO de ejes y botones, en la terminal.
+
+        Sirve para averiguar el mapeo real del volante: el mismo aparato
+        NO numera los ejes igual en Windows (DirectInput) que en Linux
+        (evdev), y los pedales pueden reposar en un extremo o en el otro.
+        Girando el volante y pisando cada pedal se ve al instante qué eje se
+        mueve y en qué rango, que es justo lo que hay que poner en
+        AXIS_STEERING / AXIS_THROTTLE / AXIS_BRAKE y PEDALS_INVERTED.
+
+        Ctrl+C para salir."""
+        import time
+        if sdl2.SDL_NumJoysticks() <= indice:
+            print(f"No hay ningun dispositivo en el indice {indice}.")
+            return
+        js = sdl2.SDL_JoystickOpen(indice)
+        if not js:
+            print("No se pudo abrir el dispositivo:",
+                  sdl2.SDL_GetError().decode())
+            return
+        raw = sdl2.SDL_JoystickName(js)
+        nombre = raw.decode("utf-8", "replace") if raw else "?"
+        n_ejes = sdl2.SDL_JoystickNumAxes(js)
+        n_bot = sdl2.SDL_JoystickNumButtons(js)
+        print(f"\n{nombre}: {n_ejes} ejes, {n_bot} botones")
+        print("Gira el volante y pisa cada pedal por separado.\n"
+              "Anota que EJE se mueve con cada mando y entre que valores.\n"
+              "Ctrl+C para salir.\n")
+        vmin = [32767] * n_ejes
+        vmax = [-32768] * n_ejes
+        t0 = time.time()
+        try:
+            while segundos <= 0 or time.time() - t0 < segundos:
+                sdl2.SDL_PumpEvents()
+                sdl2.SDL_JoystickUpdate()
+                val = [sdl2.SDL_JoystickGetAxis(js, i) for i in range(n_ejes)]
+                for i, v in enumerate(val):
+                    vmin[i] = min(vmin[i], v)
+                    vmax[i] = max(vmax[i], v)
+                pulsados = [str(b) for b in range(n_bot)
+                            if sdl2.SDL_JoystickGetButton(js, b)]
+                lineas = []
+                for i, v in enumerate(val):
+                    ancho = 28
+                    pos = int((v + 32768) / 65535.0 * (ancho - 1))
+                    barra = "".join("#" if k == pos else "-"
+                                    for k in range(ancho))
+                    recorrido = vmax[i] - vmin[i]
+                    marca = " <== SE MUEVE" if recorrido > 8000 else ""
+                    lineas.append(f"  eje {i}: [{barra}] {v:+7d}  "
+                                  f"visto {vmin[i]:+7d}..{vmax[i]:+7d}{marca}")
+                print("\033[H\033[J" + f"{nombre}\n\n"
+                      + "\n".join(lineas)
+                      + f"\n\n  botones pulsados: "
+                        f"{', '.join(pulsados) if pulsados else '-'}"
+                      + "\n\n  Ctrl+C para salir.")
+                time.sleep(0.08)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            print("\nResumen del recorrido visto en cada eje:")
+            for i in range(n_ejes):
+                rec = vmax[i] - vmin[i]
+                pista = ""
+                if rec > 8000:
+                    if vmin[i] > -20000:
+                        pista = ("  (reposa en un extremo: es un PEDAL; "
+                                 "mira PEDALS_INVERTED)")
+                    else:
+                        pista = "  (recorre los dos lados: puede ser el VOLANTE)"
+                print(f"  eje {i}: {vmin[i]:+7d} .. {vmax[i]:+7d}"
+                      f"  recorrido {rec}{pista}")
+            sdl2.SDL_JoystickClose(js)
+
     def _open_device(self):
         modo = str(getattr(cfg, "INPUT_MODE", "auto")).lower()
         if modo == "teclado":

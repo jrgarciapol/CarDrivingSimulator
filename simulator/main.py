@@ -158,6 +158,11 @@ def main(argv=None):
                         help="monitor EN VIVO de ejes y botones del "
                         "dispositivo (por defecto el 0): gira el volante y "
                         "pisa los pedales para ver el mapeo real")
+    parser.add_argument("--segundos", type=float, default=60.0,
+                        metavar="N",
+                        help="duracion del monitor --ejes; al acabar se para "
+                        "SOLO y guarda el informe, sin tener que pulsar "
+                        "Ctrl+C (util en una Steam Deck). 0 = sin limite")
     args = parser.parse_args(argv)
 
     # las banderas fuerzan el modo de entrada por encima de la deteccion
@@ -187,7 +192,7 @@ def main(argv=None):
         return 0
 
     if args.ejes is not None:
-        WheelInput.monitor_ejes(args.ejes)
+        WheelInput.monitor_ejes(args.ejes, args.segundos)
         sdl2.SDL_Quit()
         return 0
 

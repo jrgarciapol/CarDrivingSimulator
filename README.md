@@ -373,6 +373,16 @@ Para jugar **con volante** en la Deck:
    ```bash
    ./jugar.sh --dispositivos
    ```
+   Y para ver el **mapeo real de los ejes** (que en Linux NO coincide con el
+   de Windows), un monitor en vivo que se para solo a los 60 s y guarda el
+   informe en `diagnostico_ejes.txt`:
+   ```bash
+   ./jugar.sh --ejes            # o --ejes --segundos 90
+   ```
+   > **Teclado en la Deck**: en modo Escritorio no hay teclas físicas. El
+   > teclado virtual se abre con **STEAM + X**, y ahí `Ctrl` funciona como
+   > modificador pegajoso (pulsas `Ctrl` y luego `C`). Por eso `--ejes` se
+   > para solo pasado el tiempo: así no hace falta ningún Ctrl+C.
    Debe aparecer el Thrustmaster **por su nombre**, con
    `gamepad_para_SDL=no` y `force_feedback=si`. Si en su lugar sale un mando
    virtual, Steam Input sigue activo.

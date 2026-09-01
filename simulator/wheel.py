@@ -257,9 +257,13 @@ class WheelInput:
         n_ejes = sdl2.SDL_JoystickNumAxes(js)
         n_bot = sdl2.SDL_JoystickNumButtons(js)
         print(f"\n{nombre}: {n_ejes} ejes, {n_bot} botones")
-        print("Gira el volante y pisa cada pedal por separado.\n"
-              "Anota que EJE se mueve con cada mando y entre que valores.\n"
-              "Ctrl+C para salir.\n")
+        if segundos > 0:
+            print(f"Tienes {segundos:.0f} SEGUNDOS: gira el volante a los dos\n"
+                  f"lados y pisa cada pedal por separado. Se para SOLO y\n"
+                  f"guarda el informe (no hace falta Ctrl+C).\n")
+        else:
+            print("Gira el volante y pisa cada pedal por separado.\n"
+                  "Ctrl+C para salir.\n")
         vmin = [32767] * n_ejes
         vmax = [-32768] * n_ejes
         t0 = time.time()
@@ -283,11 +287,16 @@ class WheelInput:
                     marca = " <== SE MUEVE" if recorrido > 8000 else ""
                     lineas.append(f"  eje {i}: [{barra}] {v:+7d}  "
                                   f"visto {vmin[i]:+7d}..{vmax[i]:+7d}{marca}")
+                if segundos > 0:
+                    queda = max(0.0, segundos - (time.time() - t0))
+                    pie = f"  quedan {queda:4.0f} s (se para solo)"
+                else:
+                    pie = "  Ctrl+C para salir."
                 print("\033[H\033[J" + f"{nombre}\n\n"
                       + "\n".join(lineas)
                       + f"\n\n  botones pulsados: "
                         f"{', '.join(pulsados) if pulsados else '-'}"
-                      + "\n\n  Ctrl+C para salir.")
+                      + "\n\n" + pie)
                 time.sleep(0.08)
         except KeyboardInterrupt:
             pass

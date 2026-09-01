@@ -155,7 +155,7 @@ class WheelInput:
                 f.write("\n".join(lineas) + "\n")
             print(f"\n  Informe guardado en: {ruta}\n"
                   f"  Puedes abrirlo y copiarlo, o subirlo al repositorio:\n"
-                  f"    git add {nombre} && git commit -m 'diagnostico "
+                  f"    git add -f {nombre} && git commit -m 'diagnostico "
                   f"volante' && git push\n"
                   f"  (ojo: 'git pull' solo DESCARGA; para subir hace falta "
                   f"'git push')")

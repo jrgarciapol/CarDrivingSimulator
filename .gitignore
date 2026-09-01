@@ -5,3 +5,8 @@ venv/
 records.json
 settings.json
 jugar.sh
+
+# Informes de diagnostico del volante: los escribe la propia maquina donde
+# se prueba, cambian en cada ejecucion y no son parte del programa. Si se
+# versionan, cada 'git pull' choca con el de la otra maquina.
+diagnostico_*.txt

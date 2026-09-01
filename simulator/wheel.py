@@ -28,6 +28,7 @@ Efectos hápticos del volante:
 """
 
 import ctypes
+import os
 
 import sdl2
 
@@ -131,6 +132,33 @@ class WheelInput:
         self._rep = {}                  # temporizadores de auto-repeticion
 
     @staticmethod
+    def _guardar_informe(lineas, nombre="diagnostico_entrada.txt"):
+        """Escribe el informe en la raiz del proyecto y dice donde queda.
+
+        Asi no hay que transcribir nada de la pantalla: se abre el archivo y
+        se copia, o se sube al repositorio con add + commit + push (un
+        'git pull' NO sube nada: solo descarga)."""
+        import datetime
+        import platform
+        ruta = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), nombre)
+        try:
+            with open(ruta, "w") as f:
+                f.write(f"# Diagnostico de entrada - "
+                        f"{datetime.datetime.now():%Y-%m-%d %H:%M}\n")
+                f.write(f"# {platform.system()} {platform.release()} | "
+                        f"python {platform.python_version()}\n\n")
+                f.write("\n".join(lineas) + "\n")
+            print(f"\n  Informe guardado en: {ruta}\n"
+                  f"  Puedes abrirlo y copiarlo, o subirlo al repositorio:\n"
+                  f"    git add {nombre} && git commit -m 'diagnostico "
+                  f"volante' && git push\n"
+                  f"  (ojo: 'git pull' solo DESCARGA; para subir hace falta "
+                  f"'git push')")
+        except OSError as e:
+            print(f"\n  No se pudo guardar el informe: {e}")
+
+    @staticmethod
     def diagnostico():
         """Lista TODO lo que ve SDL y explica a quien elegiria el juego.
 
@@ -138,13 +166,19 @@ class WheelInput:
         Steam Deck lanzada DESDE STEAM, Steam Input se apodera del volante y
         lo vuelve a presentar como un mando virtual, asi que el juego ya no
         ve un Thrustmaster sino un gamepad. Aqui se ve de un vistazo."""
+        L = []
+
+        def di(txt=""):
+            print(txt)
+            L.append(txt)
+
         count = sdl2.SDL_NumJoysticks()
-        print(f"\nDISPOSITIVOS DE ENTRADA QUE VE SDL: {count}\n")
+        di(f"\nDISPOSITIVOS DE ENTRADA QUE VE SDL: {count}\n")
         if count == 0:
-            print("  (ninguno)\n"
-                  "  - Conecta el volante ANTES de arrancar.\n"
-                  "  - En Linux, comprueba que aparece en /dev/input/ y que\n"
-                  "    tu usuario tiene permiso (grupo 'input').")
+            di("  (ninguno)\n"
+               "  - Conecta el volante ANTES de arrancar.\n"
+               "  - En Linux, comprueba que aparece en /dev/input/ y que\n"
+               "    tu usuario tiene permiso (grupo 'input').")
         volante = pad = -1
         for i in range(count):
             raw = sdl2.SDL_JoystickNameForIndex(i)
@@ -162,12 +196,12 @@ class WheelInput:
                 volante = i
             if es_pad and pad < 0:
                 pad = i
-            print(f"  [{i}] {name}")
-            print(f"      ejes={ejes}  botones={bot}  "
-                  f"gamepad_para_SDL={'si' if es_pad else 'no'}  "
-                  f"force_feedback={'si' if hap else 'no'}")
-            print(f"      coincide con WHEEL_NAME_HINTS: "
-                  f"{'SI' if por_nombre else 'no'}")
+            di(f"  [{i}] {name}")
+            di(f"      ejes={ejes}  botones={bot}  "
+               f"gamepad_para_SDL={'si' if es_pad else 'no'}  "
+               f"force_feedback={'si' if hap else 'no'}")
+            di(f"      coincide con WHEEL_NAME_HINTS: "
+               f"{'SI' if por_nombre else 'no'}")
         if volante < 0:
             for i in range(count):
                 if sdl2.SDL_IsGameController(i):
@@ -181,20 +215,21 @@ class WheelInput:
                 if ok:
                     volante = i
                     break
-        print()
+        di()
         if volante >= 0:
-            print(f"  -> El juego usaria el VOLANTE del indice {volante}.")
+            di(f"  -> El juego usaria el VOLANTE del indice {volante}.")
         elif pad >= 0:
-            print(f"  -> El juego usaria el MANDO del indice {pad}.")
-            print("     Si lo que tienes conectado es un VOLANTE, es que algo\n"
+            di(f"  -> El juego usaria el MANDO del indice {pad}.")
+            di("     Si lo que tienes conectado es un VOLANTE, es que algo\n"
                   "     lo esta presentando como mando. En una Steam Deck eso\n"
                   "     lo hace STEAM INPUT: en las propiedades del juego, en\n"
                   "     Mando, pon 'Desactivar Steam Input'. Luego repite\n"
                   "     esta prueba: debe aparecer el Thrustmaster por su\n"
-                  "     nombre. Tambien puedes forzarlo con --volante.")
+               "     nombre. Tambien puedes forzarlo con --volante.")
         else:
-            print("  -> El juego usaria el TECLADO.")
-        print()
+            di("  -> El juego usaria el TECLADO.")
+        di()
+        WheelInput._guardar_informe(L)
 
     @staticmethod
     def monitor_ejes(indice=0, segundos=0.0):
@@ -257,7 +292,8 @@ class WheelInput:
         except KeyboardInterrupt:
             pass
         finally:
-            print("\nResumen del recorrido visto en cada eje:")
+            L = [f"{nombre}: {n_ejes} ejes, {n_bot} botones", "",
+                 "Resumen del recorrido visto en cada eje:"]
             for i in range(n_ejes):
                 rec = vmax[i] - vmin[i]
                 pista = ""
@@ -267,9 +303,16 @@ class WheelInput:
                                  "mira PEDALS_INVERTED)")
                     else:
                         pista = "  (recorre los dos lados: puede ser el VOLANTE)"
-                print(f"  eje {i}: {vmin[i]:+7d} .. {vmax[i]:+7d}"
-                      f"  recorrido {rec}{pista}")
+                L.append(f"  eje {i}: {vmin[i]:+7d} .. {vmax[i]:+7d}"
+                         f"  recorrido {rec}{pista}")
+            L.append("")
+            L.append(f"  configuracion actual: AXIS_STEERING="
+                     f"{cfg.AXIS_STEERING}, AXIS_THROTTLE={cfg.AXIS_THROTTLE},"
+                     f" AXIS_BRAKE={cfg.AXIS_BRAKE}, PEDALS_INVERTED="
+                     f"{cfg.PEDALS_INVERTED}")
+            print("\n" + "\n".join(L[2:]))
             sdl2.SDL_JoystickClose(js)
+            WheelInput._guardar_informe(L, "diagnostico_ejes.txt")
 
     def _open_device(self):
         modo = str(getattr(cfg, "INPUT_MODE", "auto")).lower()

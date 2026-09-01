@@ -232,6 +232,135 @@ class WheelInput:
         WheelInput._guardar_informe(L)
 
     @staticmethod
+    def calibrar(indice=0, guardar=True):
+        """Asistente de CALIBRACION: pide un mando cada vez y deduce el mapeo.
+
+        Hace falta porque el mismo volante no numera los ejes igual en
+        Windows (DirectInput) que en Linux (evdev), y porque los pedales
+        pueden reposar en un extremo o en el otro. Mirar solo el recorrido
+        total no basta: si se mueve todo a la vez, los cuatro ejes marcan el
+        rango completo y no se distinguen. Aqui se mide POR SEPARADO:
+
+          1. en reposo, para saber donde descansa cada eje;
+          2. el volante;
+          3. el acelerador;
+          4. el freno.
+
+        De ahi salen AXIS_STEERING, AXIS_THROTTLE, AXIS_BRAKE y
+        PEDALS_INVERTED, que se guardan en settings.json."""
+        import time
+        from . import settings
+
+        if sdl2.SDL_NumJoysticks() <= indice:
+            print(f"No hay ningun dispositivo en el indice {indice}.")
+            return
+        js = sdl2.SDL_JoystickOpen(indice)
+        if not js:
+            print("No se pudo abrir:", sdl2.SDL_GetError().decode())
+            return
+        raw = sdl2.SDL_JoystickName(js)
+        nombre = raw.decode("utf-8", "replace") if raw else "?"
+        n = sdl2.SDL_JoystickNumAxes(js)
+
+        def leer():
+            sdl2.SDL_PumpEvents()
+            sdl2.SDL_JoystickUpdate()
+            return [sdl2.SDL_JoystickGetAxis(js, i) for i in range(n)]
+
+        def fase(titulo, aviso, dur):
+            """Mide dur segundos y devuelve, por eje, el valor mas alejado
+            del reposo (con su signo) y cuanto se ha movido."""
+            print(f"\n=== {titulo} ===\n{aviso}")
+            for c in range(3, 0, -1):
+                print(f"   empieza en {c}...", end="\r", flush=True)
+                time.sleep(1.0)
+            t0 = time.time()
+            lo = [32767] * n
+            hi = [-32768] * n
+            while time.time() - t0 < dur:
+                v = leer()
+                for i in range(n):
+                    lo[i] = min(lo[i], v[i])
+                    hi[i] = max(hi[i], v[i])
+                queda = dur - (time.time() - t0)
+                print(f"   midiendo... {queda:3.0f} s   ", end="\r", flush=True)
+                time.sleep(0.02)
+            print("   hecho.                 ")
+            return lo, hi
+
+        print(f"\nCALIBRACION DE {nombre} ({n} ejes)\n"
+              f"Sigue las instrucciones; cada paso avisa antes de empezar.")
+
+        lo0, hi0 = fase("1/4  REPOSO",
+                        "NO toques nada: suelta el volante y los pedales.", 3.0)
+        reposo = [(lo0[i] + hi0[i]) // 2 for i in range(n)]
+
+        def mas_movido(lo, hi, excluir):
+            mejor, cual = 0, -1
+            for i in range(n):
+                if i in excluir:
+                    continue
+                d = max(abs(hi[i] - reposo[i]), abs(lo[i] - reposo[i]))
+                if d > mejor:
+                    mejor, cual = d, i
+            return cual, mejor
+
+        lo1, hi1 = fase("2/4  VOLANTE",
+                        "Gira el volante a TOPE a un lado y a TOPE al otro.",
+                        6.0)
+        eje_v, mov_v = mas_movido(lo1, hi1, set())
+
+        lo2, hi2 = fase("3/4  ACELERADOR",
+                        "Pisa SOLO el acelerador a fondo y sueltalo. "
+                        "No toques el volante.", 6.0)
+        eje_a, mov_a = mas_movido(lo2, hi2, {eje_v})
+
+        lo3, hi3 = fase("4/4  FRENO",
+                        "Pisa SOLO el freno a fondo y sueltalo. "
+                        "No toques el volante.", 6.0)
+        eje_f, mov_f = mas_movido(lo3, hi3, {eje_v, eje_a})
+
+        # sentido de los pedales: si al pisar el valor BAJA respecto al
+        # reposo, el pedal descansa arriba -> PEDALS_INVERTED = True
+        def baja_al_pisar(lo, hi, eje):
+            return abs(lo[eje] - reposo[eje]) > abs(hi[eje] - reposo[eje])
+
+        inv = baja_al_pisar(lo2, hi2, eje_a) if eje_a >= 0 else cfg.PEDALS_INVERTED
+
+        L = [f"{nombre}: {n} ejes", "",
+             f"  reposo por eje: {reposo}", "",
+             f"  VOLANTE     -> eje {eje_v}  (se movio {mov_v})",
+             f"  ACELERADOR  -> eje {eje_a}  (se movio {mov_a})",
+             f"  FRENO       -> eje {eje_f}  (se movio {mov_f})",
+             f"  PEDALS_INVERTED = {inv}  "
+             f"(en reposo el acelerador marca {reposo[eje_a] if eje_a >= 0 else '?'})",
+             "",
+             f"  antes: AXIS_STEERING={cfg.AXIS_STEERING}, "
+             f"AXIS_THROTTLE={cfg.AXIS_THROTTLE}, AXIS_BRAKE={cfg.AXIS_BRAKE},"
+             f" PEDALS_INVERTED={cfg.PEDALS_INVERTED}"]
+        dudoso = [t for t, m in (("volante", mov_v), ("acelerador", mov_a),
+                                 ("freno", mov_f)) if m < 8000]
+        if dudoso:
+            L.append(f"  AVISO: casi no se movio nada en: {', '.join(dudoso)}."
+                     f" Repite la calibracion moviendo ese mando a fondo.")
+        print("\n" + "\n".join(L))
+
+        if guardar and not dudoso and -1 not in (eje_v, eje_a, eje_f):
+            cfg.AXIS_STEERING = eje_v
+            cfg.AXIS_THROTTLE = eje_a
+            cfg.AXIS_BRAKE = eje_f
+            cfg.PEDALS_INVERTED = bool(inv)
+            for k in ("AXIS_STEERING", "AXIS_THROTTLE", "AXIS_BRAKE",
+                      "PEDALS_INVERTED"):
+                settings.record(k, getattr(cfg, k))
+            settings.save()
+            L.append("")
+            L.append("  GUARDADO en settings.json: ya puedes jugar.")
+            print("\n  GUARDADO en settings.json: ya puedes jugar.")
+        sdl2.SDL_JoystickClose(js)
+        WheelInput._guardar_informe(L, "diagnostico_calibracion.txt")
+
+    @staticmethod
     def monitor_ejes(indice=0, segundos=0.0):
         """Monitor EN VIVO de ejes y botones, en la terminal.
 

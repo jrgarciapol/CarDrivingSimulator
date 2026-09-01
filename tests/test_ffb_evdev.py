@@ -172,6 +172,40 @@ def main():
                    not v.ok and v.fd < 0 and "constante" in v.motivo, v.motivo))
     v.close()
 
+    # --- que se pueda IMPORTAR en Windows -----------------------------
+    # fcntl solo existe en Linux, y wheel.py importa este modulo siempre. Con
+    # el import sin proteger, el juego entero no arrancaba en Windows con un
+    # ModuleNotFoundError. Aqui se simula esa ausencia: poner None en
+    # sys.modules hace que 'import fcntl' falle igual que alli.
+    import importlib
+    guardado_fcntl = sys.modules.get("fcntl")
+    quitados = {n: sys.modules.pop(n) for n in list(sys.modules)
+                if n.startswith("simulator.ffb")}
+    sys.modules["fcntl"] = None
+    try:
+        m = importlib.import_module("simulator.ffb_evdev")
+        importlib.import_module("simulator.ffb_t300rs")
+        r.append(check("se importa sin fcntl (Windows) sin reventar", True))
+        r.append(check("y alli se declara no disponible", not m.disponible()))
+        r.append(check("el inventario no falla, solo sale vacio",
+                       m.listar() == [] and m.hidraws() == []))
+        v = m.VolanteEvdev("/dev/input/event0", 1 << m.FF_CONSTANT)
+        r.append(check("no intenta abrir nada y lo explica",
+                       not v.ok and v.fd < 0, v.motivo))
+        v.close()
+    except ImportError as e:
+        r.append(check("se importa sin fcntl (Windows) sin reventar",
+                       False, str(e)))
+    finally:
+        if guardado_fcntl is None:
+            sys.modules.pop("fcntl", None)
+        else:
+            sys.modules["fcntl"] = guardado_fcntl
+        for n in list(sys.modules):
+            if n.startswith("simulator.ffb"):
+                del sys.modules[n]
+        sys.modules.update(quitados)
+
     n_ok = sum(1 for x in r if x)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")
     return 0 if n_ok == len(r) else 1

@@ -29,10 +29,17 @@ DirectInput, y este módulo se queda callado (``disponible()`` da False).
 """
 
 import ctypes
-import fcntl
 import glob
 import os
 import struct
+
+try:
+    import fcntl
+except ImportError:
+    # Windows no tiene fcntl porque no tiene evdev. El modulo se importa
+    # igual (lo hace wheel.py siempre) pero se queda inerte: alli el force
+    # feedback va por DirectInput a traves de SDL, que es lo normal.
+    fcntl = None
 
 # --- códigos de linux/input-event-codes.h ------------------------------
 EV_FF = 0x15
@@ -149,10 +156,12 @@ def _eviocgname(n):
 # --- utilidades ---------------------------------------------------------
 def disponible() -> bool:
     """True solo en sistemas con evdev (Linux)."""
-    return os.path.isdir("/dev/input")
+    return fcntl is not None and os.path.isdir("/dev/input")
 
 
 def _nombre(fd) -> str:
+    if fcntl is None:
+        return ""
     buf = ctypes.create_string_buffer(256)
     try:
         fcntl.ioctl(fd, _eviocgname(256), buf)
@@ -370,6 +379,9 @@ class VolanteEvdev:
         self.mascara = mascara if mascara is not None else \
             _mascara_sysfs(evento, "ff")
         self.nombre = _nombre_sysfs(evento)
+        if fcntl is None:
+            self.motivo = "aqui no hay evdev (esto solo existe en Linux)"
+            return
         if not self.mascara >> FF_CONSTANT & 1:
             self.motivo = "el dispositivo no anuncia fuerza constante"
             return

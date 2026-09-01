@@ -158,6 +158,11 @@ def main(argv=None):
                         help="monitor EN VIVO de ejes y botones del "
                         "dispositivo (por defecto el 0): gira el volante y "
                         "pisa los pedales para ver el mapeo real")
+    parser.add_argument("--calibrar", nargs="?", const=0, type=int,
+                        metavar="INDICE",
+                        help="asistente de CALIBRACION del volante: pide un "
+                        "mando cada vez (volante, acelerador, freno), deduce "
+                        "el mapeo y lo guarda en settings.json")
     parser.add_argument("--segundos", type=float, default=60.0,
                         metavar="N",
                         help="duracion del monitor --ejes; al acabar se para "
@@ -193,6 +198,12 @@ def main(argv=None):
 
     if args.ejes is not None:
         WheelInput.monitor_ejes(args.ejes, args.segundos)
+        sdl2.SDL_Quit()
+        return 0
+
+    if args.calibrar is not None:
+        settings.load()
+        WheelInput.calibrar(args.calibrar)
         sdl2.SDL_Quit()
         return 0
 

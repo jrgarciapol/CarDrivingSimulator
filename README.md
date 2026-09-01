@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **215 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **256 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -477,6 +477,7 @@ simulator/
   menu.py     menú de arranque (coche + circuito + asfalto)
   wheel.py    entrada DirectInput del volante y efectos de force feedback
   ffb_evdev.py force feedback hablando directamente con evdev (Linux/Steam Deck)
+  ffb_t300rs.py force feedback del T300RS por /dev/hidraw, sin driver de kernel
   physics.py  modelo del vehículo de 4 ruedas (neumáticos, suspensión,
               transmisión, diferenciales, ABS, motor, peralte)
   track.py    circuito: curvas, rasantes, peralte, superficies, baches y
@@ -507,6 +508,7 @@ tests/
   test_transmision.py       corte de par al cambiar + diferenciales
   test_settings.py          persistencia de reglajes y guardado de coches
   test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
+  test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
 ```
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,

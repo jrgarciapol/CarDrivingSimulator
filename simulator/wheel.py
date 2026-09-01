@@ -34,6 +34,7 @@ import sdl2
 
 from . import config as cfg
 from . import ffb_evdev
+from . import ffb_t300rs
 
 VOLANTE, MANDO, TECLADO = "volante", "mando", "teclado"
 
@@ -939,7 +940,7 @@ class ForceFeedback:
             # volante en esta misma maquina es que el nucleo SI publica el
             # force feedback; lo que falla es el camino de SDL. Ver
             # simulator/ffb_evdev.py.
-            self.evdev = self._abrir_evdev()
+            self.evdev = self._abrir_evdev() or self._abrir_hidraw()
             if self.evdev is not None:
                 self.evdev.autocentrado(0.0)
                 self.evdev.ganancia(1.0)
@@ -970,6 +971,33 @@ class ForceFeedback:
             v.close()
             return None
         print(f"FFB por evdev en {d['ruta']} ({v.nombre})")
+        return v
+
+    @staticmethod
+    def _abrir_hidraw():
+        """Ultimo recurso: mandar la fuerza como informes HID de salida.
+
+        Es lo que pasa en la Steam Deck con el T300RS. El nucleo lo toma con
+        hid-generic, que NO implementa force feedback, asi que por evdev no
+        hay nada. Pero el driver hid-tmff2 tampoco hace magia: escribe unos
+        paquetes concretos en el canal de salida del volante, y ese canal
+        esta abierto en /dev/hidraw. Ver simulator/ffb_t300rs.py."""
+        if not ffb_evdev.disponible():
+            return None
+        info = ffb_t300rs.buscar(ffb_evdev.hidraws())
+        if info is None:
+            return None
+        if not info["escritura"]:
+            print(f"FFB: {info['ruta']} es del volante pero no se puede "
+                  f"escribir en el (grupo 'input').")
+            return None
+        v = ffb_t300rs.VolanteT300RS(info)
+        if not v.ok:
+            print(f"FFB: {info['ruta']} no acepto los efectos: {v.motivo}")
+            v.close()
+            return None
+        print(f"FFB por HID en {info['ruta']} ({info['modelo']}, "
+              f"informe 0x{info['informe']:02x})")
         return v
 
     # -- envío de los efectos, por SDL o por evdev ----------------------

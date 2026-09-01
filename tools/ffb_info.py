@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 from simulator import config as cfg          # noqa: E402  (sin dependencias)
 from simulator import ffb_evdev as ff        # noqa: E402  (solo stdlib)
+from simulator import ffb_t300rs as t300     # noqa: E402  (solo stdlib)
 
 RAIZ = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -108,44 +109,71 @@ def _volante_hidraw():
 
 def veredicto(cand):
     di()
-    if cand is None:
-        di("  El volante NO expone force feedback por evdev.")
-        hr = _volante_hidraw()
-        if hr is None:
-            di("  Ademas, no aparece ningun /dev/hidraw suyo. Comprueba que el")
-            di("  volante este encendido y conectado, y repitelo SIN Steam")
-            di("  abierto por si tiene tomado el dispositivo.")
-        else:
-            di(f"  Pero SI tiene {hr['ruta']} ({hr['vid']}:{hr['pid']}, driver "
-               f"{hr['driver'] or '?'}), "
-               f"{'CON' if hr['escritura'] else 'SIN'} permiso de escritura.")
-            di("  Esa es la otra puerta: los drivers de Thrustmaster mandan la")
-            di("  fuerza como informes HID de salida por ese mismo canal, y eso")
-            di("  se puede hacer desde espacio de usuario.")
-        return 1
-    if not cand["escritura"]:
+    if cand is not None and cand["escritura"]:
+        di(f"  HAY FORCE FEEDBACK en {cand['ruta']} ({cand['nombre']}).")
+        di("  El juego lo usara por la via directa de evdev.")
+        di("  Compruebalo con:  python3 tools/ffb_info.py --probar")
+        return 0
+    if cand is not None:
         di(f"  El volante SI tiene force feedback en {cand['ruta']}, pero falta")
         di("  PERMISO DE ESCRITURA. Anade tu usuario al grupo 'input' y")
         di("  reinicia la sesion:")
         di("     sudo usermod -aG input $USER")
         return 1
-    di(f"  HAY FORCE FEEDBACK en {cand['ruta']} ({cand['nombre']}).")
-    di("  El juego lo usara por la via directa de evdev, la misma que usan los")
-    di("  juegos de Steam a traves de Proton.")
-    di("  Compruebalo con:  python3 tools/ffb_info.py --probar")
-    return 0
+
+    di("  El volante NO expone force feedback por evdev.")
+    t3 = _t300rs()
+    if t3 is not None:
+        di(f"  Pero es un {t3['modelo']} y tiene {t3['ruta']} con permiso de")
+        di(f"  escritura, con informe de salida 0x{t3['informe']:02x} de "
+           f"{t3['largo']} bytes.")
+        di("  Se le puede mandar la fuerza como informes HID de salida, que es")
+        di("  lo que hace el driver hid-tmff2, pero sin tocar el kernel.")
+        di("  Compruebalo con:  python3 tools/ffb_info.py --probar")
+        return 0
+    hr = _volante_hidraw()
+    if hr is None:
+        di("  Ademas, no aparece ningun /dev/hidraw suyo. Comprueba que el")
+        di("  volante este encendido y conectado, y repitelo SIN Steam")
+        di("  abierto por si tiene tomado el dispositivo.")
+    else:
+        di(f"  Tiene {hr['ruta']} ({hr['vid']}:{hr['pid']}, driver "
+           f"{hr['driver'] or '?'}), "
+           f"{'CON' if hr['escritura'] else 'SIN'} permiso de escritura, pero")
+        di("  no es un modelo del que se conozca el protocolo de fuerza.")
+    return 1
+
+
+def _t300rs():
+    """Datos del T300RS por HID, si es el volante que hay conectado."""
+    info = t300.buscar(ff.hidraws())
+    return info if info and info["escritura"] else None
+
+
+def abrir_para_probar(cand):
+    """La primera via que funcione: evdev, y si no, informes HID."""
+    if cand is not None and cand["escritura"]:
+        v = ff.VolanteEvdev(cand["ruta"], cand["ff"])
+        if v.ok:
+            return v, "evdev"
+        di(f"\n  evdev: {v.motivo}")
+        v.close()
+    info = _t300rs()
+    if info is not None:
+        v = t300.VolanteT300RS(info)
+        if v.ok:
+            return v, f"informes HID ({info['modelo']})"
+        di(f"\n  HID: {v.motivo}")
+        v.close()
+    return None, ""
 
 
 def probar(cand):
     """Empuja el volante a un lado y a otro. Si se mueve, funciona."""
-    if cand is None or not cand["escritura"]:
+    v, via = abrir_para_probar(cand)
+    if v is None:
         return veredicto(cand)
-    v = ff.VolanteEvdev(cand["ruta"], cand["ff"])
-    if not v.ok:
-        di(f"\n  No se pudo preparar el efecto: {v.motivo}")
-        v.close()
-        return 1
-    di(f"\n  PRUEBA DE FUERZA en {v.ruta} ({v.nombre})")
+    di(f"\n  PRUEBA DE FUERZA en {v.ruta} por {via}")
     di("  SUJETA EL VOLANTE. Va a empujar a un lado y al otro.\n")
     v.autocentrado(0.0)
     v.ganancia(1.0)

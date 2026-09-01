@@ -208,10 +208,12 @@ def veredicto(cand):
         di(f"  Pero es un {t3['modelo']} y tiene {t3['ruta']} con permiso de")
         di(f"  escritura, con informe de salida 0x{t3['informe']:02x} de "
            f"{t3['largo']} bytes.")
-        di("  Se le puede mandar la fuerza como informes HID de salida, que es")
-        di("  lo que hace el driver hid-tmff2, pero sin tocar el kernel.")
-        di("  Compruebalo con:  python3 tools/ffb_info.py --probar")
-        return 0
+        di("  Se le PODRIA mandar la fuerza por ahi, como hace el driver")
+        di("  hid-tmff2, pero esa via esta DESACTIVADA: en la unica prueba")
+        di("  real el volante no se movio y se le apago el LED. Falta aclarar")
+        di("  el identificador del informe de salida, y con el equivocado se")
+        di("  queda colgado. Mientras tanto, el juego NO le escribe nada.")
+        return 1
     hr = _volante_hidraw()
     if hr is None:
         di("  Ademas, no aparece ningun /dev/hidraw suyo. Comprueba que el")
@@ -231,14 +233,20 @@ def _t300rs():
     return info if info and info["escritura"] else None
 
 
-def abrir_para_probar(cand):
-    """La primera via que funcione: evdev, y si no, informes HID."""
+def abrir_para_probar(cand, hid=False):
+    """La via de evdev; la de informes HID SOLO si se pide expresamente.
+
+    La segunda esta desactivada por defecto a proposito: en la prueba real el
+    volante no se movio y se le apago el LED, asi que escribir ahi puede
+    dejarlo colgado. Ver el aviso de --hid."""
     if cand is not None and cand["escritura"]:
         v = ff.VolanteEvdev(cand["ruta"], cand["ff"])
         if v.ok:
             return v, "evdev"
         di(f"\n  evdev: {v.motivo}")
         v.close()
+    if not hid:
+        return None, ""
     info = _t300rs()
     if info is not None:
         v = t300.VolanteT300RS(info)
@@ -249,9 +257,14 @@ def abrir_para_probar(cand):
     return None, ""
 
 
-def probar(cand):
+def probar(cand, hid=False):
     """Empuja el volante a un lado y a otro. Si se mueve, funciona."""
-    v, via = abrir_para_probar(cand)
+    if hid:
+        di("\n  AVISO: --hid escribe informes HID en bruto al volante. En la")
+        di("  unica prueba real hecha hasta ahora el volante no se movio y se")
+        di("  le apago el LED; hubo que reiniciarlo. No lo uses salvo que")
+        di("  sepas lo que haces y puedas recuperarlo.")
+    v, via = abrir_para_probar(cand, hid)
     if v is None:
         return veredicto(cand)
     di(f"\n  PRUEBA DE FUERZA en {v.ruta} por {via}")
@@ -301,7 +314,10 @@ def guardar():
 def main(argv):
     cand = inventario()
     sistema()
-    salida = probar(cand) if "--probar" in argv else veredicto(cand)
+    if "--probar" in argv:
+        salida = probar(cand, hid="--hid" in argv)
+    else:
+        salida = veredicto(cand)
     guardar()
     return salida
 

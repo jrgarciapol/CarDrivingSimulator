@@ -121,6 +121,18 @@ VIEW_MODE = 0            # vista inicial: 0 = sin coche (cámara interior),
 # ===========================================================================
 FFB_ENABLED = True
 FFB_GAIN = 0.8           # ganancia global del par [0 .. 1]
+
+# DESACTIVADO A PROPOSITO. Vía experimental: mandar la fuerza al T300RS como
+# informes HID de salida por /dev/hidraw, sin driver de kernel (ver
+# simulator/ffb_t300rs.py). Se probó en una Steam Deck y el volante NO se
+# movió: se le apagó el LED y hubo que recuperarlo. El protocolo está copiado
+# del driver hid-tmff2, pero hay un dato que NO se puede deducir sin el
+# aparato delante: el identificador del informe de salida. hid-tmff2 reescribe
+# el descriptor del volante para usar el 0x60, y no está claro si el que
+# declara el volante de fábrica es el que hay que poner en el cable. Escribir
+# con el identificador equivocado es lo que probablemente lo dejó colgado.
+# No se activa hasta que esté resuelto, y aun entonces solo a mano.
+FFB_HIDRAW_EXPERIMENTAL = False
 FFB_INVERT = False       # True si el volante empuja hacia FUERA de la
                          # curva en vez de autocentrarse
 FFB_MAX_TORQUE_NM = 66.0 # Nm de columna que saturan el volante; BAJARLO

@@ -132,6 +132,40 @@ def main():
     finally:
         ff.listar = guardado_listar
 
+    # --- el escalon de abajo: el bus USB -------------------------------
+    # Es lo que separa "no le llega corriente" de "enumera pero no hay
+    # driver". Se monta un /sys de mentira con dos aparatos.
+    import shutil
+    import tempfile
+    raiz = tempfile.mkdtemp()
+    for nodo, vid, pid, nombre in (("1-1", "044f", "b66e", "T300RS"),
+                                   ("1-2", "046d", "b021", "Pebble")):
+        d = os.path.join(raiz, nodo)
+        os.makedirs(d)
+        for fich, val in (("idVendor", vid), ("idProduct", pid),
+                          ("product", nombre)):
+            with open(os.path.join(d, fich), "w") as fh:
+                fh.write(val + "\n")
+    os.makedirs(os.path.join(raiz, "usb1"))       # sin idVendor: se ignora
+    guardado_usb = ff.RUTA_USB
+    try:
+        ff.RUTA_USB = raiz
+        todos = ff.usb()
+        thrust = ff.usb("044f")
+        r.append(check("usb() lista los aparatos con fabricante",
+                       len(todos) == 2, str(len(todos))))
+        r.append(check("usb(vid) filtra por fabricante",
+                       len(thrust) == 1 and thrust[0]["pid"] == "b66e",
+                       str(thrust)))
+        r.append(check("un nodo sin idVendor no cuenta como aparato",
+                       all(d["nodo"] != "usb1" for d in todos)))
+        ff.RUTA_USB = os.path.join(raiz, "no-existe")
+        r.append(check("sin /sys de USB devuelve lista vacia, no un error",
+                       ff.usb("044f") == []))
+    finally:
+        ff.RUTA_USB = guardado_usb
+        shutil.rmtree(raiz, ignore_errors=True)
+
     # --- un nodo sin fuerza no se abre ---------------------------------
     v = ff.VolanteEvdev("/dev/input/event99", 0)
     r.append(check("VolanteEvdev sin FF_CONSTANT no abre nada y explica por que",

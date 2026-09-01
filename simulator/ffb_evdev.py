@@ -203,6 +203,52 @@ def _uevent(ruta_sys: str) -> dict:
     return d
 
 
+#: Donde publica el nucleo los aparatos del bus USB. Es una constante para
+#: poder apuntarla a un arbol de mentira en las pruebas.
+RUTA_USB = "/sys/bus/usb/devices"
+
+
+def usb(vid=None):
+    """Aparatos del bus USB, opcionalmente filtrados por fabricante.
+
+    Es el escalón de más abajo, por debajo de HID y de evdev. Sirve para
+    separar tres averías que se parecen mucho desde arriba:
+
+      - no sale NADA en el bus: no llega corriente, o el cable, o la base
+        está estropeada; el sistema operativo no tiene la culpa de nada,
+      - sale en el bus pero sin /dev/hidraw: el aparato enumera y el
+        problema es de driver,
+      - sale con hidraw: el aparato está bien y lo que falla es más arriba.
+
+    ``vid`` es el identificador de fabricante en hexadecimal ("044f")."""
+    out = []
+    base = RUTA_USB
+
+    def leer(ruta):
+        try:
+            with open(ruta) as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    try:
+        nodos = sorted(os.listdir(base))
+    except OSError:
+        return out
+    for n in nodos:
+        v = leer(f"{base}/{n}/idVendor")
+        if not v or (vid is not None and v.lower() != vid.lower()):
+            continue
+        out.append({
+            "nodo": n,
+            "vid": v.lower(),
+            "pid": leer(f"{base}/{n}/idProduct").lower(),
+            "nombre": leer(f"{base}/{n}/product"),
+            "fabricante": leer(f"{base}/{n}/manufacturer"),
+        })
+    return out
+
+
 def hidraws():
     """Inventario de /dev/hidraw*: nombre del aparato, VID:PID y driver.
 

@@ -262,27 +262,35 @@ class WheelInput:
            f"{raw.decode('utf-8', 'replace') if raw else '?'}")
         es_hap = bool(sdl2.SDL_JoystickIsHaptic(js)) if js else False
         di(f"  SDL_JoystickIsHaptic: {'si' if es_hap else 'NO'}")
+        # Los hapticos por INDICE: en Linux el force feedback puede estar en
+        # un nodo distinto del que da los ejes, y entonces IsHaptic dice NO
+        # aunque el aparato este ahi. Por eso se listan aparte.
+        for i in range(sdl2.SDL_NumHaptics()):
+            raw = sdl2.SDL_HapticName(i)
+            di(f"    haptico [{i}]: "
+               f"{raw.decode('utf-8', 'replace') if raw else '?'}")
+        hap = None
         if js and es_hap:
             hap = sdl2.SDL_HapticOpenFromJoystick(js)
-            if not hap:
-                di(f"  No se pudo abrir el haptico: "
-                   f"{sdl2.SDL_GetError().decode()}")
-                di("  Suele ser PERMISOS sobre /dev/input/event*.")
-            else:
-                q = sdl2.SDL_HapticQuery(hap)
-                efectos = [
+        elif sdl2.SDL_NumHaptics() > 0:
+            hap = sdl2.SDL_HapticOpen(0)
+            if hap:
+                di("  (abierto POR INDICE: el juego usara esta via)")
+        if not hap:
+            di(f"  No se pudo abrir el haptico: "
+               f"{sdl2.SDL_GetError().decode()}")
+            di("  Suele ser PERMISOS sobre /dev/input/event*.")
+        else:
+            q = sdl2.SDL_HapticQuery(hap)
+            for nom, bit in (
                     ("fuerza constante (el par del volante)",
                      sdl2.SDL_HAPTIC_CONSTANT),
                     ("senoidal (texturas: asfalto, pianos)",
                      sdl2.SDL_HAPTIC_SINE),
                     ("muelle (autocentrado)", sdl2.SDL_HAPTIC_SPRING),
-                    ("amortiguador", sdl2.SDL_HAPTIC_DAMPER),
-                ]
-                for nom, bit in efectos:
-                    di(f"    {'SI' if q & bit else 'no'}  {nom}")
-                di(f"  efectos simultaneos: "
-                   f"{sdl2.SDL_HapticNumEffectsPlaying(hap)}")
-                sdl2.SDL_HapticClose(hap)
+                    ("amortiguador", sdl2.SDL_HAPTIC_DAMPER)):
+                di(f"    {'SI' if q & bit else 'no'}  {nom}")
+            sdl2.SDL_HapticClose(hap)
         if js:
             sdl2.SDL_JoystickClose(js)
 
@@ -304,7 +312,9 @@ class WheelInput:
             di("       Anade tu usuario al grupo 'input' y reinicia sesion:")
             di("         sudo usermod -aG input $USER")
 
-        if not es_hap:
+        if hap:
+            di("\n  HAY FORCE FEEDBACK disponible: el juego lo usara.")
+        else:
             di("\n  El volante NO expone force feedback al sistema.")
             di("  En una Steam Deck, el T300RS necesita el modulo de kernel")
             di("  hid-tmff2 (fuera del kernel oficial). Sin el, el volante se")
@@ -846,6 +856,32 @@ class ForceFeedback:
             self.ok = bool(cfg.PAD_RUMBLE)
             return
         self.haptic = sdl2.SDL_HapticOpenFromJoystick(wheel.joystick)
+        if not self.haptic:
+            # RESPALDO: en Linux el volante puede exponer el force feedback en
+            # un nodo de /dev/input DISTINTO del que da los ejes. Entonces
+            # SDL_JoystickIsHaptic dice NO y esta llamada falla, aunque
+            # SDL_NumHaptics() vea el aparato perfectamente. Pasaba en la
+            # Steam Deck con el T300RS: "hapticos que ve SDL: 1" y aun asi
+            # sin fuerza. Se busca el haptico POR INDICE, prefiriendo el que
+            # se llame como el volante.
+            for i in range(sdl2.SDL_NumHaptics()):
+                raw = sdl2.SDL_HapticName(i)
+                nom = raw.decode("utf-8", "replace").lower() if raw else ""
+                if nom and not any(h in nom for h in cfg.WHEEL_NAME_HINTS):
+                    continue
+                h = sdl2.SDL_HapticOpen(i)
+                if h:
+                    self.haptic = h
+                    print(f"FFB: haptico abierto por indice {i} "
+                          f"({nom or '?'})")
+                    break
+            if not self.haptic:      # ultimo intento: el primero que abra
+                for i in range(sdl2.SDL_NumHaptics()):
+                    h = sdl2.SDL_HapticOpen(i)
+                    if h:
+                        self.haptic = h
+                        print(f"FFB: haptico abierto por indice {i}")
+                        break
         if not self.haptic:
             return
         self.supports = sdl2.SDL_HapticQuery(self.haptic)

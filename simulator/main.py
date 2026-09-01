@@ -153,6 +153,11 @@ def main(argv=None):
     parser.add_argument("--dispositivos", action="store_true",
                         help="listar los mandos/volantes que ve SDL y cual "
                         "elegiria el juego, y salir (diagnostico)")
+    parser.add_argument("--ejes", nargs="?", const=0, type=int,
+                        metavar="INDICE",
+                        help="monitor EN VIVO de ejes y botones del "
+                        "dispositivo (por defecto el 0): gira el volante y "
+                        "pisa los pedales para ver el mapeo real")
     args = parser.parse_args(argv)
 
     # las banderas fuerzan el modo de entrada por encima de la deteccion
@@ -178,6 +183,11 @@ def main(argv=None):
 
     if args.dispositivos:
         WheelInput.diagnostico()
+        sdl2.SDL_Quit()
+        return 0
+
+    if args.ejes is not None:
+        WheelInput.monitor_ejes(args.ejes)
         sdl2.SDL_Quit()
         return 0
 

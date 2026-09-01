@@ -73,18 +73,38 @@ modulo ff_memless:       CARGADO
 /dev/input/event*: 19 dispositivos, 8 con permiso de lectura+escritura
 ```
 
-## Diagnóstico de partida (a validar o rebatir)
+### DATO DECISIVO: en los juegos de Steam el volante SÍ hace fuerza
 
-El T300RS **no expone la capacidad de force feedback a evdev** porque falta
-el módulo fuera de árbol [`hid-tmff2`](https://github.com/Kimplul/hid-tmff2).
-El `hid_thrustmaster` de la rama principal solo hace el cambio de modo
-inicial del volante; no implementa FF para este modelo.
+En **esta misma Steam Deck**, lanzando un juego desde Steam, el T300RS
+**sí tiene force feedback**. Esto cambia el diagnóstico por completo:
+
+- Los juegos de Windows en la Deck corren con **Proton/Wine**, y el force
+  feedback de Wine se implementa **sobre evdev**, con `ioctl(EVIOCSFF)` sobre
+  `/dev/input/eventN`. Wine no tiene ninguna vía alternativa al núcleo.
+- Por tanto, si Wine consigue el par, **el núcleo ya está publicando la
+  interfaz de force feedback** del volante. El driver NO falta.
+- Lo que falla es el camino por el que **nuestro** proceso pide la fuerza:
+  SDL. Casos compatibles con lo medido: el volante publica los ejes en un
+  nodo y el FF en otro (SDL solo mira el primero), o la copia de SDL de
+  `pysdl2-dll` es más antigua que la que trae Steam, o el permiso de
+  escritura sobre el nodo llega por `uaccess` después de arrancar SDL.
+
+## Diagnóstico anterior, ya descartado
+
+Se pensó que el T300RS **no exponía** la capacidad de force feedback a evdev
+por faltar el módulo fuera de árbol
+[`hid-tmff2`](https://github.com/Kimplul/hid-tmff2). Es coherente con lo que
+dice SDL, pero **incompatible con que Steam sí dé fuerza**, así que se
+mantiene aquí solo como registro.
 
 ## Preguntas concretas
 
-1. ¿Es correcto el diagnóstico, o hay alguna otra causa compatible con estos
-   datos? En particular: ¿puede `hid_thrustmaster` estar **impidiendo** que
-   `hid-tmff2` tome el dispositivo? ¿Conviene ponerlo en la lista negra?
+1. ¿Es correcta la lectura nueva: que si Proton mueve el volante, el núcleo
+   publica `FF_CONSTANT` en algún `/dev/input/eventN` y basta con hablar con
+   evdev directamente (`EVIOCSFF`) en vez de con el háptico de SDL?
+   ¿Hay alguna forma en que Steam/Proton obtenga par **sin** pasar por
+   evdev (un servicio propio, hidraw, Steam Input) que invalide esa
+   conclusión?
 2. **Instalación en SteamOS**, que tiene el sistema de archivos inmutable:
    ¿cuál es el procedimiento que de verdad funciona hoy, y **sobrevive a las
    actualizaciones de SteamOS**? ¿DKMS basta, o hay que rehacerlo tras cada
@@ -101,6 +121,10 @@ inicial del volante; no implementa FF para este modelo.
    ¿Serviría de algo si el driver no anuncia la capacidad `FF_CONSTANT`?
 6. ¿Hay incompatibilidad conocida entre **Steam Input** y el FFB del volante
    en la Deck, y afecta si el juego se lanza **fuera** de Steam?
+7. Si el nodo del volante existe pero solo con permiso de **lectura** fuera
+   de Steam: ¿es cosa de las reglas udev de `steam-devices`, y cuál es la
+   forma limpia de arreglarlo en SteamOS (grupo `input`, `uaccess`, una regla
+   propia en `/etc/udev/rules.d`)?
 
 ## Qué NO hace falta que respondan
 

@@ -981,7 +981,14 @@ class ForceFeedback:
         hid-generic, que NO implementa force feedback, asi que por evdev no
         hay nada. Pero el driver hid-tmff2 tampoco hace magia: escribe unos
         paquetes concretos en el canal de salida del volante, y ese canal
-        esta abierto en /dev/hidraw. Ver simulator/ffb_t300rs.py."""
+        esta abierto en /dev/hidraw. Ver simulator/ffb_t300rs.py.
+
+        DESACTIVADA por defecto: en la prueba real el volante no se movio y
+        se le apago el LED, asi que escribir ahi puede dejarlo colgado. Hasta
+        aclarar el identificador del informe de salida, el juego NO toca el
+        volante por esta via. Se activa a mano con FFB_HIDRAW_EXPERIMENTAL."""
+        if not getattr(cfg, "FFB_HIDRAW_EXPERIMENTAL", False):
+            return None
         if not ffb_evdev.disponible():
             return None
         info = ffb_t300rs.buscar(ffb_evdev.hidraws())

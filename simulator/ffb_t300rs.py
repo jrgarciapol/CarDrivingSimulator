@@ -53,6 +53,15 @@ PIDS_T300RS = {
 #: conectado pero SIN INICIALIZAR.
 PID_SIN_INICIAR = "b65d"
 
+#: Modo BOOTLOADER del T300. No es lo mismo que el anterior: aqui el volante
+#: no tiene firmware utilizable y esta esperando a que se lo reinstalen. Se
+#: entra por una actualizacion de firmware interrumpida o un corte durante el
+#: arranque. Enumera en el USB (el ordenador "suena" al conectarlo) pero no lo
+#: reconoce ninguna aplicacion, ni el panel de Thrustmaster ni una consola.
+#: Se recupera reinstalando el firmware desde Windows: la utilidad de
+#: Thrustmaster habla con el volante precisamente en este modo.
+PID_BOOTLOADER = "b66c"
+
 #: Tamaño del informe de salida en modo normal (63 en PS4 son 31, pero el
 #: valor real se saca del descriptor del propio aparato).
 LARGO_NORMAL = 63

@@ -150,6 +150,9 @@ def main(argv=None):
     parser.add_argument("--neumatico", choices=["legacy", "brush"],
                         help="modelo de neumatico: legacy (curva compartida) o "
                         "brush (curvas long/lat separadas)")
+    parser.add_argument("--dispositivos", action="store_true",
+                        help="listar los mandos/volantes que ve SDL y cual "
+                        "elegiria el juego, y salir (diagnostico)")
     args = parser.parse_args(argv)
 
     # las banderas fuerzan el modo de entrada por encima de la deteccion
@@ -172,6 +175,11 @@ def main(argv=None):
                      sdl2.SDL_INIT_EVENTS) != 0:
         print("Error al iniciar SDL:", sdl2.SDL_GetError().decode())
         return 1
+
+    if args.dispositivos:
+        WheelInput.diagnostico()
+        sdl2.SDL_Quit()
+        return 0
 
     if args.rendimiento:
         preset_rendimiento()

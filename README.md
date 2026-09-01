@@ -350,11 +350,37 @@ A motor · B recolocar · X vista · Y automático · cruceta ↑ telemetría,
   agarre (el equivalente al aligeramiento del volante) y el alto da los
   pianos, la hierba y el golpe del cambio.
 
+### Volante en la Steam Deck — OJO con Steam Input
+
 Con el **volante T300 conectado a la Deck** el juego lo prefiere
 automáticamente. Ten en cuenta que necesita alimentación propia y un hub
 USB-C, y que para el force feedback completo hace falta el módulo de kernel
 `hid-tmff2`, que en SteamOS hay que reinstalar tras cada actualización del
 sistema.
+
+**El fallo más habitual**: lanzar desde Steam es lo que hace falta para que
+funcione *el mando* de la Deck… pero es justo lo que **rompe el volante**.
+Steam Input se apodera del volante y lo vuelve a presentar como un mando
+virtual de Xbox, así que el juego ya no ve un Thrustmaster: ve un gamepad, y
+la dirección y los pedales dejan de tener sentido. El volante hace su giro de
+calibración y enciende el LED verde (eso es el driver, no el juego), pero
+dentro no responde.
+
+Para jugar **con volante** en la Deck:
+
+1. En Steam, propiedades del juego → **Mando** → **Desactivar Steam Input**.
+2. Lánzalo y comprueba qué ve el juego:
+   ```bash
+   ./jugar.sh --dispositivos
+   ```
+   Debe aparecer el Thrustmaster **por su nombre**, con
+   `gamepad_para_SDL=no` y `force_feedback=si`. Si en su lugar sale un mando
+   virtual, Steam Input sigue activo.
+3. Si aun así no lo coge, fuérzalo con `./jugar.sh --volante`.
+
+Resumen: **mando de la Deck → lanzar desde Steam con Steam Input activo;
+volante → Steam Input desactivado** (o lanzarlo fuera de Steam con
+`--volante`).
 
 ## Ajustar el mapeo del volante
 

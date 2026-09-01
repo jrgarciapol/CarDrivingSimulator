@@ -130,6 +130,72 @@ class WheelInput:
         self._prev_menu = {}
         self._rep = {}                  # temporizadores de auto-repeticion
 
+    @staticmethod
+    def diagnostico():
+        """Lista TODO lo que ve SDL y explica a quien elegiria el juego.
+
+        Es la herramienta para saber por que un volante no funciona: en una
+        Steam Deck lanzada DESDE STEAM, Steam Input se apodera del volante y
+        lo vuelve a presentar como un mando virtual, asi que el juego ya no
+        ve un Thrustmaster sino un gamepad. Aqui se ve de un vistazo."""
+        count = sdl2.SDL_NumJoysticks()
+        print(f"\nDISPOSITIVOS DE ENTRADA QUE VE SDL: {count}\n")
+        if count == 0:
+            print("  (ninguno)\n"
+                  "  - Conecta el volante ANTES de arrancar.\n"
+                  "  - En Linux, comprueba que aparece en /dev/input/ y que\n"
+                  "    tu usuario tiene permiso (grupo 'input').")
+        volante = pad = -1
+        for i in range(count):
+            raw = sdl2.SDL_JoystickNameForIndex(i)
+            name = raw.decode("utf-8", "replace") if raw else "?"
+            low = name.lower()
+            es_pad = bool(sdl2.SDL_IsGameController(i))
+            js = sdl2.SDL_JoystickOpen(i)
+            ejes = sdl2.SDL_JoystickNumAxes(js) if js else 0
+            bot = sdl2.SDL_JoystickNumButtons(js) if js else 0
+            hap = bool(sdl2.SDL_JoystickIsHaptic(js)) if js else False
+            if js:
+                sdl2.SDL_JoystickClose(js)
+            por_nombre = any(h in low for h in cfg.WHEEL_NAME_HINTS)
+            if por_nombre and volante < 0:
+                volante = i
+            if es_pad and pad < 0:
+                pad = i
+            print(f"  [{i}] {name}")
+            print(f"      ejes={ejes}  botones={bot}  "
+                  f"gamepad_para_SDL={'si' if es_pad else 'no'}  "
+                  f"force_feedback={'si' if hap else 'no'}")
+            print(f"      coincide con WHEEL_NAME_HINTS: "
+                  f"{'SI' if por_nombre else 'no'}")
+        if volante < 0:
+            for i in range(count):
+                if sdl2.SDL_IsGameController(i):
+                    continue
+                js = sdl2.SDL_JoystickOpen(i)
+                if not js:
+                    continue
+                ok = (sdl2.SDL_JoystickNumAxes(js) >= 3
+                      and sdl2.SDL_JoystickNumButtons(js) >= 4)
+                sdl2.SDL_JoystickClose(js)
+                if ok:
+                    volante = i
+                    break
+        print()
+        if volante >= 0:
+            print(f"  -> El juego usaria el VOLANTE del indice {volante}.")
+        elif pad >= 0:
+            print(f"  -> El juego usaria el MANDO del indice {pad}.")
+            print("     Si lo que tienes conectado es un VOLANTE, es que algo\n"
+                  "     lo esta presentando como mando. En una Steam Deck eso\n"
+                  "     lo hace STEAM INPUT: en las propiedades del juego, en\n"
+                  "     Mando, pon 'Desactivar Steam Input'. Luego repite\n"
+                  "     esta prueba: debe aparecer el Thrustmaster por su\n"
+                  "     nombre. Tambien puedes forzarlo con --volante.")
+        else:
+            print("  -> El juego usaria el TECLADO.")
+        print()
+
     def _open_device(self):
         modo = str(getattr(cfg, "INPUT_MODE", "auto")).lower()
         if modo == "teclado":
@@ -144,6 +210,25 @@ class WheelInput:
                 volante = i
             if pad < 0 and sdl2.SDL_IsGameController(i):
                 pad = i
+        if volante < 0:
+            # 2) sin coincidencia por NOMBRE: un dispositivo que SDL no
+            # reconoce como gamepad y que tiene ejes y botones de sobra es,
+            # casi con seguridad, un volante (un volante con pedales expone
+            # 3-4 ejes; los mandos conocidos SI se reconocen como gamepad,
+            # asi que no se cuelan aqui). Cubre volantes que no estan en
+            # WHEEL_NAME_HINTS.
+            for i in range(count):
+                if sdl2.SDL_IsGameController(i):
+                    continue
+                js = sdl2.SDL_JoystickOpen(i)
+                if not js:
+                    continue
+                ejes = sdl2.SDL_JoystickNumAxes(js)
+                botones = sdl2.SDL_JoystickNumButtons(js)
+                sdl2.SDL_JoystickClose(js)
+                if ejes >= 3 and botones >= 4:
+                    volante = i
+                    break
 
         if modo == "volante":
             # forzar VOLANTE: el primer dispositivo (o el que coincida por

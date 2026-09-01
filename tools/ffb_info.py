@@ -167,7 +167,8 @@ def presencia(evs, hr):
 
 def sistema():
     di("\n  Sistema:")
-    di(f"    kernel: {os.uname().release}")
+    # os.uname no existe en Windows, donde esta herramienta no pinta nada
+    di(f"    kernel: {os.uname().release if hasattr(os, 'uname') else '?'}")
     try:
         with open("/proc/modules") as f:
             mods = f.read()

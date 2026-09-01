@@ -295,30 +295,45 @@ class WheelInput:
                         "NO toques nada: suelta el volante y los pedales.", 3.0)
         reposo = [(lo0[i] + hi0[i]) // 2 for i in range(n)]
 
+        def movimientos(lo, hi):
+            """Cuanto se alejo del reposo CADA eje (para no ocultar nada)."""
+            return [max(abs(hi[i] - reposo[i]), abs(lo[i] - reposo[i]))
+                    for i in range(n)]
+
         def mas_movido(lo, hi, excluir):
+            mov = movimientos(lo, hi)
             mejor, cual = 0, -1
             for i in range(n):
                 if i in excluir:
                     continue
-                d = max(abs(hi[i] - reposo[i]), abs(lo[i] - reposo[i]))
-                if d > mejor:
-                    mejor, cual = d, i
+                if mov[i] > mejor:
+                    mejor, cual = mov[i], i
             return cual, mejor
+
+        detalle = []
+
+        def anota(paso, lo, hi):
+            mov = movimientos(lo, hi)
+            detalle.append(f"  {paso:11} movimiento por eje: "
+                           + "  ".join(f"eje{i}={mov[i]}" for i in range(n)))
 
         lo1, hi1 = fase("2/4  VOLANTE",
                         "Gira el volante a TOPE a un lado y a TOPE al otro.",
                         6.0)
         eje_v, mov_v = mas_movido(lo1, hi1, set())
+        anota("VOLANTE", lo1, hi1)
 
         lo2, hi2 = fase("3/4  ACELERADOR",
                         "Pisa SOLO el acelerador a fondo y sueltalo. "
                         "No toques el volante.", 6.0)
         eje_a, mov_a = mas_movido(lo2, hi2, {eje_v})
+        anota("ACELERADOR", lo2, hi2)
 
         lo3, hi3 = fase("4/4  FRENO",
                         "Pisa SOLO el freno a fondo y sueltalo. "
                         "No toques el volante.", 6.0)
         eje_f, mov_f = mas_movido(lo3, hi3, {eje_v, eje_a})
+        anota("FRENO", lo3, hi3)
 
         # sentido de los pedales: si al pisar el valor BAJA respecto al
         # reposo, el pedal descansa arriba -> PEDALS_INVERTED = True
@@ -337,7 +352,9 @@ class WheelInput:
              "",
              f"  antes: AXIS_STEERING={cfg.AXIS_STEERING}, "
              f"AXIS_THROTTLE={cfg.AXIS_THROTTLE}, AXIS_BRAKE={cfg.AXIS_BRAKE},"
-             f" PEDALS_INVERTED={cfg.PEDALS_INVERTED}"]
+             f" PEDALS_INVERTED={cfg.PEDALS_INVERTED}", "",
+             "  Detalle (cuanto se alejo del reposo CADA eje en cada paso):"]
+        L += detalle
         dudoso = [t for t, m in (("volante", mov_v), ("acelerador", mov_a),
                                  ("freno", mov_f)) if m < 8000]
         if dudoso:

@@ -115,8 +115,19 @@ def presencia(evs, hr):
             for d in bus:
                 di(f"    en el bus USB: {d['nodo']}  {d['vid']}:{d['pid']}  "
                    f"{d['nombre'] or '?'}")
-            di("    Enumera en el bus pero no llega a HID: es un problema de")
-            di("    driver, no de corriente.")
+            if any(d["pid"] == t300.PID_SIN_INICIAR for d in bus):
+                di("    ENUMERA PERO SE QUEDA SIN INICIALIZAR. Este es el modo")
+                di("    generico de arranque: el aparato responde al conectarlo")
+                di("    pero todavia no es un volante, y por eso no lo reconoce")
+                di("    ninguna aplicacion, ni la de Thrustmaster ni la consola.")
+                di("    Si tampoco enciende el LED ni hace el giro de")
+                di("    calibracion, el cambio de modo no llega a completarse:")
+                di("    es cosa del propio volante, no del ordenador. La via de")
+                di("    Thrustmaster para esto es reinstalar el firmware, que se")
+                di("    hace precisamente con el volante en este modo.")
+            else:
+                di("    Enumera en el bus pero no llega a HID: es un problema")
+                di("    de driver, no de corriente.")
         di("    Hasta que aparezca, el resto de este informe no dice nada")
         di("    sobre el force feedback.")
         return False

@@ -33,6 +33,7 @@ import os
 import sdl2
 
 from . import config as cfg
+from . import ffb_evdev
 
 VOLANTE, MANDO, TECLADO = "volante", "mando", "teclado"
 
@@ -243,7 +244,6 @@ class WheelInput:
         pueda mandar fuerza hacen falta tres cosas, y aqui se comprueban una
         a una: un driver que exponga la capacidad FF, permiso sobre el
         dispositivo, y que SDL consiga abrir el haptico."""
-        import glob
         L = []
 
         def di(t=""):
@@ -252,11 +252,13 @@ class WheelInput:
 
         di("\nDIAGNOSTICO DE FORCE FEEDBACK\n")
         di(f"  hapticos que ve SDL: {sdl2.SDL_NumHaptics()}")
-        if sdl2.SDL_NumJoysticks() <= indice:
-            di("  No hay dispositivo; conecta el volante antes de arrancar.")
-            WheelInput._guardar_informe(L, "diagnostico_ffb.txt")
-            return
-        js = sdl2.SDL_JoystickOpen(indice)
+        # Aunque SDL no vea el volante se sigue adelante: la parte importante
+        # del diagnostico la da el NUCLEO, mas abajo, y funciona igual.
+        hay_js = sdl2.SDL_NumJoysticks() > indice
+        if not hay_js:
+            di("  SDL no ve ningun dispositivo en el indice "
+               f"{indice}: conecta el volante antes de arrancar.")
+        js = sdl2.SDL_JoystickOpen(indice) if hay_js else None
         raw = sdl2.SDL_JoystickName(js) if js else None
         di(f"  dispositivo: "
            f"{raw.decode('utf-8', 'replace') if raw else '?'}")
@@ -291,9 +293,9 @@ class WheelInput:
                 di("  NINGUN haptico corresponde al volante: los que hay son "
                    "de otros mandos.")
         if not hap:
-            di(f"  No se pudo abrir el haptico: "
-               f"{sdl2.SDL_GetError().decode()}")
-            di("  Suele ser PERMISOS sobre /dev/input/event*.")
+            if hay_js:
+                di(f"  SDL no consigue abrir ningun haptico del volante: "
+                   f"{sdl2.SDL_GetError().decode()}")
         else:
             q = sdl2.SDL_HapticQuery(hap)
             constante = bool(q & sdl2.SDL_HAPTIC_CONSTANT)
@@ -318,24 +320,57 @@ class WheelInput:
                    f"{'CARGADO' if m in mods else 'no cargado'}")
         except OSError:
             di("    (no se pudo leer /proc/modules)")
-        evs = sorted(glob.glob("/dev/input/event*"))
-        legibles = sum(1 for e in evs if os.access(e, os.R_OK | os.W_OK))
-        di(f"    /dev/input/event*: {len(evs)} dispositivos, "
-           f"{legibles} con permiso de lectura+escritura")
-        if evs and legibles == 0:
-            di("    -> SIN PERMISO: el FFB necesita ESCRIBIR en el evento.")
-            di("       Anade tu usuario al grupo 'input' y reinicia sesion:")
-            di("         sudo usermod -aG input $USER")
 
+        # --- LA PRUEBA QUE DECIDE: que dice el NUCLEO, no SDL --------------
+        # SDL puede no ver el haptico por mil motivos (nodo distinto, version
+        # vieja de la biblioteca, permisos al arrancar). El nucleo, en cambio,
+        # publica en /sys las capacidades reales del driver. Si aqui aparece
+        # "fuerza constante", el force feedback EXISTE y el problema es solo
+        # de camino: por eso el volante si tiene fuerza en los juegos de Steam.
+        di("\n  Lo que dice el NUCLEO (/sys y /dev/input), al margen de SDL:")
+        evs = ffb_evdev.listar()
+        if not evs:
+            di("    (no hay /dev/input/event*: ¿no es Linux?)")
+        con_ff = [d for d in evs if d["ff"]]
+        rw = sum(1 for d in evs if d["lectura"] and d["escritura"])
+        di(f"    /dev/input/event*: {len(evs)} dispositivos, "
+           f"{rw} con permiso de lectura+escritura")
+        if not con_ff:
+            di("    NINGUN dispositivo anuncia force feedback.")
+        for d in con_ff:
+            permisos = ("lectura+escritura" if d["escritura"]
+                        else "SOLO LECTURA (no sirve para el FFB)")
+            di(f"    {d['ruta']}  {d['nombre'] or '?'}  [{permisos}]")
+            for e in ffb_evdev.efectos_de(d["ff"]):
+                di(f"        SI  {e}")
+        cand = ffb_evdev.buscar_volante(cfg.WHEEL_NAME_HINTS)
+
+        # --- veredicto -----------------------------------------------------
         if hap and del_volante and constante:
-            di("\n  HAY FORCE FEEDBACK del volante: el juego lo usara.")
+            di("\n  HAY FORCE FEEDBACK por SDL: el juego lo usara.")
+        elif cand is not None and cand["escritura"]:
+            di("\n  HAY FORCE FEEDBACK, pero SDL no lo ve.")
+            di(f"  El nucleo lo publica en {cand['ruta']} y el juego lo usara")
+            di("  por la via directa de evdev (simulator/ffb_evdev.py), que es")
+            di("  la misma que usan los juegos de Steam a traves de Proton.")
+            v = ffb_evdev.VolanteEvdev(cand["ruta"], cand["ff"])
+            di(f"  prueba de apertura: "
+               f"{'CORRECTA' if v.ok else 'FALLO -> ' + v.motivo}")
+            v.close()
+        elif cand is not None:
+            di("\n  El volante SI tiene force feedback, pero falta PERMISO de")
+            di(f"  escritura sobre {cand['ruta']}. Anade tu usuario al grupo")
+            di("  'input' y reinicia la sesion:")
+            di("     sudo usermod -aG input $USER")
         else:
             di("\n  El volante NO expone force feedback al sistema.")
-            di("  En una Steam Deck, el T300RS necesita el modulo de kernel")
-            di("  hid-tmff2 (fuera del kernel oficial). Sin el, el volante se")
-            di("  lee perfectamente pero no puede recibir fuerza. Ojo: SteamOS")
-            di("  reemplaza la particion del sistema en cada actualizacion,")
-            di("  asi que hay que reinstalarlo despues de cada una.")
+            di("  Si en los juegos de Steam SI hace fuerza, repite esta prueba")
+            di("  con el volante encendido y sin Steam abierto: puede que otro")
+            di("  proceso tenga tomado el dispositivo.")
+            di("  Si tampoco lo hace en Steam, en una Steam Deck el T300RS")
+            di("  necesita el modulo de kernel hid-tmff2 (fuera del kernel")
+            di("  oficial), y hay que reinstalarlo tras cada actualizacion de")
+            di("  SteamOS.")
         di()
         WheelInput._guardar_informe(L, "diagnostico_ffb.txt")
 
@@ -860,6 +895,7 @@ class ForceFeedback:
         self._effects = {}
         self._jolt_timer = 0.0
         self.pad = None            # mando: vibración en vez de par
+        self.evdev = None          # vía directa a /dev/input (Linux)
         if not cfg.FFB_ENABLED or not wheel.connected:
             return
         if wheel.es_mando:
@@ -898,6 +934,16 @@ class ForceFeedback:
                     break
                 sdl2.SDL_HapticClose(h)
         if not self.haptic:
+            # ULTIMO RECURSO, y en la Steam Deck el que de verdad funciona:
+            # hablar con evdev directamente. Si los juegos de Steam mueven el
+            # volante en esta misma maquina es que el nucleo SI publica el
+            # force feedback; lo que falla es el camino de SDL. Ver
+            # simulator/ffb_evdev.py.
+            self.evdev = self._abrir_evdev()
+            if self.evdev is not None:
+                self.evdev.autocentrado(0.0)
+                self.evdev.ganancia(1.0)
+                self.ok = True
             return
         self.supports = sdl2.SDL_HapticQuery(self.haptic)
         # desactivar el autocentrado del driver: lo sustituye nuestra física
@@ -907,6 +953,55 @@ class ForceFeedback:
             sdl2.SDL_HapticSetGain(self.haptic, 100)
         self._create_effects()
         self.ok = self._ids.get("constant") is not None
+
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _abrir_evdev():
+        """Abre el force feedback del volante por evdev, o None."""
+        if not ffb_evdev.disponible():
+            return None
+        d = ffb_evdev.buscar_volante(cfg.WHEEL_NAME_HINTS)
+        if d is None:
+            return None
+        v = ffb_evdev.VolanteEvdev(d["ruta"], d["ff"])
+        if not v.ok:
+            print(f"FFB: {d['ruta']} anuncia fuerza pero no se pudo usar: "
+                  f"{v.motivo}")
+            v.close()
+            return None
+        print(f"FFB por evdev en {d['ruta']} ({v.nombre})")
+        return v
+
+    # -- envío de los efectos, por SDL o por evdev ----------------------
+    def _set_constante(self, nivel):
+        if self.evdev is not None:
+            self.evdev.constante(nivel)
+            return
+        eff = self._effects.get("constant")
+        if eff is not None:
+            eff.constant.level = int(nivel * 32767)
+            self._update("constant")
+
+    def _set_textura(self, magnitud, periodo_ms):
+        if self.evdev is not None:
+            self.evdev.textura(magnitud, periodo_ms)
+            return
+        eff = self._effects.get("rumble")
+        if eff is not None:
+            eff.periodic.magnitude = int(max(0.0, min(1.0, magnitud)) * 32767)
+            eff.periodic.period = periodo_ms
+            self._update("rumble")
+
+    def _set_condicion(self, clave, coef):
+        if self.evdev is not None:
+            self.evdev.condicion(clave, coef)
+            return
+        eff = self._effects.get(clave)
+        if eff is not None:
+            c = int(coef * 0x7FFF)
+            eff.condition.right_coeff[0] = c
+            eff.condition.left_coeff[0] = c
+            self._update(clave)
 
     # ------------------------------------------------------------------
     def _new_effect(self, key, effect):
@@ -1019,28 +1114,15 @@ class ForceFeedback:
         if cfg.FFB_INVERT:
             level = -level
         level = max(-1.0, min(1.0, level))
-        eff = self._effects.get("constant")
-        if eff is not None:
-            eff.constant.level = int(level * 32767)
-            self._update("constant")
+        self._set_constante(level)
 
         # --- muelle y amortiguador según velocidad ---------------------
         low = max(0.0, 1.0 - speed_ms / 8.0)   # 1 parado -> 0 a 8 m/s
-        spring = cfg.FFB_SPRING_LOWSPEED * low
-        damper = cfg.FFB_DAMPER_HIGHSPEED + \
-            (cfg.FFB_DAMPER_LOWSPEED - cfg.FFB_DAMPER_HIGHSPEED) * low
-        eff = self._effects.get("spring")
-        if eff is not None:
-            c = int(spring * 0x7FFF)
-            eff.condition.right_coeff[0] = c
-            eff.condition.left_coeff[0] = c
-            self._update("spring")
-        eff = self._effects.get("damper")
-        if eff is not None:
-            c = int(damper * 0x7FFF)
-            eff.condition.right_coeff[0] = c
-            eff.condition.left_coeff[0] = c
-            self._update("damper")
+        self._set_condicion("spring", cfg.FFB_SPRING_LOWSPEED * low)
+        self._set_condicion("damper",
+                            cfg.FFB_DAMPER_HIGHSPEED +
+                            (cfg.FFB_DAMPER_LOWSPEED -
+                             cfg.FFB_DAMPER_HIGHSPEED) * low)
 
         # --- texturas --------------------------------------------------
         mag = 0.0
@@ -1065,11 +1147,7 @@ class ForceFeedback:
             # vibración del motor al ralentí
             mag = cfg.FFB_ENGINE_IDLE
             period_ms = int(60000.0 / max(600.0, car_state.rpm) * 2.0)
-        eff = self._effects.get("rumble")
-        if eff is not None:
-            eff.periodic.magnitude = int(max(0.0, min(1.0, mag)) * 32767)
-            eff.periodic.period = period_ms
-            self._update("rumble")
+        self._set_textura(mag, period_ms)
 
     def still(self):
         """Deja el volante en reposo (par y vibración a cero) sin cerrar los
@@ -1077,19 +1155,18 @@ class ForceFeedback:
         if self.pad is not None:
             sdl2.SDL_GameControllerRumble(self.pad, 0, 0, 0)
             return
-        eff = self._effects.get("constant")
-        if eff is not None:
-            eff.constant.level = 0
-            self._update("constant")
-        eff = self._effects.get("rumble")
-        if eff is not None:
-            eff.periodic.magnitude = 0
-            self._update("rumble")
+        self._set_constante(0.0)
+        self._set_textura(0.0, 50)
 
     def close(self):
         if self.pad is not None:
             sdl2.SDL_GameControllerRumble(self.pad, 0, 0, 0)
             self.pad = None
+            return
+        if self.evdev is not None:
+            self.evdev.close()
+            self.evdev = None
+            self.ok = False
             return
         if self.haptic:
             for eid in self._ids.values():

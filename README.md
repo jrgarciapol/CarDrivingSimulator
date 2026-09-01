@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **162 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **215 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -256,7 +256,11 @@ El mando se detecta solo. Un volante reconocido siempre tiene prioridad.
 
 El simulador corre **nativo** en SteamOS, sin Proton: es Python + SDL2 y el
 force feedback usa `SDL_Haptic`, que en Linux se apoya en la interfaz de
-force feedback de evdev.
+force feedback de evdev. Si SDL no encuentra el háptico del volante —pasa en
+la Deck con el T300RS— el juego habla **directamente con evdev**
+(`simulator/ffb_evdev.py`), que es la misma vía por la que los juegos de
+Steam sí mueven el volante. Se ve cuál de las dos está en uso con
+`python -m simulator.main --ffb`.
 
 ### Instalación
 
@@ -354,9 +358,15 @@ A motor · B recolocar · X vista · Y automático · cruceta ↑ telemetría,
 
 Con el **volante T300 conectado a la Deck** el juego lo prefiere
 automáticamente. Ten en cuenta que necesita alimentación propia y un hub
-USB-C, y que para el force feedback completo hace falta el módulo de kernel
-`hid-tmff2`, que en SteamOS hay que reinstalar tras cada actualización del
-sistema.
+USB-C.
+
+Sobre el **force feedback**: en la Deck, `SDL_JoystickIsHaptic` dice que no
+para el T300RS aunque el volante sí tenga fuerza en los juegos de Steam. Como
+esos juegos van por Proton, y el force feedback de Wine se implementa sobre
+evdev, el núcleo está publicando la capacidad y el que no la encuentra es
+SDL. Por eso el juego tiene una **segunda vía**: manda los efectos él mismo
+con `ioctl(EVIOCSFF)` sobre `/dev/input/eventN`. `--ffb` dice qué publica el
+núcleo, con qué permisos, y por cuál de las dos vías va a ir el par.
 
 **El fallo más habitual**: lanzar desde Steam es lo que hace falta para que
 funcione *el mando* de la Deck… pero es justo lo que **rompe el volante**.
@@ -454,6 +464,7 @@ simulator/
   garage.py   coches .car, condiciones del asfalto y récords
   menu.py     menú de arranque (coche + circuito + asfalto)
   wheel.py    entrada DirectInput del volante y efectos de force feedback
+  ffb_evdev.py force feedback hablando directamente con evdev (Linux/Steam Deck)
   physics.py  modelo del vehículo de 4 ruedas (neumáticos, suspensión,
               transmisión, diferenciales, ABS, motor, peralte)
   track.py    circuito: curvas, rasantes, peralte, superficies, baches y
@@ -482,6 +493,7 @@ tests/
   test_motor_inercia.py     cigueñal con inercia + embrague (ENGINE_MODEL)
   test_transmision.py       corte de par al cambiar + diferenciales
   test_settings.py          persistencia de reglajes y guardado de coches
+  test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
 ```
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,

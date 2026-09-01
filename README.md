@@ -260,7 +260,8 @@ force feedback de evdev. Si SDL no encuentra el háptico del volante —pasa en
 la Deck con el T300RS— el juego habla **directamente con evdev**
 (`simulator/ffb_evdev.py`), que es la misma vía por la que los juegos de
 Steam sí mueven el volante. Se ve cuál de las dos está en uso con
-`python -m simulator.main --ffb`.
+`.venv/bin/python -m simulator.main --ffb`, o —sin necesidad del entorno
+virtual, solo con el Python del sistema— con `python3 tools/ffb_info.py`.
 
 ### Instalación
 
@@ -365,8 +366,19 @@ para el T300RS aunque el volante sí tenga fuerza en los juegos de Steam. Como
 esos juegos van por Proton, y el force feedback de Wine se implementa sobre
 evdev, el núcleo está publicando la capacidad y el que no la encuentra es
 SDL. Por eso el juego tiene una **segunda vía**: manda los efectos él mismo
-con `ioctl(EVIOCSFF)` sobre `/dev/input/eventN`. `--ffb` dice qué publica el
-núcleo, con qué permisos, y por cuál de las dos vías va a ir el par.
+con `ioctl(EVIOCSFF)` sobre `/dev/input/eventN`.
+
+Para comprobarlo hay dos herramientas:
+
+```bash
+python3 tools/ffb_info.py            # qué publica el núcleo y con qué permisos
+python3 tools/ffb_info.py --probar   # EMPUJA el volante: la prueba definitiva
+.venv/bin/python -m simulator.main --ffb   # lo mismo, más lo que ve SDL
+```
+
+`tools/ffb_info.py` usa **solo la biblioteca estándar**: funciona con el
+`python3` del sistema, sin `.venv`, sin pip y sin instalar nada. En una Deck
+recién arrancada es lo primero que conviene ejecutar.
 
 **El fallo más habitual**: lanzar desde Steam es lo que hace falta para que
 funcione *el mando* de la Deck… pero es justo lo que **rompe el volante**.
@@ -482,6 +494,7 @@ tools/
                    exporta al formato del simulador (requiere matplotlib)
   alignment_geom.py    geometría del editor (ajustes y ensamblado, testeable)
   make_oval.py     genera el óvalo peraltado
+  ffb_info.py      diagnostico del force feedback sin SDL (solo stdlib)
 docs/
   FISICA.md        el modelo físico explicado para un ingeniero
   NOTA_REVISION.md orientación para revisores del código

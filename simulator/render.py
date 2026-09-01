@@ -61,7 +61,106 @@ def _shade(color, f):
             max(0, min(255, int(color[2] * f))))
 
 
-class Renderer:
+class _Dibujo:
+    """Primitivas de dibujo compartidas por el render 3D y el HUD
+    (ambos aportan su propio _fill y su propio renderer SDL)."""
+
+    def _line(self, x0, y0, x1, y1, color, grosor=1):
+        """Segmento (con grosor: se dibujan líneas paralelas desplazadas en
+        perpendicular)."""
+        sdl2.SDL_SetRenderDrawColor(self.r, color[0], color[1], color[2],
+                                    color[3] if len(color) > 3 else 255)
+        dx, dy = x1 - x0, y1 - y0
+        ln = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / ln, dx / ln
+        for k in range(grosor):
+            o = k - (grosor - 1) / 2.0
+            sdl2.SDL_RenderDrawLine(self.r, int(x0 + nx * o), int(y0 + ny * o),
+                                    int(x1 + nx * o), int(y1 + ny * o))
+
+    def _arc(self, cx, cy, radio, a0, a1, color, grosor=2, pasos=64):
+        """Arco de circunferencia entre dos ángulos (rad)."""
+        px = py = None
+        for i in range(pasos + 1):
+            a = a0 + (a1 - a0) * i / pasos
+            x, y = cx + math.cos(a) * radio, cy + math.sin(a) * radio
+            if px is not None:
+                self._line(px, py, x, y, color, grosor)
+            px, py = x, y
+
+    def draw_speedo(self, car_state):
+        """VELOCIMETRO DE AGUJA (tipo reloj), abajo a la izquierda.
+
+        Una aguja se lee de un vistazo, por la POSICION, sin descifrar
+        cifras: en visión periférica sabes si vas rápido o lento sin apartar
+        la vista de la carretera, que es justo lo que se necesita
+        conduciendo. La cifra se mantiene en el centro para cuando hace
+        falta el dato exacto."""
+        W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+        d = int(getattr(cfg, "SPEEDO_SIZE", 250))
+        rad = d / 2.0
+        cx = 28 + rad
+        cy = H - 28 - rad
+        vmax = max(40.0, float(getattr(cfg, "SPEEDO_MAX_KMH", 260)))
+        # esfera: de 135 grados a 405 (270 grados de recorrido, como un
+        # velocimetro real, con el 0 abajo a la izquierda)
+        a0, a1 = math.radians(135.0), math.radians(405.0)
+
+        # fondo y aro
+        for k in range(int(rad), 0, -3):
+            t = k / rad
+            c = int(18 + 26 * (1.0 - t))
+            self._disc(cx, cy, k, (c, c, c + 4, 225))
+        self._arc(cx, cy, rad - 2, a0, a1, (150, 170, 200, 230), 3)
+
+        # marcas: cada 20 km/h una grande con número, cada 10 una pequeña
+        paso = 20 if vmax <= 300 else 40
+        v = 0
+        while v <= vmax + 1e-6:
+            a = a0 + (a1 - a0) * (v / vmax)
+            ca, sa = math.cos(a), math.sin(a)
+            grande = (v % paso == 0)
+            r1 = rad - (16 if grande else 9)
+            self._line(cx + ca * r1, cy + sa * r1,
+                       cx + ca * (rad - 4), cy + sa * (rad - 4),
+                       (235, 235, 235, 235) if grande else (150, 150, 150, 200),
+                       3 if grande else 2)
+            if grande:
+                txt = str(int(v))
+                tw = font.text_width(txt, 2)
+                rt = rad - 34
+                font.draw_text(self.r, txt, cx + ca * rt - tw / 2,
+                               cy + sa * rt - 7, 2, (215, 225, 240, 255))
+            v += paso / 2.0
+
+        # AGUJA
+        vel = max(0.0, min(vmax, abs(car_state.speed_kmh)))
+        a = a0 + (a1 - a0) * (vel / vmax)
+        ca, sa = math.cos(a), math.sin(a)
+        col = (255, 70, 60, 255) if vel > vmax * 0.85 else (255, 230, 120, 255)
+        self._line(cx - ca * rad * 0.14, cy - sa * rad * 0.14,
+                   cx + ca * (rad - 20), cy + sa * (rad - 20), col, 5)
+        self._disc(cx, cy, max(6, int(rad * 0.09)), (230, 230, 235, 255))
+
+        # cifra exacta en el centro-bajo de la esfera
+        txt = f"{int(vel)}"
+        tw = font.text_width(txt, 4)
+        font.draw_text(self.r, txt, cx - tw / 2, cy + rad * 0.30, 4,
+                       (255, 255, 255, 255))
+        tw = font.text_width("KM/H", 2)
+        font.draw_text(self.r, "KM/H", cx - tw / 2, cy + rad * 0.62, 2,
+                       (170, 185, 210, 255))
+
+    def _disc(self, cx, cy, radio, color):
+        """Disco relleno por franjas horizontales."""
+        r = int(radio)
+        for dy in range(-r, r + 1):
+            w = int(math.sqrt(max(0.0, r * r - dy * dy)))
+            if w > 0:
+                self._fill(cx - w, cy + dy, 2 * w, 1, color)
+
+
+class Renderer(_Dibujo):
     def __init__(self, renderer):
         self.r = renderer
         self._rect = sdl2.SDL_Rect()
@@ -596,7 +695,7 @@ class Renderer:
                 if ppm < 0.8:
                     continue
                 last_pole_seg = seg_idx[j]
-                h_px = max(9.0, ppm * 2.2)
+                h_px = max(4.0, ppm * getattr(cfg, "TRACK_POLE_HEIGHT", 2.2))
                 pw = max(3.0, ppm * 0.22)
                 cap = max(2.0, h_px * 0.25)
                 for side, color in ((-1, (255, 215, 30)), (1, (60, 145, 255))):
@@ -610,6 +709,46 @@ class Renderer:
                         + pitch_px
                     self._fill(sx - pw / 2, sy - h_px, pw, h_px, color)
                     self._fill(sx - pw / 2, sy - h_px, pw, cap, (245, 245, 245))
+
+        # --- PANELES DIRECCIONALES (chevrons) en las curvas cerradas -------
+        # La señal real de curva peligrosa: se plantan en el EXTERIOR de la
+        # curva y su hilera dice, antes de entrar, hacia dónde gira y cómo de
+        # cerrada es (cuantos más se ven seguidos y más juntos, más cerrada).
+        # Es la ayuda más fiel a la realidad para leer la siguiente curva.
+        r_chev = getattr(cfg, "CHEVRON_MAX_RADIUS", 0.0)
+        if r_chev > 0.0:
+            for j in range(n_sec - 1, 4, -1):
+                if not z_ok[j] or zr[j] > 320.0 or seg_idx[j] % 3:
+                    continue
+                k = segs[seg_idx[j] % n_segs].kappa
+                if abs(k) < 1e-9 or 1.0 / abs(k) > r_chev:
+                    continue
+                ppm = f * inv_z[j] * (W / 2)
+                if ppm < 1.2:
+                    continue
+                lado = -1.0 if k > 0 else 1.0          # exterior de la curva
+                o = lado * (half_w + kerb_w + 1.1)
+                px_w = xr[j] + rxr[j] * o
+                pz_w = zr[j] + rzr[j] * o
+                if pz_w < 0.3:
+                    continue
+                sx = W / 2 + f * px_w / pz_w * (W / 2)
+                sy = H / 2 - f * (dy[j] - o * sinb[j]) / pz_w * (H / 2) \
+                    + pitch_px
+                alto = max(6.0, ppm * 1.35)            # panel de ~1,35 m
+                ancho = max(4.0, ppm * 0.95)
+                # panel blanco con el galón rojo apuntando HACIA la curva
+                self._fill(sx - ancho / 2, sy - alto, ancho, alto,
+                           (245, 245, 245))
+                self._fill(sx - ancho / 2, sy - alto, ancho, max(1.0, alto * 0.09),
+                           (60, 60, 60))
+                gx = sx + (ancho * 0.22 * -lado)
+                self._line(gx - ancho * 0.26 * -lado, sy - alto * 0.82,
+                           gx + ancho * 0.20 * -lado, sy - alto * 0.50,
+                           (205, 35, 35), max(2, int(ancho * 0.22)))
+                self._line(gx + ancho * 0.20 * -lado, sy - alto * 0.50,
+                           gx - ancho * 0.26 * -lado, sy - alto * 0.18,
+                           (205, 35, 35), max(2, int(ancho * 0.22)))
         return H // 2
 
     def world_to_screen(self, track, s_world, n, z_up):
@@ -959,7 +1098,7 @@ class Renderer:
                         self._fill(colx, yy + h - 10, cw, 8, (150, 18, 24))
 
 
-class Hud:
+class Hud(_Dibujo):
     def __init__(self, renderer):
         self.r = renderer
         self._rect = sdl2.SDL_Rect()
@@ -1016,9 +1155,12 @@ class Hud:
                        (140, 220, 255, 255) if auto_gear else (200, 200, 200, 255))
 
         # ------- panel inferior izquierdo: velocidad
-        self._fill(20, H - 116, 260, 96, (0, 0, 0, 160))
-        font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 100, 6)
-        font.draw_text(self.r, "KM/H", 170, H - 84, 2)
+        if getattr(cfg, "SPEEDO_DIAL", False):
+            self.draw_speedo(st)
+        else:
+            self._fill(20, H - 116, 260, 96, (0, 0, 0, 160))
+            font.draw_text(self.r, f"{int(st.speed_kmh):3d}", 40, H - 100, 6)
+            font.draw_text(self.r, "KM/H", 170, H - 84, 2)
 
         # tiempos
         self._fill(W - 320, 20, 300, 116, (0, 0, 0, 160))
@@ -1257,10 +1399,15 @@ class Hud:
         # dibujo cambiaría de tamaño cada fotograma; cuantizada se queda
         # quieta durante tramos largos y salta pocas veces, que es lo que
         # permite leerla. La regla de abajo dice siempre cuál está en uso.
-        util_w, util_h = (pw - 48) * 0.92, (ph - 62) * 0.92
+        # Con el coche abajo, lo que hay que encajar es el tramo que va POR
+        # DELANTE (max(ys)) en el alto disponible sobre él, y el zigzag
+        # lateral (el mayor de los dos lados) en el ancho.
+        util_w, util_h = (pw - 48) * 0.92, (ph - 74) * 0.98
+        lateral = max(abs(min(xs)), abs(max(xs))) * 2.0
+        delante = max(1.0, max(ys))
         ppm = self.PLAN_ESCALAS[0]
         for e in self.PLAN_ESCALAS:
-            if anc * e <= util_w and alt * e <= util_h:
+            if lateral * e <= util_w and delante * e <= util_h:
                 ppm = e
         # ...con histéresis: si la escala elegida cambia, se acepta solo si
         # es un cambio sostenido (evita el parpadeo justo en el umbral)
@@ -1274,19 +1421,25 @@ class Hud:
             self._plan_ppm_n = 0
         ppm = self._plan_ppm
 
-        # ENCUADRE automático. Hace falta porque a 1 km el trazado puede
-        # volver sobre sí mismo y quedarse DETRAS del coche: en Silverstone,
-        # desde el km 0,9 el tramo llega a −536 m en Y, medio kilómetro por
-        # detrás. Con el coche clavado abajo, todo eso caía fuera.
-        mx = (min(xs) + max(xs)) / 2.0
-        my = (min(ys) + max(ys)) / 2.0
-        ox_t = x0 + pw / 2.0 - mx * ppm
-        oy_t = y0 + (ph + 18) / 2.0 + my * ppm
-        if not hasattr(self, "_plan_o"):
-            self._plan_o = [ox_t, oy_t]
-        self._plan_o[0] += (ox_t - self._plan_o[0]) * 0.10
-        self._plan_o[1] += (oy_t - self._plan_o[1]) * 0.10
-        cx, cy = self._plan_o                 # aquí queda el coche
+        # ENCUADRE: el coche va SIEMPRE ABAJO y centrado, y el mapa está
+        # orientado en la dirección de la marcha (forward_plan ya es
+        # egocéntrico: el coche en el origen mirando a +y). Así el panel se
+        # lee como las notas de un copiloto, sin tener que buscar dónde está
+        # uno. Lo que quede fuera del panel (un tramo que vuelva por detrás)
+        # simplemente se recorta: a cambio, la referencia nunca se mueve.
+        cx = x0 + pw / 2.0
+        cy = y0 + ph - 34.0
+        # solo se desplaza en X lo justo para que no se salga el trazado
+        # lateralmente, con suavizado para que no dé saltos
+        exceso = 0.0
+        if max(xs) * ppm > pw / 2 - 24:
+            exceso = -(max(xs) * ppm - (pw / 2 - 24))
+        if min(xs) * ppm < -(pw / 2 - 24):
+            exceso = -(min(xs) * ppm + (pw / 2 - 24))
+        if not hasattr(self, "_plan_dx"):
+            self._plan_dx = 0.0
+        self._plan_dx += (exceso - self._plan_dx) * 0.08
+        cx += self._plan_dx
 
         def dentro(px, py, m=2):
             return (x0 + m <= px <= x0 + pw - m
@@ -1321,10 +1474,21 @@ class Hud:
                         min(255, int(col[1] * f + 40)),
                         min(255, int(col[2] * f + 40)), 240))
 
-        # EL COCHE: triángulo blanco apuntando hacia delante (arriba)
-        for k in range(11):
-            self._fill(cx - k // 2, cy - k + 5, max(1, k), 2,
-                       (255, 255, 255, 255))
+        # EL COCHE: flecha grande apuntando hacia delante (arriba). Es la
+        # referencia del panel, así que se dibuja con halo oscuro para que
+        # destaque sobre el trazado y no se pierda entre los puntos.
+        alto = 26
+        for k in range(alto + 6):                     # halo
+            w = max(1, int((k + 3) * 0.80))
+            self._fill(cx - w // 2, cy - k + 9, w, 2, (0, 0, 0, 190))
+        for k in range(alto):
+            w = max(1, int(k * 0.78))
+            self._fill(cx - w // 2, cy - k + 6, w, 2, (255, 255, 255, 255))
+        # base de la flecha, para que se lea como un coche y no como un pico
+        self._fill(cx - 9, cy + 6, 18, 4, (255, 255, 255, 255))
+        # línea de referencia hacia delante (por dónde vas si no giras)
+        for k in range(0, int(ph * 0.55), 12):
+            self._fill(cx, cy - 22 - k, 1, 6, (255, 255, 255, 70))
 
         # RADIOS de las curvas más cerradas
         n_lab = int(getattr(cfg, "MAP_AHEAD_LABELS", 5))

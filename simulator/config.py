@@ -532,6 +532,11 @@ ABS_SLIP_TARGET = 0.14       # deslizamiento al que actúa el ABS [0.10 .. 0.20]
 TRACK_FILE = "tracks/silverstone.csv"
 ROAD_HALF_WIDTH = 5.4        # m, semiancho del asfalto [3.5 .. 8]
 KERB_WIDTH = 1.1             # m de piano a cada lado [0.5 .. 2]
+KERB_MAX_RADIUS = 0.0        # pone PIANOS en toda curva cuyo radio sea menor
+                             # o igual que este valor (m): sube el número
+                             # para tener pianos también en las curvas
+                             # abiertas. 0 = respetar los pianos que traiga
+                             # el circuito [0 .. 1500]
 ROAD_ROUGHNESS = 1.0         # rugosidad del firme: escala el microrrelieve
                              # (baches finos) del asfalto, incluidas ZONAS
                              # DAÑADAS aleatorias por tramos (parches de firme
@@ -586,6 +591,12 @@ MINIMAP = True               # plano del circuito COMPLETO arriba a la
 # que daba un número sin contexto: aquí se ve la SECUENCIA de curvas, que
 # es lo que permite anticipar y frenar a tiempo.
 MAP_AHEAD = True             # mostrarla al arrancar
+SPEEDO_DIAL = True           # velocímetro de AGUJA (tipo reloj) en vez de
+                             # la cifra suelta. Se lee de un vistazo, sin
+                             # tener que descifrar un número
+SPEEDO_SIZE = 250            # px de diámetro del velocímetro de aguja
+                             # [120 .. 460]
+SPEEDO_MAX_KMH = 260         # fondo de escala del velocímetro [80 .. 400]
 MAP_AHEAD_M = 1000.0         # m de circuito por delante que se dibujan
                              # [300 .. 2500]
 MAP_AHEAD_PX_PER_M = 0.30    # px por metro. FIJO a propósito: con escala
@@ -609,6 +620,15 @@ MAP_AHEAD_SMOOTH_M = 18.0    # m de suavizado de la curvatura al detectar
                              # por una curva cerradísima [0 .. 60]
 TRACK_POLES = False           # balizas de colores en los bordes (amarillo =
                              # izquierda, azul = derecha)
+TRACK_POLE_HEIGHT = 2.2      # m de alto de las balizas: bajarlas las hace
+                             # menos invasivas y da otra sensación de
+                             # velocidad [0.4 .. 4]
+CHEVRON_MAX_RADIUS = 200.0   # PANELES DIRECCIONALES (chevrons) en el exterior
+                             # de toda curva de radio menor o igual que este
+                             # valor (m): la señal real de curva peligrosa,
+                             # que dice hacia dónde y cómo de cerrada es la
+                             # curva antes de entrar. 0 = sin chevrons
+                             # [0 .. 800]
 CAR_BODY_MOTION_EXAG = 5.0   # exageración visual del cabeceo/balanceo de la
                              # carrocería en pantalla; 1 = real [1 .. 5] 3
 TELEM_DOT_LOAD_GAIN = 8.0    # F2: cuánto crece el diámetro del punto del

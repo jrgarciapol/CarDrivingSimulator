@@ -113,12 +113,36 @@ class Track:
         else:
             self.segments = build()
         self.length = len(self.segments) * cfg.SEGMENT_LENGTH
+        self._apply_kerb_radius()
         # semiancho representativo (mediana) para el render; la conducción usa
         # el de cada tramo (half_at)
         ws = sorted(s.half_w for s in self.segments)
         self.half_w = ws[len(ws) // 2]
         self._precompute_vertical()
         self._precompute_racing_line()
+
+    def _apply_kerb_radius(self):
+        """Pone pianos en toda curva de radio <= KERB_MAX_RADIUS.
+
+        Así se decide con UN número hasta qué curvas llevan piano, en vez de
+        depender de los que traiga cada circuito (las carreteras generadas,
+        por ejemplo, no traen ninguno). 0 = respetar los del circuito. Los
+        pianos se extienden unos metros a la entrada y a la salida de la
+        curva, como en la realidad, para que no aparezcan de golpe."""
+        rmax = getattr(cfg, "KERB_MAX_RADIUS", 0.0)
+        if rmax <= 0.0:
+            return
+        n = len(self.segments)
+        marca = [False] * n
+        for i, seg in enumerate(self.segments):
+            if abs(seg.kappa) > 1e-9 and 1.0 / abs(seg.kappa) <= rmax:
+                marca[i] = True
+        # prolongar unos metros a ambos lados (entrada y salida de la curva)
+        extra = max(1, int(12.0 / cfg.SEGMENT_LENGTH))
+        for i in range(n):
+            if marca[i]:
+                for j in range(i - extra, i + extra + 1):
+                    self.segments[j % n].kerb = True
 
     def half_at(self, s: float) -> float:
         """Semiancho de asfalto (m) del tramo en la estación s."""

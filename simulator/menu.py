@@ -213,6 +213,11 @@ def run_menu(renderer, wheel=None, last=None):
         font.draw_text(renderer, rec_txt, 150, y + 40, 2, (120, 230, 120, 255))
 
         ayuda = "FLECHAS: ELEGIR   ENTER: CONTINUAR   ESC: SALIR"
+        if wheel is not None and getattr(wheel, "kind", "") == "volante":
+            # con volante NO hay teclado en una Steam Deck: hay que decir
+            # con que se navega, porque no es evidente
+            ayuda = ("CRUCETA O GIRO DEL VOLANTE: ELEGIR   "
+                     "LEVA DER: CONTINUAR   LEVA IZQ: ATRAS")
         if wheel is not None and getattr(wheel, "es_mando", False):
             ayuda = "CRUCETA/STICK: ELEGIR   A: CONTINUAR   B: SALIR"
         font.draw_text(renderer, ayuda, 150, H - 60, 2, (150, 150, 150, 255))

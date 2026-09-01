@@ -115,7 +115,18 @@ def presencia(evs, hr):
             for d in bus:
                 di(f"    en el bus USB: {d['nodo']}  {d['vid']}:{d['pid']}  "
                    f"{d['nombre'] or '?'}")
-            if any(d["pid"] == t300.PID_SIN_INICIAR for d in bus):
+            if any(d["pid"] == t300.PID_BOOTLOADER for d in bus):
+                di("    ESTA EN MODO BOOTLOADER. No es que le falte el driver:")
+                di("    es que no tiene firmware utilizable. Por eso el equipo")
+                di("    suena al conectarlo pero no lo reconoce ninguna")
+                di("    aplicacion, ni la de Thrustmaster ni una consola, y no")
+                di("    enciende el LED ni hace el giro de calibracion.")
+                di("    NO esta roto: se recupera reinstalando el firmware")
+                di("    desde Windows con la utilidad de Thrustmaster, que")
+                di("    habla con el volante precisamente en este modo.")
+                di("    Hazlo con el transformador conectado y en un puerto USB")
+                di("    directo del equipo, sin hub, y sin tocar nada mientras.")
+            elif any(d["pid"] == t300.PID_SIN_INICIAR for d in bus):
                 di("    ENUMERA PERO SE QUEDA SIN INICIALIZAR. Este es el modo")
                 di("    generico de arranque: el aparato responde al conectarlo")
                 di("    pero todavia no es un volante, y por eso no lo reconoce")

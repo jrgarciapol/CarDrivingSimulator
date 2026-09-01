@@ -158,12 +158,17 @@ def main():
                    "b66e" in t3.PIDS_T300RS))
     # b65d es el volante SIN INICIALIZAR: no vale como aparato de fuerza,
     # porque en ese modo todavia no es un volante.
-    r.append(check("el volante sin inicializar no se confunde con uno listo",
-                   t3.PID_SIN_INICIAR not in t3.PIDS_T300RS and
-                   t3.buscar([{"ruta": "/dev/hidraw4",
-                               "vid": t3.VID_THRUSTMASTER,
-                               "pid": t3.PID_SIN_INICIAR,
-                               "nombre": "Thrustmaster FFB Wheel"}]) is None))
+    # Ni el modo de arranque (b65d) ni el bootloader (b66c) son un volante:
+    # en los dos el aparato enumera en el USB pero no tiene ejes ni fuerza.
+    # Confundir cualquiera de los dos con uno listo llevaria a escribirle
+    # paquetes de efectos a algo que no los entiende.
+    for pid, que in ((t3.PID_SIN_INICIAR, "sin inicializar"),
+                     (t3.PID_BOOTLOADER, "en bootloader")):
+        r.append(check(f"el volante {que} no se confunde con uno listo",
+                       pid not in t3.PIDS_T300RS and
+                       t3.buscar([{"ruta": "/dev/hidraw4",
+                                   "vid": t3.VID_THRUSTMASTER, "pid": pid,
+                                   "nombre": "Thrustmaster"}]) is None))
 
     # --- lo que se ESCRIBE de verdad en el aparato ---------------------
     # Se abre un fichero corriente como si fuera /dev/hidrawN y se mira byte

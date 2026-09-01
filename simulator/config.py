@@ -52,6 +52,15 @@ BUTTON_TOGGLE_AUTO = 2   # alternar cambio automático/manual (tecla G)
 BUTTON_TOGGLE_VIEW = 3   # cambiar de vista (tecla C)
 BUTTON_ENGINE = 9        # arrancar/parar el motor (tecla E)
 BUTTON_RESET = 8         # recolocar el coche en pista (tecla R)
+BUTTON_MENU = 6          # VOLVER AL MENU (como ESC). Sin esto, con volante
+                         # no habia forma de salir de la partida. Si en tu
+                         # volante ese numero no es el que quieres, mira cual
+                         # es con  ./jugar.sh --ejes  (muestra los botones
+                         # pulsados) y cambialo aqui o en AJUSTES
+BUTTON_TELEMETRY = 4     # telemetria F2 (circulos de friccion)
+BUTTON_PLAN = 5          # planta del tramo que viene (tecla N)
+BUTTON_MINIMAP = 7       # plano del circuito completo (tecla M)
+BUTTON_LINE = 11         # trazada ideal (tecla L)
 BUTTON_SLOWMO = 10       # cámara lenta (tecla T): cicla las velocidades
                          # de TIME_SCALES para estudiar el comportamiento
 

@@ -158,6 +158,11 @@ def main(argv=None):
                         help="monitor EN VIVO de ejes y botones del "
                         "dispositivo (por defecto el 0): gira el volante y "
                         "pisa los pedales para ver el mapeo real")
+    parser.add_argument("--ffb", nargs="?", const=0, type=int,
+                        metavar="INDICE",
+                        help="diagnostico del FORCE FEEDBACK: dice si el "
+                        "volante expone fuerza, que efectos admite y por que "
+                        "no la hay (driver, permisos)")
     parser.add_argument("--calibrar", nargs="?", const=0, type=int,
                         metavar="INDICE",
                         help="asistente de CALIBRACION del volante: pide un "
@@ -198,6 +203,11 @@ def main(argv=None):
 
     if args.ejes is not None:
         WheelInput.monitor_ejes(args.ejes, args.segundos)
+        sdl2.SDL_Quit()
+        return 0
+
+    if args.ffb is not None:
+        WheelInput.diagnostico_ffb(args.ffb)
         sdl2.SDL_Quit()
         return 0
 

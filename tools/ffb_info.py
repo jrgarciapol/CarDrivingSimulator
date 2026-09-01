@@ -291,7 +291,10 @@ def guardar():
         return
     print(f"\n  Informe guardado en: {INFORME}")
     print("  Para mandarlo sin copiarlo a mano:")
-    print("    git add diagnostico_ffb_nucleo.txt && "
+    # -f porque .gitignore excluye los informes: cambian en cada ejecucion
+    # y versionarlos hacia que cada 'git pull' chocase con el de la otra
+    # maquina. Subirlos a proposito sigue siendo posible, pero a mano.
+    print("    git add -f diagnostico_ffb_nucleo.txt && "
           "git commit -m 'diagnostico ffb' && git push")
 
 

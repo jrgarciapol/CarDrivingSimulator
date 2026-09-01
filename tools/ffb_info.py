@@ -101,13 +101,24 @@ def presencia(evs, hr):
     ve siquiera."""
     ent = [d for d in evs if _es_volante(d)]
     raw = [d for d in hr if _es_volante(d)]
+    bus = ff.usb(t300.VID_THRUSTMASTER)
     di("\n  VOLANTE:")
     if not ent and not raw:
-        di("    NO ESTA. No aparece ningun aparato Thrustmaster, ni siquiera")
-        di("    sin inicializar. Comprueba la alimentacion propia del volante")
-        di("    y el cable; espera al LED y al giro de calibracion, y repite.")
-        di("    Hasta entonces el resto de este informe no dice nada sobre el")
-        di("    force feedback.")
+        if not bus:
+            di("    NO ESTA NI EN EL BUS USB. El sistema no ve ningun aparato")
+            di("    Thrustmaster, ni siquiera sin inicializar, asi que esto no")
+            di("    es cosa del sistema operativo ni del juego: o no le llega")
+            di("    corriente (el volante necesita su transformador propio), o")
+            di("    es el cable, o la base. Pruebalo enchufado directamente al")
+            di("    equipo, sin hub.")
+        else:
+            for d in bus:
+                di(f"    en el bus USB: {d['nodo']}  {d['vid']}:{d['pid']}  "
+                   f"{d['nombre'] or '?'}")
+            di("    Enumera en el bus pero no llega a HID: es un problema de")
+            di("    driver, no de corriente.")
+        di("    Hasta que aparezca, el resto de este informe no dice nada")
+        di("    sobre el force feedback.")
         return False
     for d in ent + raw:
         di(f"    {d['ruta']}  {d['nombre']}  ({d['vid']}:{d['pid']})")

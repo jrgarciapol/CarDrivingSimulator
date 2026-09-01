@@ -120,6 +120,8 @@ class WheelInput:
         self.name = ""
         self.num_axes = 0
         self.num_buttons = 0
+        self.num_hats = 0
+        self.pad_nav = None
         self._open_device()
         # estado normalizado
         self.steering = 0.0
@@ -506,6 +508,7 @@ class WheelInput:
                     volante = i
                     break
 
+        pad_disponible = pad          # se conserva para la navegacion
         if modo == "volante":
             # forzar VOLANTE: el primer dispositivo (o el que coincida por
             # nombre). Util si el volante no esta en WHEEL_NAME_HINTS.
@@ -542,6 +545,14 @@ class WheelInput:
             self.name = raw.decode("utf-8", "replace") if raw else "?"
             self.num_axes = sdl2.SDL_JoystickNumAxes(self.joystick)
             self.num_buttons = sdl2.SDL_JoystickNumButtons(self.joystick)
+            self.num_hats = sdl2.SDL_JoystickNumHats(self.joystick)
+        # Con un VOLANTE conectado el juego abria SOLO el volante, asi que en
+        # una Steam Deck sus propios mandos quedaban muertos: no habia forma
+        # de moverse por el menu (el volante tampoco lo movia). Se abre
+        # ademas, si existe, un gamepad como mando SECUNDARIO de navegacion.
+        if self.kind == VOLANTE and pad_disponible >= 0 \
+                and pad_disponible != volante:
+            self.pad_nav = sdl2.SDL_GameControllerOpen(pad_disponible)
 
     @property
     def connected(self) -> bool:
@@ -584,6 +595,13 @@ class WheelInput:
             btn = getattr(cfg, "BUTTON_" + accion.upper(), None)
             now = bool(sdl2.SDL_JoystickGetButton(self.joystick, btn)) \
                 if btn is not None and btn < self.num_buttons else False
+            # con volante, los botones de la Deck (mando secundario) siguen
+            # sirviendo para las acciones del HUD
+            nav = getattr(self, "pad_nav", None)
+            if nav and not now:
+                b2 = _PAD_BOTONES.get(accion)
+                if b2 is not None:
+                    now = bool(sdl2.SDL_GameControllerGetButton(nav, b2))
         else:
             return False
         prev = self._prev_acciones.get(accion, False)
@@ -600,30 +618,54 @@ class WheelInput:
         Se leen la cruceta Y el stick izquierdo. Las DIRECCIONES tienen
         auto-repeticion: al mantenerlas, tras una pausa breve se repiten
         solas (mover rapido por una lista larga); ok/back son solo flanco."""
-        if self.kind != MANDO or not self.controller:
-            return set()
-        sdl2.SDL_GameControllerUpdate()
-        c = self.controller
+        estado = {k: False for k in ("up", "down", "left", "right", "ok",
+                                     "back", "def", "reset")}
+        # --- mando (el principal si es MANDO, o el secundario de la Deck) ---
+        c = self.controller if (self.kind == MANDO and self.controller) \
+            else getattr(self, "pad_nav", None)
+        if c:
+            sdl2.SDL_GameControllerUpdate()
 
-        def boton(b):
-            return bool(sdl2.SDL_GameControllerGetButton(c, b))
+            def boton(b):
+                return bool(sdl2.SDL_GameControllerGetButton(c, b))
 
-        lx = _axis_to_norm(sdl2.SDL_GameControllerGetAxis(
-            c, sdl2.SDL_CONTROLLER_AXIS_LEFTX))
-        ly = _axis_to_norm(sdl2.SDL_GameControllerGetAxis(
-            c, sdl2.SDL_CONTROLLER_AXIS_LEFTY))
-        dz = 0.6                        # umbral alto: solo empujes claros
-        estado = {
-            "up": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_UP) or ly < -dz,
-            "down": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_DOWN) or ly > dz,
-            "left": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_LEFT) or lx < -dz,
-            "right": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_RIGHT) or lx > dz,
-            "ok": boton(sdl2.SDL_CONTROLLER_BUTTON_A)
-            or boton(sdl2.SDL_CONTROLLER_BUTTON_START),
-            "back": boton(sdl2.SDL_CONTROLLER_BUTTON_B),
-            "def": boton(sdl2.SDL_CONTROLLER_BUTTON_X),   # valor por defecto
-            "reset": boton(sdl2.SDL_CONTROLLER_BUTTON_Y),  # todo por defecto
-        }
+            lx = _axis_to_norm(sdl2.SDL_GameControllerGetAxis(
+                c, sdl2.SDL_CONTROLLER_AXIS_LEFTX))
+            ly = _axis_to_norm(sdl2.SDL_GameControllerGetAxis(
+                c, sdl2.SDL_CONTROLLER_AXIS_LEFTY))
+            dz = 0.6                    # umbral alto: solo empujes claros
+            estado.update({
+                "up": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_UP) or ly < -dz,
+                "down": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_DOWN) or ly > dz,
+                "left": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_LEFT) or lx < -dz,
+                "right": boton(sdl2.SDL_CONTROLLER_BUTTON_DPAD_RIGHT) or lx > dz,
+                "ok": boton(sdl2.SDL_CONTROLLER_BUTTON_A)
+                or boton(sdl2.SDL_CONTROLLER_BUTTON_START),
+                "back": boton(sdl2.SDL_CONTROLLER_BUTTON_B),
+                "def": boton(sdl2.SDL_CONTROLLER_BUTTON_X),
+                "reset": boton(sdl2.SDL_CONTROLLER_BUTTON_Y),
+            })
+        # --- VOLANTE: cruceta del aro, giro del volante y levas -------------
+        if self.kind == VOLANTE and self.joystick:
+            sdl2.SDL_JoystickUpdate()
+            h = sdl2.SDL_JoystickGetHat(self.joystick, 0) \
+                if getattr(self, "num_hats", 0) > 0 else 0
+
+            def bt(nombre):
+                b = getattr(cfg, "BUTTON_" + nombre, None)
+                return (b is not None and b < self.num_buttons
+                        and bool(sdl2.SDL_JoystickGetButton(self.joystick, b)))
+
+            # girar el volante mueve a izquierda/derecha (cambia el valor)
+            vol = _axis_to_norm(sdl2.SDL_JoystickGetAxis(
+                self.joystick, cfg.AXIS_STEERING)) \
+                if cfg.AXIS_STEERING < self.num_axes else 0.0
+            estado["up"] |= bool(h & sdl2.SDL_HAT_UP) or bt("TOGGLE_VIEW")
+            estado["down"] |= bool(h & sdl2.SDL_HAT_DOWN) or bt("TOGGLE_AUTO")
+            estado["left"] |= bool(h & sdl2.SDL_HAT_LEFT) or vol < -0.45
+            estado["right"] |= bool(h & sdl2.SDL_HAT_RIGHT) or vol > 0.45
+            estado["ok"] |= bt("SHIFT_UP")        # leva derecha = ENTER
+            estado["back"] |= bt("SHIFT_DOWN")    # leva izquierda = ESC
         out = set()
         _DELAY, _INT = 0.35, 0.06       # pausa inicial y ritmo de repeticion
         for k, v in estado.items():
@@ -689,6 +731,9 @@ class WheelInput:
             self.brake = 1.0 if keys[sdl2.SDL_SCANCODE_DOWN] else 0.0
 
     def close(self):
+        if self.pad_nav:
+            sdl2.SDL_GameControllerClose(self.pad_nav)
+            self.pad_nav = None
         if self.controller:
             sdl2.SDL_GameControllerClose(self.controller)
             self.controller = None

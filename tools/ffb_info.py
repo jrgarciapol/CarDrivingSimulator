@@ -81,7 +81,45 @@ def inventario():
     for d in hr:
         _fila(d)
 
+    presencia(evs, hr)
     return ff.buscar_volante(cfg.WHEEL_NAME_HINTS)
+
+
+def _es_volante(d):
+    return (d.get("vid") == t300.VID_THRUSTMASTER
+            or any(p in (d.get("nombre") or "").lower()
+                   for p in cfg.WHEEL_NAME_HINTS))
+
+
+def presencia(evs, hr):
+    """Lo PRIMERO que hay que saber: ¿esta el volante ahi?
+
+    Sin esto, un informe tomado con el volante apagado parece un fallo del
+    force feedback cuando en realidad no hay ningun volante que mover. Pasa
+    con facilidad: el T300RS necesita su alimentacion propia, y si no
+    arranca (sin LED y sin el giro inicial de calibracion) el sistema no lo
+    ve siquiera."""
+    ent = [d for d in evs if _es_volante(d)]
+    raw = [d for d in hr if _es_volante(d)]
+    di("\n  VOLANTE:")
+    if not ent and not raw:
+        di("    NO ESTA. No aparece ningun aparato Thrustmaster, ni siquiera")
+        di("    sin inicializar. Comprueba la alimentacion propia del volante")
+        di("    y el cable; espera al LED y al giro de calibracion, y repite.")
+        di("    Hasta entonces el resto de este informe no dice nada sobre el")
+        di("    force feedback.")
+        return False
+    for d in ent + raw:
+        di(f"    {d['ruta']}  {d['nombre']}  ({d['vid']}:{d['pid']})")
+    if any(d.get("pid") == t300.PID_SIN_INICIAR for d in ent + raw):
+        di("    ESTA SIN INICIALIZAR: sigue en el modo generico de arranque.")
+        di("    Los Thrustmaster empiezan como 'FFB Wheel' y solo se convierten")
+        di("    en el volante de verdad cuando reciben la peticion de cambio de")
+        di("    modo (la manda el modulo hid_thrustmaster). Ese es el momento")
+        di("    del LED y del giro de calibracion. Sin eso no hay ni ejes ni")
+        di("    fuerza. Desconecta y vuelve a conectar el volante ya encendido.")
+        return False
+    return True
 
 
 def sistema():

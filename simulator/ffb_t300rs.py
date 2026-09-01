@@ -44,6 +44,15 @@ PIDS_T300RS = {
     "b66d": "T300RS (modo PS4)",
 }
 
+#: Identidad del volante ANTES de inicializarse. Los Thrustmaster arrancan
+#: como un aparato generico ("Thrustmaster FFB Wheel") y solo se convierten
+#: en el volante de verdad cuando alguien les manda la peticion de cambio de
+#: modo: eso es lo que hace el modulo hid_thrustmaster (hid-tminit) del
+#: nucleo, y es el momento en que se enciende el LED y el volante hace su
+#: giro de calibracion. Si el aparato se queda con este identificador, esta
+#: conectado pero SIN INICIALIZAR.
+PID_SIN_INICIAR = "b65d"
+
 #: Tamaño del informe de salida en modo normal (63 en PS4 son 31, pero el
 #: valor real se saca del descriptor del propio aparato).
 LARGO_NORMAL = 63

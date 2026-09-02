@@ -42,11 +42,38 @@ class _Cont:
     que sonaba como un golpeteo)."""
 
     def __init__(self, k):
+        self.k = 0
+        self.ajustar(k)
+
+    def ajustar(self, k):
+        """Cambia la longitud del filtro en caliente.
+
+        Hace falta para el laboratorio de sonido: los parámetros de grave
+        y agudo SON la longitud de estos filtros, y deben poder tocarse
+        mientras suena. Se conserva la cola que quepa, para que el cambio
+        no meta un clic."""
+        k = max(1, int(k))
+        if k == self.k:
+            return
+        viejo = getattr(self, "tail", None)
         self.k = k
         self.kernel = np.ones(k) / k
-        self.tail = np.zeros(k - 1)
+        if k <= 1:
+            self.tail = np.zeros(0)
+            return
+        # Al ALARGAR el filtro hacen falta muestras que no existen. Rellenar
+        # con ceros daria un bajon audible (la media caeria de golpe), asi
+        # que se prolonga hacia atras la muestra mas antigua que se tiene:
+        # es lo mas parecido a "esto venia sonando asi".
+        relleno = float(viejo[0]) if viejo is not None and len(viejo) else 0.0
+        self.tail = np.full(k - 1, relleno)
+        if viejo is not None and len(viejo):
+            n = min(len(viejo), k - 1)
+            self.tail[-n:] = viejo[-n:]
 
     def __call__(self, x):
+        if self.k <= 1:
+            return x
         y = np.convolve(np.concatenate([self.tail, x]), self.kernel, "valid")
         self.tail = x[-(self.k - 1):].copy()
         return y
@@ -64,6 +91,11 @@ class EngineSound:
         self._ph_trem = 0.0
         self._ph_spin = 0.0      # fase del zumbido de wheelspin
         self._ph_flut = 0.0      # fase del flutter del wheelspin
+        self._ph_gear = 0.0      # fase del canto de la transmisión
+        self._ph_turbo = 0.0     # fase del silbido del turbo
+        self._turbo_lp = 0.0     # presión del turbo (sube con retraso)
+        self._th_prev = 0.0      # gas del fotograma anterior (válvula)
+        self._bov = 0.0          # soplido de la válvula de descarga
         self._rpm_lp = 900.0
         self._load_lp = 0.0      # carga del motor suavizada
         self._scrub_lp = 0.0     # nivel de chirrido lateral
@@ -126,7 +158,11 @@ class EngineSound:
         self._rpm_lp += (rpm - self._rpm_lp) * 0.35
         if engine_on and self._rpm_lp > 50.0:
             r = self._rpm_lp
-            f = max(25.0, r / 60.0 * 2.0)              # orden de encendido
+            # Orden de encendido: en un cuatro tiempos cada cilindro explota
+            # una vez cada DOS vueltas, asi que hay cilindros/2 explosiones
+            # por vuelta. De aqui sale la nota del motor.
+            cil = max(1, int(getattr(cfg, "SND_CILINDROS", 4)))
+            f = max(25.0, r / 60.0 * cil * 0.5)        # orden de encendido
             ph = self._ph_fire + t * (f / rate)
             ph_h = self._ph_half + t * (f * 0.5 / rate)
             self._ph_fire = float(ph[-1] % 1.0)
@@ -142,7 +178,8 @@ class EngineSound:
             # variación ciclo a ciclo: un motor real no repite ciclos idénticos
             rough = self._ph_rough + t * (5.7 / rate)
             self._ph_rough = float(rough[-1] % 1.0)
-            cyc_var = 0.94 + 0.06 * np.sin(2.0 * np.pi * rough)
+            asp = cfg.SND_ASPEREZA
+            cyc_var = (1.0 - asp) + asp * np.sin(2.0 * np.pi * rough)
 
             saw = 2.0 * (ph % 1.0) - 1.0               # fundamental áspera
             h2 = np.sin(2.0 * np.pi * ph * 2.0)        # 2º armónico
@@ -153,35 +190,37 @@ class EngineSound:
             # redondeado con un paso bajo -> golpe grave y cálido en vez de
             # una sierra pura. Se centra restando su ciclo de trabajo nominal
             # para que no meta continua (thump de DC).
-            pw = 0.16
+            pw = max(0.02, cfg.SND_ANCHO_PULSO)
             z = (ph % 1.0) / pw
             comb = np.where(z < 1.0, np.sin(np.pi * np.clip(z, 0.0, 1.0)) ** 2,
                             0.0) - pw
+            self._f_body.ajustar(cfg.SND_SUAVIZADO_CUERPO)
             body_pulse = self._f_body(comb)
 
             intake = self._f_intake(np.random.uniform(-1, 1, n)) \
-                * (0.10 + 0.45 * throttle)             # aspiración
+                * (0.10 + cfg.SND_ADMISION * throttle)  # aspiración
 
             # el pulso de combustión da cuerpo, pero a bajas vueltas (fire_hz
             # ~30 Hz en 1a/2a) domina y suena a petardeo: se mantiene SUAVE y
             # se atenúa con el régimen bajo. El tono principal son los
             # armónicos, que es lo que suena "a motor".
             pulse_atten = min(1.0, r / 2600.0)
-            body = ((0.36 + 0.10 * ld) * saw
-                    + (0.20 + 0.10 * ld) * h2
-                    + (0.10 + 0.07 * ld) * h3
-                    + 0.26 * rumble
-                    + (0.14 + 0.28 * ld) * pulse_atten * body_pulse
+            body = ((cfg.SND_ARMONICO_1 + 0.10 * ld) * saw
+                    + (cfg.SND_ARMONICO_2 + 0.10 * ld) * h2
+                    + (cfg.SND_ARMONICO_3 + 0.07 * ld) * h3
+                    + cfg.SND_RETUMBO * rumble
+                    + (cfg.SND_CUERPO + cfg.SND_CUERPO_CARGA * ld)
+                    * pulse_atten * body_pulse
                     + intake) * cyc_var
             vol = cfg.AUDIO_VOLUME * (0.20 + 0.45 * throttle + 0.10 * ld
                                       + 0.08 * min(1.0, r / 7000.0))
             wave += body * vol
             # crepitar en retención (soltar gas con el motor alto)
-            if throttle < 0.08 and r > 3200.0:
+            if throttle < 0.08 and r > 3200.0 and cfg.SND_PETARDEO > 0.0:
                 pops = np.random.uniform(0, 1, n)
                 mask = (pops > 0.985).astype(float)
                 wave += self._f_pop(mask * np.random.uniform(-1, 1, n)) \
-                    * cfg.AUDIO_VOLUME * 0.9
+                    * cfg.AUDIO_VOLUME * cfg.SND_PETARDEO
         else:
             self._load_lp *= 0.97
 
@@ -192,21 +231,23 @@ class EngineSound:
             # silbido agudo de fricción: dos formantes altos con vibrato
             # suave y siseo en banda alta; el tono sube al deslizar más
             pitch = 1.0 + 0.20 * sc
-            vib = self._ph_vib + t * (38.0 / rate)
+            vib = self._ph_vib + t * (cfg.SND_SCRUB_VIBRATO_HZ / rate)
             self._ph_vib = float(vib[-1] % 1.0)
             wob = 1.0 + 0.035 * np.sin(2 * np.pi * vib)
-            ph1 = self._ph_sq1 + np.cumsum(np.full(n, 1150.0 * pitch) * wob) / rate
-            ph2 = self._ph_sq2 + np.cumsum(np.full(n, 1730.0 * pitch) * wob) / rate
+            f1 = cfg.SND_SCRUB_F1 * pitch
+            f2 = cfg.SND_SCRUB_F2 * pitch
+            ph1 = self._ph_sq1 + np.cumsum(np.full(n, f1) * wob) / rate
+            ph2 = self._ph_sq2 + np.cumsum(np.full(n, f2) * wob) / rate
             self._ph_sq1 = float(ph1[-1] % 1.0)
             self._ph_sq2 = float(ph2[-1] % 1.0)
-            trem = self._ph_trem + t * (30.0 / rate)
+            trem = self._ph_trem + t * (cfg.SND_SCRUB_TREMOLO_HZ / rate)
             self._ph_trem = float(trem[-1] % 1.0)
             tremolo = 0.78 + 0.22 * np.sin(2 * np.pi * trem)
             tones = 0.62 * np.sin(2 * np.pi * ph1) + 0.38 * np.sin(2 * np.pi * ph2)
             raw = np.random.uniform(-1, 1, n)
             hiss = self._f_band_hi(raw) - self._f_band_lo(raw)  # siseo agudo
             sv = cfg.SCREECH_VOLUME * sc * cfg.AUDIO_VOLUME
-            wave += (0.70 * tones + 1.1 * hiss) * tremolo * sv
+            wave += (0.70 * tones + cfg.SND_SCRUB_SISEO * hiss) * tremolo * sv
 
         # --- neumáticos: patinaje de tracción (wheelspin) -----------------
         self._spin_lp += (max(0.0, min(1.0, spin)) - self._spin_lp) * 0.30
@@ -217,8 +258,10 @@ class EngineSound:
             # que es puro RUIDO de banda media-baja con un rasgado (flutter)
             # que se acelera con el patinaje. Distinto del silbido agudo del
             # scrub lateral y del "shhh" grave del bloqueo.
+            self._f_spin.ajustar(cfg.SND_SPIN_SUAVIZADO)
             rip = self._f_spin(np.random.uniform(-1, 1, n))
-            flut = self._ph_flut + t * ((40.0 + 50.0 * sp) / rate)
+            flut = self._ph_flut + t * ((cfg.SND_SPIN_RASGADO_HZ
+                                         + 50.0 * sp) / rate)
             self._ph_flut = float(flut[-1] % 1.0)
             flutter = 0.6 + 0.4 * np.sin(2 * np.pi * flut)
             gv = cfg.SCREECH_VOLUME * sp * cfg.AUDIO_VOLUME
@@ -230,15 +273,56 @@ class EngineSound:
         if lk > 0.01:
             # derrape de banda ancha, grave y ESTABLE (la rueda casi parada
             # arrastra la goma): un "shhhh" continuo sin el tono del chirrido.
+            self._f_lock.ajustar(cfg.SND_LOCK_SUAVIZADO)
             skid = self._f_lock(np.random.uniform(-1, 1, n))
             gv = cfg.SCREECH_VOLUME * lk * cfg.AUDIO_VOLUME
-            wave += skid * 1.4 * gv
+            wave += skid * cfg.SND_LOCK_NIVEL * gv
 
         # --- viento -------------------------------------------------------
-        wind_lvl = min(1.0, (speed / 52.0) ** 2)
-        if wind_lvl > 0.02:
+        wind_lvl = min(1.0, (speed / max(1.0, cfg.SND_VIENTO_REF)) ** 2)
+        if wind_lvl > 0.02 and cfg.SND_VIENTO > 0.0:
+            self._f_wind.ajustar(cfg.SND_VIENTO_SUAVIZADO)
             wind = self._f_wind(np.random.uniform(-1, 1, n))
-            wave += wind * wind_lvl * cfg.AUDIO_VOLUME * 0.5
+            wave += wind * wind_lvl * cfg.AUDIO_VOLUME * cfg.SND_VIENTO
+
+        # --- transmisión: canto de los engranajes -------------------------
+        # Un tono proporcional a la VELOCIDAD, no al régimen: por eso se oye
+        # igual en cada marcha y delata que viene de la transmisión y no del
+        # motor. Apagado de fábrica: no todos los coches cantan.
+        if cfg.SND_TRANSMISION > 0.0 and speed > 1.0:
+            fg = cfg.SND_TRANSMISION_HZ * speed / 10.0
+            phg = self._ph_gear + t * (min(fg, rate * 0.45) / rate)
+            self._ph_gear = float(phg[-1] % 1.0)
+            # dos armónicos: el tono puro suena a pitido de laboratorio
+            canto = (0.70 * np.sin(2 * np.pi * phg)
+                     + 0.30 * np.sin(4 * np.pi * phg))
+            nivel = cfg.SND_TRANSMISION * min(1.0, speed / 18.0)
+            wave += canto * nivel * cfg.AUDIO_VOLUME * 0.35
+
+        # --- turbo: silbido y válvula de descarga -------------------------
+        # El silbido sube con la carga y el régimen (el compresor gira más);
+        # la válvula suelta el "pshhh" cuando se levanta el pie DE GOLPE, que
+        # es justo cuando el aire comprimido no tiene por donde salir.
+        soplo = max(0.0, self._th_prev - throttle)
+        self._th_prev = throttle
+        if cfg.SND_TURBO > 0.0 and engine_on:
+            carga = throttle * min(1.0, self._rpm_lp / 4200.0)
+            self._turbo_lp += (carga - self._turbo_lp) * 0.06   # el turbo
+            tb = self._turbo_lp                                  # va con retraso
+            if tb > 0.02:
+                ft = cfg.SND_TURBO_HZ * (0.55 + 0.45 * tb)
+                pht = self._ph_turbo + t * (min(ft, rate * 0.45) / rate)
+                self._ph_turbo = float(pht[-1] % 1.0)
+                silb = np.sin(2 * np.pi * pht) \
+                    + 0.5 * self._f_pop(np.random.uniform(-1, 1, n))
+                wave += silb * tb * tb * cfg.SND_TURBO \
+                    * cfg.AUDIO_VOLUME * 0.30
+        if cfg.SND_VALVULA > 0.0 and soplo > 0.25:
+            self._bov = min(1.0, self._bov + soplo * self._turbo_lp * 2.0)
+        if self._bov > 0.01:
+            psh = self._f_intake(np.random.uniform(-1, 1, n))
+            wave += psh * self._bov * cfg.SND_VALVULA * cfg.AUDIO_VOLUME * 1.1
+            self._bov *= 0.80
 
         # --- ADAS: aviso de subviraje / sobreviraje -----------------------
         # pitido cuya FRECUENCIA DE REPETICIÓN sube con la severidad; el

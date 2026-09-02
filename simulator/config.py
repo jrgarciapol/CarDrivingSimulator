@@ -696,6 +696,98 @@ AUDIO_VOLUME = 0.5           # volumen general [0 .. 1]
 SCREECH_VOLUME = 1.2         # volumen del chirrido de neumáticos [0 .. 1.5]
 
 # ===========================================================================
+# SONIDO: MOTOR
+#
+# El motor no es una grabación: se sintetiza en cada fotograma a partir del
+# régimen y la carga. Estos son los mandos de su TIMBRE, y se oyen en directo
+# en el LABORATORIO DE SONIDO del menú.
+#
+# La nota base es el orden de encendido: en un cuatro tiempos hay una
+# explosión por cada dos vueltas y cilindro, o sea rpm/60 · cilindros/2 Hz.
+# Sobre ella se montan armónicos (el "cuerpo" del tubo de escape), el
+# retumbo de medio orden (el balanceo grave de un motor de pocos cilindros),
+# el pulso de combustión (cada explosión por separado) y la aspiración.
+# ===========================================================================
+SND_CILINDROS = 4            # cilindros: cambia la NOTA del motor a igual
+                             # régimen. 4 suena a utilitario, 6 más lleno,
+                             # 8 grave y espaciado, 12 casi un zumbido
+                             # [1 .. 12]
+SND_ARMONICO_1 = 0.36        # fundamental áspera (sierra): el grueso del
+                             # sonido. Subirlo lo hace más bronco [0 .. 1]
+SND_ARMONICO_2 = 0.20        # 2º armónico: brillo medio [0 .. 1]
+SND_ARMONICO_3 = 0.10        # 3º armónico: filo agudo; pasarse aquí suena
+                             # metálico y cansa [0 .. 1]
+SND_RETUMBO = 0.26           # medio orden: el "bum-bum" grave entre
+                             # explosiones. Es lo que da carácter a un V8
+                             # [0 .. 1]
+SND_CUERPO = 0.14            # golpe de cada combustión en vacío [0 .. 1]
+SND_CUERPO_CARGA = 0.28      # cuánto crece ese golpe a plena carga: es la
+                             # diferencia entre acelerar y ir sostenido
+                             # [0 .. 1]
+SND_ANCHO_PULSO = 0.16       # duración de la explosión como fracción del
+                             # ciclo. Corto = seco y percusivo; largo =
+                             # redondo y ronco [0.04 .. 0.40]
+SND_SUAVIZADO_CUERPO = 6     # redondeo del pulso de combustión. Bajo = más
+                             # áspero y agudo; alto = más cálido [1 .. 24]
+SND_ADMISION = 0.45          # soplido de aspiración con el gas abierto
+                             # [0 .. 1.5]
+SND_ASPEREZA = 0.06          # variación de ciclo a ciclo. Un motor real no
+                             # repite dos explosiones iguales; a cero suena
+                             # sintético [0 .. 0.25]
+SND_PETARDEO = 0.9           # crepitar al soltar gas con el motor alto
+                             # [0 .. 2]
+
+# ===========================================================================
+# SONIDO: NEUMATICOS
+#
+# Tres sonidos DISTINTOS, no uno con más volumen: el chirrido lateral de una
+# curva, el rasgado del patinaje de tracción y el arrastre del bloqueo de
+# frenada. Se oyen aislados en el laboratorio para poder afinarlos uno a uno.
+# ===========================================================================
+SND_SCRUB_F1 = 1150.0        # 1er formante del chirrido lateral, en Hz: el
+                             # tono principal del "iiiih" de curva
+                             # [400 .. 3000]
+SND_SCRUB_F2 = 1730.0        # 2º formante: el armónico que lo hace sonar a
+                             # goma y no a silbato [400 .. 4000]
+SND_SCRUB_SISEO = 1.1        # siseo de banda alta mezclado con los tonos.
+                             # Subirlo lo acerca a un roce; bajarlo lo deja
+                             # como un silbido limpio [0 .. 3]
+SND_SCRUB_TREMOLO_HZ = 30.0  # temblor de volumen del chirrido [0 .. 80]
+SND_SCRUB_VIBRATO_HZ = 38.0  # temblor de tono del chirrido [0 .. 80]
+SND_SPIN_RASGADO_HZ = 40.0   # rasgado base del patinaje de tracción, en Hz;
+                             # se acelera al patinar más [0 .. 120]
+SND_SPIN_SUAVIZADO = 8       # grave/agudo del patinaje. Bajo = rasgado y
+                             # agudo; alto = zumbido sordo [1 .. 32]
+SND_LOCK_SUAVIZADO = 22      # lo mismo para el bloqueo de frenada. Alto da
+                             # el "shhh" oscuro de la rueda parada [1 .. 48]
+SND_LOCK_NIVEL = 1.4         # volumen relativo del bloqueo [0 .. 3]
+
+# ===========================================================================
+# SONIDO: AMBIENTE Y EXTRAS
+#
+# El viento va siempre; los tres últimos están APAGADOS de fábrica porque no
+# todos los coches los tienen. Súbelos en el laboratorio para oírlos.
+# ===========================================================================
+SND_VIENTO = 0.5             # volumen del viento a velocidad de referencia
+                             # [0 .. 2]
+SND_VIENTO_REF = 52.0        # m/s a los que el viento llega a su máximo
+                             # (~187 km/h). Bajarlo lo hace notarse antes
+                             # [20 .. 90]
+SND_VIENTO_SUAVIZADO = 12    # gravedad del viento: alto = soplido sordo,
+                             # bajo = siseo agudo [1 .. 40]
+SND_TRANSMISION = 0.0        # zumbido de la transmisión, proporcional a la
+                             # velocidad. Es el "canto" de los engranajes de
+                             # un coche de carreras o una furgoneta con
+                             # kilómetros [0 .. 1]
+SND_TRANSMISION_HZ = 90.0    # Hz de ese zumbido por cada 10 m/s [30 .. 400]
+SND_TURBO = 0.0              # silbido del turbo, crece con la carga y el
+                             # régimen [0 .. 1]
+SND_TURBO_HZ = 3800.0        # tono del silbido a pleno régimen
+                             # [1500 .. 9000]
+SND_VALVULA = 0.0            # soplido de la válvula de descarga al levantar
+                             # el pie de golpe [0 .. 1]
+
+# ===========================================================================
 # ADAS — ayudas a la conducción
 #
 # Avisos acústicos del límite de adherencia: un pitido cuya frecuencia de

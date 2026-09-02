@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **266 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **285 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -251,6 +251,40 @@ El mando se detecta solo. Un volante reconocido siempre tiene prioridad.
   El panel es semitransparente para no tapar la carretera, y la escala se
   ajusta en saltos discretos (nunca de forma continua, que haría el dibujo
   ilegible) con una regla de referencia abajo.
+
+## Laboratorio de sonido
+
+El motor, los neumáticos y el viento **no son grabaciones**: se sintetizan en
+cada fotograma a partir del régimen, la carga y el deslizamiento real de cada
+rueda. Eso significa que su timbre son números, y que se pueden cambiar
+mientras suenan.
+
+En el menú de arranque, **LABORATORIO DE SONIDO** abre un banco de pruebas
+para afinarlo de oído:
+
+- Los **39 parámetros** del sintetizador, cada uno con su explicación y su
+  rango normal. Los cambios se guardan como el resto de la configuración.
+- Un **motor de mentira** al que se le da gas con la barra espaciadora o con
+  el pedal del volante: se oye el cambio al momento, sin salir a rodar.
+- **Interruptores para oír aislado** cada sonido de neumático (`1` chirrido
+  lateral, `2` patinaje de tracción, `3` bloqueo de frenada), el aviso del
+  ADAS (`4`) y el viento (`V`). Conduciendo suenan casi siempre a la vez, y
+  así no hay quien los afine.
+
+Lo que más cambia el carácter del motor:
+
+| Parámetro | Qué hace |
+|---|---|
+| `SND_CILINDROS` | La **nota** a igual régimen: 4 suena a utilitario, 8 grave y espaciado |
+| `SND_RETUMBO` | El "bum-bum" grave entre explosiones — el carácter de un V8 |
+| `SND_ANCHO_PULSO` | Explosión corta y seca, o larga y ronca |
+| `SND_ARMONICO_1/2/3` | De bronco a metálico |
+| `SND_ASPEREZA` | Variación de ciclo a ciclo; a cero suena sintético |
+
+Y tres sonidos que vienen **apagados** porque no todos los coches los tienen:
+`SND_TRANSMISION` (el canto de los engranajes, proporcional a la velocidad y
+no al régimen), `SND_TURBO` (silbido que sube con la carga, con su retraso) y
+`SND_VALVULA` (el soplido al levantar el pie de golpe).
 
 ## Jugar en Steam Deck
 
@@ -483,7 +517,8 @@ simulator/
   track.py    circuito: curvas, rasantes, peralte, superficies, baches y
               trazada ideal con envolvente de frenada
   render.py   renderizador 3D de la carretera, coche, HUD y telemetría
-  audio.py    sonido de motor y chirrido sintetizados
+  audio.py    sonido de motor, neumaticos, viento y turbo sintetizados
+  audio_lab.py laboratorio de sonido: afinarlo oyendolo en directo
   font.py     fuente bitmap del HUD
   cars/       los 8 vehículos (.car, parámetros comentados)
   tracks/     circuitos (silverstone, spa, ovalo)
@@ -509,6 +544,7 @@ tests/
   test_settings.py          persistencia de reglajes y guardado de coches
   test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
+  test_audio.py             sintetizador y laboratorio de sonido
 ```
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,

@@ -183,9 +183,15 @@ juego. Un T300RS parado ofrece bastante resistencia al girarlo a mano —
 tanta que se agradecen las dos manos—, y es fácil confundirlo con force
 feedback si nunca se ha girado el volante fuera de un juego.
 
+**Comprobado después con BeamNG.drive**, que tiene de los mejores force
+feedback disponibles en Linux: en esta Deck **tampoco da fuerza**. Solo se
+nota el autocentrado, igual que fuera del juego. Es la prueba definitiva de
+que no es cosa de nuestro programa ni del camino de SDL: **ningún** juego
+obtiene par en esta máquina, porque el núcleo no publica la capacidad.
+
 Se deja escrito porque quien responda no debe buscar por ahí: **no hay
 ninguna evidencia de que el force feedback funcione en esta Deck, por ningún
-camino.** La medición de `/sys` es la única prueba fiable, y dice que no.
+camino**, y la vía de Steam/Proton está descartada por medición directa.
 
 ## Qué NO hace falta responder
 
@@ -199,12 +205,15 @@ camino.** La medición de `/sys` es la única prueba fiable, y dice que no.
 
 ## Qué sería una buena respuesta
 
+Confirmado que **ningún** juego obtiene fuerza en esta máquina (probado con
+BeamNG.drive), la única vía que queda es instalar el driver que falta.
 Cualquiera de estas tres cierra el asunto:
 
 - un procedimiento de instalación de `hid-tmff2` verificado en SteamOS con
   kernel 6.16-neptune, indicando si sobrevive a las actualizaciones — es la
-  vía **oficial** del proyecto y la que menos depende de adivinar nada;
+  vía **oficial** del proyecto y la única con sentido ahora;
 - el volcado del descriptor de informes de fábrica de un T300RS `b66e`,
-  con el identificador del informe de salida señalado;
-- una confirmación fundamentada de que la vía de espacio de usuario no puede
-  funcionar, y por qué.
+  con el identificador del informe de salida señalado, por si alguna vez se
+  retoma la vía de espacio de usuario;
+- una confirmación fundamentada de que esa vía de espacio de usuario no
+  puede funcionar, y por qué.

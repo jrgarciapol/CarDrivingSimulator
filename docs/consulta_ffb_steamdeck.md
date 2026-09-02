@@ -207,6 +207,9 @@ camino**, y la vía de Steam/Proton está descartada por medición directa.
 
 Confirmado que **ningún** juego obtiene fuerza en esta máquina (probado con
 BeamNG.drive), la única vía que queda es instalar el driver que falta.
+
+> **Este encargo ya está respondido.** Ver el apartado final,
+> *"Respuestas recibidas: qué se ha verificado"*.
 Cualquiera de estas tres cierra el asunto:
 
 - un procedimiento de instalación de `hid-tmff2` verificado en SteamOS con
@@ -217,3 +220,133 @@ Cualquiera de estas tres cierra el asunto:
   retoma la vía de espacio de usuario;
 - una confirmación fundamentada de que esa vía de espacio de usuario no
   puede funcionar, y por qué.
+
+---
+
+# Respuestas recibidas: qué se ha verificado
+
+Se consultaron cuatro fuentes. Coinciden en casi todo, pero **coinciden
+también en un error**, y seguir su consejo repetiría exactamente el fallo que
+dejó el volante en modo bootloader. Aquí se separa lo comprobado contra las
+fuentes primarias (el código de `hid-tmff2` y el subsistema HID de Linux) de
+lo que es opinión.
+
+## Lo que queda CONFIRMADO
+
+- **No hay alternativa a `hid-tmff2`.** Ni otro módulo en el núcleo oficial,
+  ni un demonio en espacio de usuario mantenido. Las cuatro coinciden.
+- **La vía de espacio de usuario no merece la pena.** Comprobado en el código
+  del driver: la inicialización del T300RS incluye dos **transferencias de
+  control USB** (`bRequestType 0xc1, bRequest 86` para la versión de firmware,
+  y otra para el tipo de corona) que **`/dev/hidraw` no puede enviar**. Harían
+  falta `libusb` o `usbfs`, y una captura del tráfico real para acertar la
+  secuencia.
+- **El modo bootloader es una autoprotección del firmware** ante un informe
+  malformado, no un daño. Se recupera con L3+R3 y reinstalación de firmware.
+- **Hay que poner `hid_thrustmaster` en la lista negra.** Lo dice el propio
+  README del proyecto, literalmente.
+
+## El error compartido: el identificador del informe
+
+Las cuatro respuestas concluyen que **el volante espera `0x0A` en el cable** y
+que el `0x60` es "una ficción interna del núcleo" que nunca sale al USB. Tres
+de ellas explican así nuestro fallo: *"mandaste `0x60` o `0x00`"*.
+
+**Las dos afirmaciones son falsas.**
+
+1. **Nuestro código NO mandó `0x60`.** Lee el descriptor del propio aparato y
+   usa el identificador del informe de salida que este declara
+   (`simulator/ffb_t300rs.py`, funciones `informes_salida` y `buscar`). O sea:
+   mandamos exactamente el de fábrica, que según ellos es el correcto. Su
+   explicación no describe lo que pasó.
+
+2. **El `0x60` SÍ sale al cable.** En Linux, `hid_hw_request(...,
+   HID_REQ_SET_REPORT)` acaba en `hid_output_report()`, que escribe
+   `report->id` como **primer byte del paquete** cuando el informe está
+   numerado:
+
+   ```c
+   void hid_output_report(struct hid_report *report, __u8 *data)
+   {
+           if (report->id > 0)
+                   *data++ = report->id;
+           ...
+   ```
+
+   Y `report->id` vale `0x60`, porque `hid-tmff2` ha reescrito el descriptor
+   antes. Es decir: el driver que funciona **manda `0x60` por el USB**.
+
+**Conclusión invertida**: si `hid-tmff2` funciona mandando `0x60`, entonces el
+descriptor de fábrica está equivocado y el volante quiere el `0x60`. Nosotros
+mandamos el de fábrica, y de ahí el paquete malformado. La respuesta a la
+pregunta (a) vs (b) del encargo es **(a)**, no (b).
+
+**Ojo, esto no es una invitación a reintentarlo con `0x60`.** Queda sin
+resolver si el volante lee ese primer byte o lo ignora, y sigue faltando la
+inicialización por transferencias de control. Solo una captura USB del driver
+funcionando lo zanjaría. Hasta entonces, **no se escribe nada en
+`/dev/hidraw`**.
+
+## Lo que se contradice entre ellas
+
+**¿Sobrevive DKMS a las actualizaciones de SteamOS?** Una dice que sí ("no
+toca `/usr/src` ni `/var/lib/dkms`"); tres dicen que no, porque SteamOS usa
+particiones A/B que se reemplazan enteras. El README del proyecto **no dice
+nada** al respecto. Lo prudente es asumir que **no sobrevive** y dejar
+preparado un script para rehacerlo.
+
+**El paquete de cabeceras.** Se proponen `linux-neptune-6.16-headers`,
+`linux-neptune-616-headers` y "prueba 61/65/68". El README solo lista
+`linux-neptune-61/65/68-headers`. **No hay que adivinarlo**:
+
+```bash
+uname -r
+pacman -Ss linux-neptune | grep headers
+```
+
+## Errores de detalle, comprobados contra el repositorio
+
+- El proyecto es **`Kimplul/hid-tmff2`**. Una respuesta manda a un fork de
+  `gotzl` y menciona a "kmicki"; no es la fuente oficial.
+- **No existe un objetivo `make dkms-install`.** Los objetivos reales del
+  `Makefile` son `all`, `install`, `steamdeck-rules` y `clean`. La
+  instalación por DKMS se hace con `sudo ./dkms/dkms-install.sh`.
+- El módulo se llama por dentro **`hid-tmff-new`** (más `hid-tminit-new` y
+  `usb-tminit-new`), no `tmff2`. Importa para comprobarlo con `lsmod`.
+- `make steamdeck-rules` **sí existe** e instala
+  `udev/71-thrustmaster-steamdeck.rules`, que da `uaccess` sobre el `hidraw`
+  del volante. En nuestra Deck ese permiso ya lo teníamos, así que esa regla
+  no es la que falta.
+
+## Procedimiento, tomado del repositorio
+
+```bash
+uname -r
+pacman -Ss linux-neptune | grep headers        # elegir el que coincida
+
+sudo steamos-readonly disable
+sudo pacman-key --init && sudo pacman-key --populate archlinux
+sudo pacman -S base-devel dkms git <paquete-de-cabeceras>
+
+echo 'blacklist hid_thrustmaster' | sudo tee /etc/modprobe.d/hid_thrustmaster.conf
+
+git clone --recurse-submodules https://github.com/Kimplul/hid-tmff2.git
+cd hid-tmff2
+sudo ./dkms/dkms-install.sh
+sudo make steamdeck-rules
+
+sudo udevadm control --reload-rules && sudo udevadm trigger
+sudo steamos-readonly enable
+```
+
+Reconectar el volante y comprobar:
+
+```bash
+lsmod | grep tmff                    # debe aparecer hid_tmff_new
+dmesg | grep -i 'tmff\|t300'         # "force feedback for T300RS"
+python3 tools/ffb_info.py            # ya debe declarar fuerza constante
+```
+
+Si el juego no coge la fuerza, `tools/ffb_info.py --probar` la prueba por
+evdev, que es la vía que expone el módulo. Esa sí es segura: son llamadas
+`ioctl` estándar del núcleo, no informes en bruto.

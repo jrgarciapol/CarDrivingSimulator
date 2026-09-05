@@ -259,19 +259,37 @@ class Renderer(_Dibujo):
         # entonces todo se dibuja con SDL como siempre
         self.gpu = gpu.obtener(renderer)
         self._gpu_frame = False
+        self.coche_gpu = False      # el ultimo fotograma pinto el modelo 3D
 
     # ------------------------------------------------------------------
+    def modelo_coche(self, steering, dt):
+        """Lo que hace falta para pintar el modelo 3D del coche dentro de la
+        escena de la GPU (vista de coche completo), o None si no hay GPU o
+        no hay modelo (CAR_MODEL_3D vacio o archivo inexistente)."""
+        if self.gpu is None:
+            return None
+        from . import modelo3d
+        datos = modelo3d.cargar(getattr(cfg, "CAR_MODEL_3D", ""))
+        if datos is None:
+            return None
+        return {"datos": datos, "steering": float(steering), "dt": float(dt)}
+
     def draw_scene(self, track, car_state, show_line=True, cam_height=None,
                    cam_back=0.0, yaw_gain=None, cam_forward=0.0,
-                   horizon_y=None, bg_heading=0.0):
+                   horizon_y=None, bg_heading=0.0, coche3d=None):
         """Fondo + carretera del fotograma, por la GPU si esta disponible y
         por SDL si no. Es el UNICO punto de entrada que usa el juego, para
-        que el resto no tenga que saber cual de los dos esta activo."""
+        que el resto no tenga que saber cual de los dos esta activo.
+        ``coche3d`` (de ``modelo_coche``) pinta ademas el modelo 3D del
+        coche; ``coche_gpu`` dice si se ha pintado."""
+        self.coche_gpu = False
         if self.gpu is not None:
             cam = self._camara(car_state, cam_height, cam_back, yaw_gain,
                                cam_forward)
-            self.gpu.dibujar(track, car_state, cam, show_line, paleta())
+            self.gpu.dibujar(track, car_state, cam, show_line, paleta(),
+                             coche=coche3d)
             self._gpu_frame = True
+            self.coche_gpu = bool(getattr(self.gpu, "coche_dibujado", False))
             return cfg.WINDOW_HEIGHT // 2
         self._gpu_frame = False
         if horizon_y is None:

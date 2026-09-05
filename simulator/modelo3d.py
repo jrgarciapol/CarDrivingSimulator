@@ -83,7 +83,8 @@ in vec4 v_col;
 out vec4 f_col;
 vec3 lineal(vec3 c) { return pow(c, vec3(2.2)); }
 void main() {
-    vec3 base = lineal(mix(v_col.rgb, texture(u_tex, v_uv).rgb, u_tex_on));
+    // glTF: color base = factor del material x textura
+    vec3 base = lineal(v_col.rgb) * mix(vec3(1.0), lineal(texture(u_tex, v_uv).rgb), u_tex_on);
     vec3 n = normalize(v_nrm);
     vec3 v = normalize(u_cam - v_pos);
     if (dot(n, v) < 0.0) n = -n;         // caras de dos lados
@@ -112,7 +113,7 @@ void main() {
         : mix(calima, lineal(u_suelo) * 0.8, smoothstep(0.0, 0.25, -r.y));
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
     col = mix(col, entorno, fres * 0.55) + sol * espec;
-    f_col = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
+    f_col = vec4(pow(col, vec3(1.0 / 2.2)), v_col.a);
 }
 """
 
@@ -170,6 +171,8 @@ void main() { f_col = vec4(1.0); }
 
 #: lado (pixeles) de la textura de la silueta proyectada
 SILUETA_PX = 160
+#: tope de texturas por modelo (para la clave de agrupacion pieza/textura)
+_MAX_TEXTURAS = 4096
 #: opacidad de la sombra del sol sobre el asfalto (la de contacto llega a 0,92)
 SOMBRA_SOL = 0.5
 #: tangente maxima del rayo de sol respecto a la vertical (sol muy bajo:
@@ -238,6 +241,7 @@ class ModeloGpu:
 
     def __init__(self, ctx, datos):
         self.datos = datos
+        self.ctx = ctx
         self.prog = ctx.program(vertex_shader=_VS_MODELO,
                                 fragment_shader=_FS_MODELO)
         n = len(datos["pos"])
@@ -249,14 +253,21 @@ class ModeloGpu:
         tri = datos["idx"].reshape(-1, 3)
         parte = datos["parte"][tri[:, 0]].astype(int)
         tex = datos["tex"][tri[:, 0]].astype(int)
-        clave = parte * 16 + (tex + 1)
+        # clave (pieza, textura) con sitio para cualquier numero de
+        # texturas: con un multiplicador de 16, el Rolls (67 texturas)
+        # pintaba dos tercios de la carroceria con la matriz de una rueda,
+        # y las puertas y el capo giraban con la direccion
+        M = _MAX_TEXTURAS
+        clave = parte * M + (tex + 1)
         orden = np.argsort(clave, kind="stable")
         tri, clave = tri[orden], clave[orden]
-        self.grupos = []                 # (pieza, textura, primer indice, n)
+        alfa = datos["col"][tri[:, 0], 3].astype(float) / 255.0
+        self.grupos = []       # (pieza, textura, primer indice, n, alfa)
         for c in np.unique(clave):
             sel = np.nonzero(clave == c)[0]
-            self.grupos.append((int(c // 16), int(c % 16) - 1,
-                                int(sel[0]) * 3, len(sel) * 3))
+            self.grupos.append((int(c // M), int(c % M) - 1,
+                                int(sel[0]) * 3, len(sel) * 3,
+                                float(alfa[sel].mean())))
         self.ibo = ctx.buffer(tri.astype("u4").tobytes())
         self.vao = ctx.vertex_array(
             self.prog, [(self.vbo, "3f 3f 2f 4f1", "in_pos", "in_nrm",
@@ -349,7 +360,7 @@ class ModeloGpu:
         ctx.disable(moderngl.BLEND)
         p = self.prog_silueta
         ultima = None
-        for pieza, _tex, primero, n in self.grupos:
+        for pieza, _tex, primero, n, _alfa in self.grupos:
             if pieza != ultima:
                 mvp = orto @ apl @ inv_base @ matrices[pieza]
                 p["u_mvp"].write(mvp.T.astype("f4").tobytes())
@@ -430,19 +441,33 @@ class ModeloGpu:
         p["u_cam"].value = tuple(float(v) for v in cam)
         p["u_cielo"].value = tuple(float(v) for v in cielo)
         p["u_suelo"].value = tuple(float(v) for v in suelo)
-        ultima = None
-        for pieza, tex, primero, n in self.grupos:
-            if pieza != ultima:
-                p["u_model"].write(matrices[pieza].T.astype("f4").tobytes())
-                ultima = pieza
-            tx = self.texturas.get(tex) if tex >= 0 else None
-            if tx is not None:
-                tx.use(location=0)
-                p["u_tex"].value = 0
-                p["u_tex_on"].value = 1.0
-            else:
-                p["u_tex_on"].value = 0.0
-            self.vao.render(moderngl.TRIANGLES, vertices=n, first=primero)
+        # dos pasadas: lo opaco con escritura de profundidad y despues los
+        # CRISTALES (alfa < 0,95) con mezcla y sin escribir profundidad,
+        # para que se vea lo que hay detras (faros, pilotos, interior)
+        ctx = self.ctx
+        for translucido in (False, True):
+            if translucido:
+                ctx.enable(moderngl.BLEND)
+                ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+                ctx.depth_mask = False
+            ultima = None
+            for pieza, tex, primero, n, alfa in self.grupos:
+                if (alfa < 0.95) != translucido:
+                    continue
+                if pieza != ultima:
+                    p["u_model"].write(matrices[pieza].T.astype("f4").tobytes())
+                    ultima = pieza
+                tx = self.texturas.get(tex) if tex >= 0 else None
+                if tx is not None:
+                    tx.use(location=0)
+                    p["u_tex"].value = 0
+                    p["u_tex_on"].value = 1.0
+                else:
+                    p["u_tex_on"].value = 0.0
+                self.vao.render(moderngl.TRIANGLES, vertices=n, first=primero)
+            if translucido:
+                ctx.depth_mask = True
+                ctx.disable(moderngl.BLEND)
 
     def release(self):
         for tx in self.texturas.values():

@@ -175,6 +175,27 @@ def main():
                    "escena en 4 fotogramas seguidos (no la textura de la rueda)",
                    cielo_ok and scene.coche_gpu, str(img[8, W // 2, :3])))
     r.append(check("...y el coche y el HUD se ven en todos", coche_ok))
+    # un modelo SIN texturas (el Bugatti): la sombra usa dos unidades de
+    # textura y moderngl dejaba activa la 1; sin texturas del modelo que
+    # volvieran a la 0, SDL enlazaba las suyas en la unidad equivocada y el
+    # segundo fotograma salia blanco y los siguientes negros
+    bug = modelo3d.cargar("bugatti")
+    medias = []
+    for k in range(3):
+        sdl2.SDL_SetRenderDrawColor(ren, 0, 0, 0, 255)
+        sdl2.SDL_RenderClear(ren)
+        scene.draw_scene(c90, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d={"datos": bug, "steering": 0.0, "dt": 0.01})
+        sdl2.SDL_RenderPresent(ren)
+        img = leer()
+        top = img[8, W // 2]
+        medias.append(float(img[:, :, :3].mean()))
+        if not (top[2] > top[0] + 40):
+            cielo_ok = False
+    r.append(check("tras un modelo sin texturas (Bugatti) la escena sigue "
+                   "viendose fotograma tras fotograma (ni blanco ni negro)",
+                   cielo_ok and all(40 < m < 200 for m in medias),
+                   f"medias {np.round(medias, 1)}"))
     # el punto en la calzada 15 m por delante se proyecta con la camara
     p = escena.world_to_screen(c90, st.s + 15.0, 0.0, 0.0)
     r.append(check("world_to_screen proyecta el eje 15 m por delante bajo el "

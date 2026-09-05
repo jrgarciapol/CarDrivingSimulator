@@ -144,6 +144,27 @@ def _texturas(js, binario, usadas, tam_max):
     return out
 
 
+def _alfa_texturas(js, binario, indices):
+    """Alfa medio (0..1) del canal alfa de cada imagen de ``indices`` (1.0 si
+    no tiene o no hay Pillow): los cristales de los modelos de Sketchfab
+    llevan la transparencia en la textura, no en el factor del material."""
+    out = {}
+    try:
+        from PIL import Image
+    except ImportError:
+        return {i: 1.0 for i in indices}
+    for i in indices:
+        im = js["images"][i]
+        bv = js["bufferViews"][im["bufferView"]]
+        off = bv.get("byteOffset", 0)
+        img = Image.open(io.BytesIO(binario[off:off + bv["byteLength"]]))
+        a = 1.0
+        if "A" in img.getbands() or img.mode == "P":
+            a = float(np.asarray(img.convert("RGBA"))[:, :, 3].mean()) / 255.0
+        out[i] = a
+    return out
+
+
 def _piezas(js, binario):
     """Recorre la escena y devuelve una lista de mallas ya en coordenadas
     del mundo: dict(pos, nrm, uv, idx, color, tex, nombre)."""
@@ -170,17 +191,19 @@ def _piezas(js, binario):
                       if "TEXCOORD_0" in at else np.zeros((len(pos), 2)))
                 idx = (accesor(js, binario, p["indices"]).ravel().astype(np.uint32)
                        if "indices" in p else np.arange(len(pos), dtype=np.uint32))
-                color, tex = (1.0, 1.0, 1.0, 1.0), -1
+                color, tex, modo = (1.0, 1.0, 1.0, 1.0), -1, "OPAQUE"
                 if "material" in p:
                     mt = js["materials"][p["material"]]
                     pbr = mt.get("pbrMetallicRoughness", {})
                     color = tuple(pbr.get("baseColorFactor", (1.0, 1.0, 1.0, 1.0)))
+                    modo = mt.get("alphaMode", "OPAQUE")
                     if "baseColorTexture" in pbr:
                         tex = js["textures"][pbr["baseColorTexture"]["index"]]["source"]
                 if nrm is None:
                     nrm = _normales(pos, idx)
                 piezas.append(dict(pos=pos, nrm=nrm, uv=uv, idx=idx,
-                                   color=color, tex=tex, nombre=n.get("name", "")))
+                                   color=color, tex=tex, modo=modo,
+                                   nombre=n.get("name", "")))
         for c in n.get("children", []):
             visita(c, M)
 
@@ -515,11 +538,24 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
         piezas = [p for p in piezas if not rx.search(p["nombre"] or "")]
     if not piezas:
         raise ValueError("el modelo no tiene mallas de triangulos")
-    # cristales casi transparentes (alfa del material < 0.3): el juego pinta
-    # todo opaco y saldrian como chapas blancas; mejor fuera
-    opacas = [p for p in piezas if len(p["color"]) < 4 or p["color"][3] >= 0.3]
-    if opacas:
-        piezas = opacas
+    # CRISTALES: alfa efectivo = factor del material x alfa medio de su
+    # textura (en los modelos de Sketchfab la transparencia suele ir en la
+    # textura). Se guarda en el color del vertice y el juego pinta esas
+    # piezas translucidas al final, con mezcla. Antes se tiraban las de
+    # factor < 0,3 (faltaban los pilotos) y el resto salian opacas (los
+    # faros, chapas blancas). Solo se descarta lo practicamente invisible.
+    blend = {p["tex"] for p in piezas if p.get("modo") == "BLEND" and p["tex"] >= 0}
+    alfa_tex = _alfa_texturas(js, binario, sorted(blend)) if blend else {}
+    for p in piezas:
+        c = list(p["color"][:4]) if len(p["color"]) >= 4 else list(p["color"][:3]) + [1.0]
+        if p.get("modo") == "BLEND":
+            c[3] *= alfa_tex.get(p["tex"], 1.0)
+        else:
+            c[3] = 1.0
+        p["color"] = tuple(c)
+    visibles = [p for p in piezas if p["color"][3] >= 0.05]
+    if visibles:
+        piezas = visibles
     _orientar(piezas, frente, arriba)
     # escala a metros
     todo = np.concatenate([p["pos"] for p in piezas])

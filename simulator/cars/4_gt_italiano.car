@@ -2,7 +2,7 @@
 NAME = "GT ITALIANO"              # nombre que aparece en el menu
 DESC = "1420 KG - 620 CV - RWD - PURA SANGRE" # descripcion en el menu
 CAR_COLOR = (210, 30, 30)         # color RGB de la carroceria
-CAR_MODEL_3D = "alfa"             # modelo 3D (Alfa Romeo 33 Stradale)
+CAR_MODEL_3D = "lambo"            # modelo 3D (Lamborghini Centenario)
 CAR_MASS = 1420.0                 # kg, masa total del vehiculo
 CAR_INERTIA_Z = 2100.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 2300.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

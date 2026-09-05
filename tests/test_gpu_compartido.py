@@ -145,6 +145,35 @@ def main():
                    f"lect {escena.ms_lectura:.2f} sub {escena.ms_subida:.2f}"))
     r.append(check("el fotograma se pinta en la GPU en poco tiempo",
                    escena.ms_gl < 60.0, f"GL {escena.ms_gl:.1f} ms"))
+    # --- con el modelo 3D del coche (texturas propias) varios fotogramas ---
+    # SDL recuerda que textura dejo enlazada: tras pintar el coche con las
+    # suyas, copiaba el fondo con la textura de la RUEDA a pantalla completa
+    # a partir del segundo fotograma. Se comprueba que el cielo sigue siendo
+    # cielo y el coche se ve, fotograma tras fotograma.
+    from simulator import modelo3d
+    datos = modelo3d.cargar("f1")
+    scene = render_mod.Renderer(ren)
+    scene.gpu = escena
+    cielo_ok = coche_ok = True
+    for k in range(4):
+        sdl2.SDL_SetRenderDrawColor(ren, 0, 0, 0, 255)
+        sdl2.SDL_RenderClear(ren)
+        scene.draw_scene(c90, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d={"datos": datos, "steering": 0.2, "dt": 0.01})
+        sdl2.SDL_SetRenderDrawColor(ren, 255, 255, 0, 255)
+        sdl2.SDL_RenderFillRect(ren, sdl2.SDL_Rect(20, 20, 40, 40))
+        sdl2.SDL_RenderPresent(ren)
+        img = leer()
+        top = img[8, W // 2]
+        if not (top[2] > top[0] + 40):
+            cielo_ok = False
+        zona = img[int(H * 0.55):int(H * 0.95), int(W * 0.3):int(W * 0.7), :3]
+        if (zona.max(axis=2) > 90).sum() < 500 or tuple(img[40, 40, :3]) != (255, 255, 0):
+            coche_ok = False
+    r.append(check("con el modelo 3D del coche, el fondo sigue siendo la "
+                   "escena en 4 fotogramas seguidos (no la textura de la rueda)",
+                   cielo_ok and scene.coche_gpu, str(img[8, W // 2, :3])))
+    r.append(check("...y el coche y el HUD se ven en todos", coche_ok))
     # el punto en la calzada 15 m por delante se proyecta con la camara
     p = escena.world_to_screen(c90, st.s + 15.0, 0.0, 0.0)
     r.append(check("world_to_screen proyecta el eje 15 m por delante bajo el "

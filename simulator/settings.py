@@ -97,6 +97,13 @@ def load():
     except (OSError, ValueError):
         config_overrides = {}
         last = {}
+    # Un parametro que ha pasado a ser DE COCHE (p.ej. la camara exterior,
+    # que antes era global) puede seguir guardado como global de una version
+    # anterior: si se aplicase, pisaria el valor del .car en cada sesion y
+    # el usuario no podria cambiarlo desde AJUSTES (su cambio se anota como
+    # de coche y el global viejo lo deshace). Se descarta.
+    config_overrides = {k: v for k, v in config_overrides.items()
+                        if not es_de_coche(k)}
     apply_config()
     return last
 

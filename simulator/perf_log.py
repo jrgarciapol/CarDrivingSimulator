@@ -41,6 +41,9 @@ from . import config as cfg
 # fases del fotograma, en el orden en que las marca el bucle principal
 FASES = ("entrada", "fisica", "sonido", "escena", "coche", "hud",
          "presentar")
+# contadores de la GPU (atributos ms_* de GpuScene): construir la malla,
+# encargar el dibujo, leer el fotograma (espera incluida) y subirlo a SDL
+GPU_CLAVES = ("malla", "gl", "lectura", "subida")
 
 # claves de la configuracion en el orden en que se escriben; el valor es
 # el rotulo que sale en el resumen
@@ -129,7 +132,7 @@ class _Bloque:
         self.total = []                       # ms por fotograma
         self.trabajo = []                     # ms sin la espera de presentar
         self.fases = {f: 0.0 for f in FASES}  # suma de ms por fase
-        self.gpu = {"malla": 0.0, "gl": 0.0, "subida": 0.0}
+        self.gpu = {k: 0.0 for k in GPU_CLAVES}
         self.n = 0
 
     def anadir(self, total_ms, fases_ms, gpu_ms, t):
@@ -177,7 +180,7 @@ class RegistroRendimiento:
         self._bloques = []
         self._fila_total = []
         self._fila_fases = {f: 0.0 for f in FASES}
-        self._fila_gpu = {"malla": 0.0, "gl": 0.0, "subida": 0.0}
+        self._fila_gpu = {k: 0.0 for k in GPU_CLAVES}
         self._fila_n = 0
         self._fila_v = 0.0
         self._filas = 0
@@ -223,10 +226,15 @@ class RegistroRendimiento:
         self._escritor.writerow(
             ["t_s", "fps", "ms_media", "ms_mediana", "ms_p95", "ms_max",
              "ms_trabajo"] + [f"ms_{f}" for f in FASES]
-            + ["ms_gpu_malla", "ms_gpu_gl", "ms_gpu_subida", "fotogramas",
-               "velocidad_kmh"] + [k for k, _ in CLAVES])
+            + [f"ms_gpu_{k}" for k in GPU_CLAVES]
+            + ["fotogramas", "velocidad_kmh"] + [k for k, _ in CLAVES])
         self._t0 = self._reloj()
         self._t_fila = self._t0
+        # F3 se pulsa a MITAD de un fotograma (en la fase de entrada): la
+        # primera marca cuenta desde aqui, no desde un instante viejo. Sin
+        # esto el primer fotograma salia con 794 segundos de "entrada".
+        self._t_marca = self._t0
+        self._fases = {}
         self._bloques = []
         self._filas = 0
         self._vaciar_fila()
@@ -268,9 +276,7 @@ class RegistroRendimiento:
             return
         t = self._reloj()
         total = sum(self._fases.values())
-        gpu_ms = {"malla": getattr(gpu, "ms_malla", 0.0),
-                  "gl": getattr(gpu, "ms_gl", 0.0),
-                  "subida": getattr(gpu, "ms_subida", 0.0)}
+        gpu_ms = {k: float(getattr(gpu, "ms_" + k, 0.0)) for k in GPU_CLAVES}
         if not self._bloques or self._bloques[-1].ctx != ctx:
             # cambio de configuracion: la fila en curso se cierra para que
             # no mezcle dos situaciones
@@ -295,7 +301,7 @@ class RegistroRendimiento:
     def _vaciar_fila(self):
         self._fila_total = []
         self._fila_fases = {f: 0.0 for f in FASES}
-        self._fila_gpu = {"malla": 0.0, "gl": 0.0, "subida": 0.0}
+        self._fila_gpu = {k: 0.0 for k in GPU_CLAVES}
         self._fila_n = 0
         self._fila_v = 0.0
 
@@ -314,7 +320,7 @@ class RegistroRendimiento:
                 f"{_p(tot, 95):.2f}", f"{max(tot):.2f}",
                 f"{media - presentar:.2f}"]
         fila += [f"{self._fila_fases.get(f, 0.0) / n:.2f}" for f in FASES]
-        fila += [f"{self._fila_gpu[k] / n:.2f}" for k in ("malla", "gl", "subida")]
+        fila += [f"{self._fila_gpu[k] / n:.2f}" for k in GPU_CLAVES]
         fila += [str(n), f"{self._fila_v / n:.0f}"]
         fila += [str(ctx.get(k, "")) for k, _ in CLAVES]
         self._escritor.writerow(fila)
@@ -350,7 +356,7 @@ class RegistroRendimiento:
         cab = (f"  {'#':>2} {'seg':>5} {'fps':>5} {'media':>6} {'p95':>6} "
                f"{'max':>6} {'trabaj':>6} | {'escena':>6} {'coche':>5} "
                f"{'hud':>5} {'fisica':>6} | {'malla':>5} {'gl':>5} "
-               f"{'subida':>6}  CAMBIOS RESPECTO AL BLOQUE 1")
+               f"{'lect':>5} {'subida':>6}  CAMBIOS RESPECTO AL BLOQUE 1")
         lineas.append(cab)
         lineas.append("  " + "-" * (len(cab) - 2))
         for i, b in enumerate(self._bloques, 1):
@@ -364,7 +370,7 @@ class RegistroRendimiento:
                 f"{b.media('escena'):6.2f} {b.media('coche'):5.2f} "
                 f"{b.media('hud'):5.2f} {b.media('fisica'):6.2f} | "
                 f"{b.media_gpu('malla'):5.2f} {b.media_gpu('gl'):5.2f} "
-                f"{b.media_gpu('subida'):6.2f}  "
+                f"{b.media_gpu('lectura'):5.2f} {b.media_gpu('subida'):6.2f}  "
                 + (", ".join(difs) if difs else "(igual que el bloque 1)"))
         lineas.append("")
         lineas.append("Como leerlo: compara 'trabaj' entre bloques. Si al activar "

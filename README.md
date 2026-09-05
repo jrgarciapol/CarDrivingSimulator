@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **349 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **362 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -89,7 +89,10 @@ frenar y sube y baja con la suspensión— y la GPU la proyecta con **búfer de
 profundidad**, **antialiasing multimuestra** y **bruma por píxel**; el cielo,
 el sol, los montes lejanos y el suelo hasta el horizonte son un sombreador
 fijo al mundo, así que giran con la cámara y en una curva peraltada el
-horizonte se inclina. Si no hay OpenGL 3.3 (o falta `moderngl`), el juego
+horizonte se inclina. El fotograma se lee de la GPU **sin esperarla**
+(`GFX_GPU_ASYNC`: se recoge el anterior mientras pinta este, escribiendo
+directamente en la textura de SDL), porque la espera costaba 15 ms por
+fotograma en un portátil. Si no hay OpenGL 3.3 (o falta `moderngl`), el juego
 vuelve solo al renderizador de SDL, que dibuja la misma geometría con el
 algoritmo del pintor. Cronómetro de vueltas y sonido de motor y chirrido de
 neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
@@ -283,7 +286,7 @@ del juego, que no se versionan:
 - `rendimiento_FECHA_HORA.csv`: una fila por segundo con fps, media,
   mediana, percentil 95 y máximo del fotograma, el desglose por fases
   (entrada, física, sonido, escena, coche, HUD, presentar), los tres tiempos
-  de la GPU (`MALLA`, `GL`, `SUBIDA`) y las columnas de configuración
+  de la GPU (`MALLA`, `GL`, `LECTURA`, `SUBIDA`) y las columnas de configuración
   (vista, telemetría, aguja, minimapa, planta, trazada, partículas,
   fantasma, bruma, sombreado, GPU, MSAA, ventana, coche, circuito,
   asfalto). Separado por `;`: se abre directamente en una hoja de cálculo.

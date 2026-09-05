@@ -114,6 +114,38 @@ def main():
                    hud._speedo_cache[0][0] == 90))
     cfg.SPEEDO_SIZE = d
 
+    # --- minimapa y telemetria por lotes -----------------------------------
+    # Medidos en un PC con el registro F3: el minimapa costaba 12 ms por
+    # fotograma (1.500 puntos de uno en uno) y la telemetria F2 unos 6 ms.
+    from simulator.track import Track
+    cfg.TRACK_FILE = "tracks/c-50.csv"
+    pista = Track()
+    st.s = 1200.0
+    limpiar()
+    hud.draw_minimap(pista, st)
+    img = leer()
+    caja = img[16:16 + 176, 16:16 + 236, :3]
+    r.append(check("el minimapa se ve (trazado, tramo ambar y coche)",
+                   (caja.max(axis=2) > 150).sum() > 300
+                   and ((caja[:, :, 0] > 200) & (caja[:, :, 1] > 150)
+                        & (caja[:, :, 2] < 100)).sum() > 5,
+                   f"{(caja.max(axis=2) > 150).sum()} px claros"))
+    r.append(check("...con la parte fija cacheada en una textura",
+                   getattr(hud, "_mapa_cache", None) is not None
+                   and hud._mapa_cache[0] is pista))
+    t_mapa = mide(lambda: hud.draw_minimap(pista, st))
+    r.append(check("dibujar el minimapa cuesta menos de 1 ms",
+                   t_mapa < 1.0, f"{t_mapa:.3f} ms"))
+    limpiar()
+    for k in range(40):                   # unos fotogramas: estela de 2 s
+        hud.draw_telemetry(st, 0.3, k * 0.05)
+    img = leer()
+    r.append(check("la telemetria se ve (aros de temperatura y coche cenital)",
+                   (img[96:96 + 344, :, :3].max(axis=2) > 150).sum() > 800))
+    t_tel = mide(lambda: hud.draw_telemetry(st, 0.3, 3.0))
+    r.append(check("dibujar la telemetria cuesta menos de 1,5 ms",
+                   t_tel < 1.5, f"{t_tel:.3f} ms"))
+
     # --- el panel F1 explica la ausencia de GPU ---------------------------
     from simulator.wheel import WheelInput
     from simulator import gpu

@@ -242,6 +242,40 @@ def main():
                        "siguen en el asfalto y solo se mueve la carroceria",
                        apoyadas and cuerpo_sube))
         st.heave = st.pitch = st.roll = 0.0
+        # --- sombra proyectada por el sol ----------------------------------
+        # el sol esta por delante y algo a la derecha del rumbo (mismo
+        # azimut que el disco del cielo), asi que la sombra se alarga hacia
+        # ATRAS y a la izquierda del coche, mas alla del mapa de contacto
+        sx, sz = mg.semi_sombra
+        xmin, zmin, xmax, zmax = mg.rect_sombra
+        r.append(check("con sol la sombra se alarga hacia atras (lado opuesto "
+                       "al sol) mas alla del mapa de contacto",
+                       zmin < -sz - 0.5 and zmax <= sz + 0.36 and xmin < -sx - 0.2,
+                       f"rect {np.round(mg.rect_sombra, 2)} contacto +-{sx:.2f}/+-{sz:.2f}"))
+        sil = np.frombuffer(mg.tex_proy.read(), dtype=np.uint8).reshape(
+            modelo3d.SILUETA_PX, modelo3d.SILUETA_PX, 4)[:, :, 3]
+        frac = (sil > 0).mean()
+        r.append(check("la silueta del coche ocupa una parte razonable de su "
+                       "textura (10..70 %)", 0.10 < frac < 0.70, f"{frac:.0%}"))
+        # con el coche al reves (psi = pi) la sombra cae hacia su delante
+        st.psi = np.pi
+        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d=scene.modelo_coche(0.0, 0.0))
+        xmin2, zmin2, xmax2, zmax2 = mg.rect_sombra
+        r.append(check("...y girando el coche 180 grados la sombra gira con el "
+                       "(ahora se alarga hacia su delante)",
+                       zmax2 > sz + 0.5 and zmin2 >= -sz - 0.36,
+                       f"rect {np.round(mg.rect_sombra, 2)}"))
+        st.psi = 0.0
+        # con lluvia no hay sol: solo la sombra de contacto
+        render_mod.SUN_VISIBLE = False
+        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d=scene.modelo_coche(0.0, 0.0))
+        r.append(check("sin sol (lluvia) queda solo la sombra de contacto",
+                       np.allclose(mg.rect_sombra, (-sx, -sz, sx, sz))))
+        render_mod.SUN_VISIBLE = True
+        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d=scene.modelo_coche(0.0, 0.0))
         r.append(check("el modelo se pinta rapido (GL < 80 ms incluso por "
                        "software; en una GPU real, menos de 1 ms)",
                        escena.ms_gl < 80.0, f"{escena.ms_gl:.1f} ms"))

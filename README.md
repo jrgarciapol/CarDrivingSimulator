@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **417 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **421 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -378,10 +378,16 @@ los ocho: Citroën 2CV (utilitario), Rolls-Royce Ghost (berlina), Bugatti
 57SC Atlantic (deportivo), Lamborghini Centenario (GT), Fórmula 1, Toyota GR
 Yaris WRC (rally), Beijing BJ212 (todoterreno) y un autobús urbano de
 Nagoya (también hay un Alfa Romeo 33 Stradale, `alfa`, sin asignar). La iluminación trabaja en espacio lineal con luz ambiente
-hemisférica, brillo del sol y reflejo del cielo de refilón, que es lo que
-hace que la chapa parezca chapa; bajo el coche va una sombra de contacto
-(oscura bajo cada neumático y el centro del bajo, difuminada hacia fuera,
-pintada sin test de profundidad para que no se corte con las rasantes).
+hemisférica, brillo del sol y **reflejo del entorno** (cielo, calima del
+horizonte y suelo, muestreado con el vector reflejado y pesado por
+Fresnel), que es lo que hace que la chapa parezca chapa. Bajo el coche van
+dos sombras sobre el mismo rectángulo: la de **contacto** (oscura bajo cada
+neumático y el centro del bajo, difuminada hacia fuera) y la **proyectada
+por el sol**: cada fotograma el modelo se aplasta sobre el suelo a lo largo
+del rayo de sol y su silueta se pinta en una textura pequeña que se mezcla
+con el asfalto (así se alarga hacia el lado opuesto al disco del sol, gira
+con el coche y desaparece con lluvia). Ambas van sin test de profundidad
+para que no se corten con las rasantes.
 En la franja de hierba hay **árboles** (`TRACK_TREES`, uno cada
 `TREE_SPACING_M` metros): frondosos y pinos de formas sencillas, plantados
 al azar con semilla fija (siempre los mismos en cada circuito), sombreados

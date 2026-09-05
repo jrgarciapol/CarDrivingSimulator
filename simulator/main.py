@@ -586,24 +586,27 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         horizon_px = cfg.WINDOW_HEIGHT // 2
         if view_mode < 2:
             horizon_px += int(render_mod.camera_pitch_px(car.state))
-        # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,
-        # 2 = coche completo 3D con camara de persecucion
+        # VISTAS: la misma escena con tres configuraciones de camara (la
+        # tecla C pasa de una a otra). 0 = interior (ojo del conductor,
+        # sin coche), 1 = trasera cercana, 2 = exterior lejana. En las dos
+        # exteriores el coche es el modelo 3D dentro de la escena; los
+        # parametros de cada camara son del coche (.car) y de AJUSTES.
         cam_fwd = 0.0
-        if view_mode == 2:
+        if view_mode == 0:
+            cam_h, cam_back, ygain = cfg.CAMERA_HEIGHT, 0.0, None
+            cam_fwd = cfg.CAMERA_FORWARD
+        elif view_mode == 1:
+            cam_h = float(getattr(cfg, "CAMERA_HEIGHT_REAR", 2.0))
+            cam_back = float(getattr(cfg, "CAMERA_BACK_REAR", 4.0))
+            ygain = 0.35
+        else:
             cam_h = float(getattr(cfg, "CAMERA_HEIGHT_CHASE", 2.5))
             cam_back = float(getattr(cfg, "CAMERA_BACK_CHASE", 6.5))
             ygain = 0.35
-        else:
-            # vista interior: ojo del conductor (altura y adelantamiento
-            # dependen del coche); vista trasera: cámara elevada tras el coche
-            cam_h = (cfg.CAMERA_HEIGHT, cfg.CAMERA_HEIGHT_REAR)[view_mode]
-            cam_back, ygain = 0.0, None
-            if view_mode == 0:
-                cam_fwd = cfg.CAMERA_FORWARD
         # fondo + carretera: por la GPU si esta disponible, por SDL si no.
-        # En la vista de coche completo, el modelo 3D va dentro de la escena
+        # En las vistas exteriores, el modelo 3D va dentro de la escena
         coche3d = None
-        if view_mode == 2:
+        if view_mode > 0:
             coche3d = scene.modelo_coche(wheel.steering, frame_dt * time_scale)
         scene.draw_scene(track, car.state, show_line, cam_h, cam_back, ygain,
                          cam_fwd, horizon_px,
@@ -633,7 +636,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                                        st.n + car.Y_POS[i], abs(st.vx))
             particles.update(frame_dt * time_scale)
             particles.draw(renderer, scene, track)
-        if view_mode == 1:
+        # sin modelo 3D (render de SDL o coche sin modelo): el coche de
+        # antes, sprite en la trasera cercana y cajas en la exterior
+        if view_mode == 1 and not scene.coche_gpu:
             scene.draw_car(car.state, wheel.steering)
         elif view_mode == 2 and not scene.coche_gpu:
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)

@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **428 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **430 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -89,7 +89,14 @@ frenar y sube y baja con la suspensión— y la GPU la proyecta con **búfer de
 profundidad**, **antialiasing multimuestra** y **bruma por píxel**; el cielo,
 el sol, los montes lejanos y el suelo hasta el horizonte son un sombreador
 fijo al mundo, así que giran con la cámara y en una curva peraltada el
-horizonte se inclina. La escena se pinta **dentro del contexto OpenGL de
+horizonte se inclina. En el cielo hay **nubes** procedurales (`SKY_CLOUDS`,
+cobertura 0..1): ruido de octavas sobre un plano a 1,5 km, quietas en el
+mundo y a la deriva con el viento, iluminadas por el lado del sol y con la
+base gris, que tapan el disco del sol al pasar por delante y se funden con
+la calima hacia el horizonte (con lluvia, cielo cubierto). Los montes son
+dos cadenas, lejana y cercana, con **laderas claras u oscuras** según miren
+al sol, grano de roca y nieve en las cumbres altas. La escena se pinta
+**dentro del contexto OpenGL de
 SDL** (`GFX_GPU_COMPARTIDO`: el renderizador de SDL pasa a ser el de OpenGL
 también en Windows y la GPU escribe directamente en la textura de fondo),
 porque leer el fotograma de la GPU costaba 15 ms en un portátil. Si no hay

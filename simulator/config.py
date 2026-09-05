@@ -717,6 +717,9 @@ TRACK_TREES = True           # árboles en la franja de hierba (solo con la
 TREE_SPACING_M = 40.0        # m entre árboles a lo largo del circuito (se
                              # reparten al azar a un lado u otro y a
                              # distintas distancias del borde) [15 .. 150]
+SKY_CLOUDS = 0.45            # cobertura de nubes en el cielo (solo con la
+                             # escena en la GPU): 0 = cielo limpio, 1 =
+                             # cubierto; con lluvia se suma 0,5 [0 .. 1]
 TRACK_SKID_MARKS = True      # huellas de goma en el asfalto al derrapar o
                              # bloquear (solo con la escena en la GPU); se
                              # quedan en la pista hasta que se olvidan las

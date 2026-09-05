@@ -182,6 +182,7 @@ def main():
         st.s, st.vx = 3000.0, 25.0
         cam = _camara(cam_forward=cfg.CAMERA_FORWARD)
         cfg.GFX_GPU_ASYNC = False        # aqui se comprueba fotograma a fotograma
+        cfg.SKY_CLOUDS = 0.0             # las nubes derivan: fotogramas iguales
         sdl2.SDL_RenderClear(ren)
         escena.dibujar(c90, st, cam, True, pal)
         sdl2.SDL_RenderPresent(ren)
@@ -314,6 +315,34 @@ def main():
                            and abs(int(amarillas.sum()) - n_esperado) <= 2,
                            f"pasos {np.round(pasos[:6], 2)}, "
                            f"{int(amarillas.sum())} balizas (esperadas {n_esperado})"))
+
+        # --- cielo con nubes y montes con laderas ----------------------------
+        st.s, st.vx = 3000.0, 25.0
+        cfg.SKY_CLOUDS = 0.0
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        limpio = leer().astype(int)
+        cfg.SKY_CLOUDS = 0.6
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        nublado = leer().astype(int)
+        cfg.SKY_CLOUDS = 0.0
+        dif_nube = (np.abs(nublado - limpio).sum(axis=2) > 20)
+        ys_n = np.nonzero(dif_nube)[0]
+        r.append(check("con SKY_CLOUDS hay nubes: cambian miles de pixeles, todos "
+                       "en el cielo (mitad alta) y mas claros que el azul",
+                       dif_nube.sum() > 2000 and ys_n.max() < H * 0.55
+                       and nublado[dif_nube].mean() > limpio[dif_nube].mean(),
+                       f"{dif_nube.sum()} px, hasta la fila {ys_n.max() if len(ys_n) else -1}"))
+        # los montes: en la franja justo sobre el horizonte hay laderas claras
+        # y oscuras (sombreado por el sol), no un color plano
+        fila_h = int(H * 0.5) - 4
+        franja = limpio[fila_h - 12:fila_h, :, :3]
+        lum = franja.mean(axis=2)
+        r.append(check("los montes tienen laderas claras y oscuras (rango de "
+                       "luminancia > 25 en la franja sobre el horizonte)",
+                       lum.max() - lum.min() > 25,
+                       f"luminancia {lum.min():.0f}..{lum.max():.0f}"))
 
         # --- huellas de neumatico en el asfalto ------------------------------
         # anotadas como en main: cada rueda con su (s, n) e intensidad; se

@@ -131,9 +131,32 @@ uniform vec3 u_bruma_col;
 uniform float u_bruma_d;
 uniform float u_sol;         // 1 = dibujar el sol (la lluvia lo tapa)
 uniform vec2 u_sol_px;       // centro del sol en pixeles del framebuffer
+uniform float u_sol_az;      // azimut absoluto del sol (sombreado de montes y nubes)
+uniform float u_nubes;       // cobertura de nubes 0..1 (0 = cielo limpio)
+uniform float u_tiempo;      // segundos: las nubes derivan con el viento
 out vec4 f_col;
 
 float hash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+// ruido de valor suave y su suma de octavas (fbm), con el detalle fino
+// atenuable: cerca del horizonte el plano de nubes se comprime tanto que
+// las octavas altas parpadearian
+float ruido(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), f.x),
+               mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm(vec2 p, float detalle) {
+    float v = 0.0, a = 0.5;
+    for (int k = 0; k < 5; k++) {
+        v += a * ruido(p) * (k < 3 ? 1.0 : detalle);
+        p = p * 2.03 + 11.7;
+        a *= 0.5;
+    }
+    return v;
+}
 
 // Silueta de montes lejanos: altura angular (rad) segun el azimut. Picos
 // triangulares mas anchos que su separacion, como los del fondo 2D, que se
@@ -149,6 +172,24 @@ float cresta(float az) {
         h = max(h, alt * max(0.0, 1.0 - abs(u - c) / 0.85));
     }
     return h;
+}
+// una segunda cadena mas cercana: mas baja, mas picos, menos calima
+float cresta2(float az) {
+    float u = az / 6.2831853 * 23.0 + 0.37;
+    float i = floor(u);
+    float h = 0.0;
+    for (int k = -1; k <= 1; k++) {
+        float c = i + float(k) + 0.5;
+        float alt = 0.02 + 0.055 * hash(c + 100.0);
+        h = max(h, alt * max(0.0, 1.0 - abs(u - c) / 0.9));
+    }
+    return h;
+}
+// ladera de un monte: la cara que mira al sol, clara; la opuesta, en
+// sombra. La pendiente (numerica) da la orientacion de la ladera y el
+// azimut del sol respecto al punto, hacia donde cae la luz
+float ladera(float sl, float az) {
+    return 0.72 + 0.4 * clamp(-sl * sin(u_sol_az - az) * 2.5, -1.0, 1.0);
 }
 
 void main() {
@@ -169,8 +210,6 @@ void main() {
         float t = clamp(el / 0.62, 0.0, 1.0);
         col = mix(u_cielo_bajo, u_cielo_alto, t);
         col = mix(col, u_calima, 0.55 * pow(1.0 - t, 5.0));
-        if (el < cresta(az))
-            col = mix(u_monte, u_calima, 0.48);
         if (u_sol > 0.5) {
             // disco y halos en PIXELES (redondos en pantalla, como el fondo
             // 2D): la proyeccion no es isotropa y un disco angular saldria
@@ -179,6 +218,43 @@ void main() {
             col = mix(col, vec3(1.0, 0.98, 0.88), 0.10 * (1.0 - smoothstep(90.0, 120.0, r)));
             col = mix(col, vec3(1.0, 0.98, 0.90), 0.24 * (1.0 - smoothstep(50.0, 70.0, r)));
             col = mix(col, vec3(1.0, 0.99, 0.94), 1.0 - smoothstep(31.0, 35.0, r));
+        }
+        // NUBES: ruido fbm sobre un plano a 1,5 km de altura, quieto en el
+        // mundo (azimut absoluto) y a la deriva con el viento; con luz en
+        // el lado del sol y base gris, y fundidas con la calima al bajar
+        // hacia el horizonte (tapan el disco del sol al pasar por delante)
+        if (u_nubes > 0.001 && el > 0.01) {
+            float detalle = smoothstep(0.12, 0.4, el);
+            vec2 p = vec2(sin(az), cos(az)) * (cos(el) / max(sin(el), 0.04)) * 1.5;
+            p = p * 0.55 + vec2(u_tiempo * 0.010, u_tiempo * 0.004);
+            float n = fbm(p, detalle);
+            float umbral = 0.74 - 0.46 * u_nubes;
+            float cob = smoothstep(umbral, umbral + 0.2, n);
+            float n2 = fbm(p + vec2(sin(u_sol_az), cos(u_sol_az)) * 0.1, detalle);
+            float luz = clamp(0.5 + 2.2 * (n2 - n) + 0.35 * u_sol, 0.0, 1.0);
+            vec3 base_nube = mix(vec3(0.58, 0.60, 0.64), vec3(0.72, 0.74, 0.78), u_sol);
+            vec3 nube = mix(base_nube, vec3(1.0, 1.0, 0.99), luz);
+            float lejos = smoothstep(0.03, 0.22, el);
+            col = mix(col, nube, cob * lejos * 0.96);
+        }
+        // MONTES: dos cadenas (lejana y cercana) con laderas iluminadas
+        // segun miren al sol, grano de roca y nieve en las cumbres altas
+        float h1 = cresta(az);
+        if (el < h1) {
+            float sl = (cresta(az + 0.004) - cresta(az - 0.004)) / 0.008;
+            float tex = 0.9 + 0.2 * ruido(vec2(az * 60.0, el * 60.0));
+            vec3 roca = u_monte * ladera(sl, az) * tex;
+            float nieve = smoothstep(0.78, 0.95, el / max(h1, 1e-3))
+                        * smoothstep(0.13, 0.17, h1);
+            roca = mix(roca, vec3(0.93, 0.95, 1.0) * (0.55 + 0.5 * ladera(sl, az)), nieve);
+            col = mix(roca, u_calima, 0.48);
+        }
+        float h2 = cresta2(az);
+        if (el < h2) {
+            float sl = (cresta2(az + 0.004) - cresta2(az - 0.004)) / 0.008;
+            float tex = 0.88 + 0.24 * ruido(vec2(az * 90.0, el * 90.0));
+            vec3 ladera_c = mix(u_monte, u_hierba, 0.35) * ladera(sl, az) * tex;
+            col = mix(ladera_c, u_calima, 0.3);
         }
     } else {
         // suelo hasta el horizonte: un plano a la altura de la camara que
@@ -906,6 +982,12 @@ class GpuScene:
             pc["u_bruma_d"].value = bruma_d
             pc["u_sol"].value = 1.0 if (pal["sun"] and sol_px) else 0.0
             pc["u_sol_px"].value = sol_px or (-1e4, -1e4)
+            pc["u_sol_az"].value = float(SOL_AZIMUT)
+            nubes = float(getattr(cfg, "SKY_CLOUDS", 0.45))
+            if not pal["sun"]:
+                nubes = min(1.0, nubes + 0.5)          # lluvia: cielo cubierto
+            pc["u_nubes"].value = max(0.0, min(1.0, nubes))
+            pc["u_tiempo"].value = float(time.perf_counter() % 100000.0)
             self.vao_cielo.render(moderngl.TRIANGLES, vertices=3)
             # carretera
             ctx.enable(moderngl.DEPTH_TEST)

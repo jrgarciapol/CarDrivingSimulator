@@ -104,7 +104,7 @@ def preset_rendimiento():
     """Baja la carga de CPU para equipos modestos (Steam Deck, portátiles).
 
     Los recortes están elegidos MIDIENDO, no a ojo. A 1280x800 con el
-    render por software, el coste por fotograma se reparte así:
+    render de SDL, el coste por fotograma se reparte así:
 
         bruma atmosférica ....... 22 %   <- el efecto más caro con diferencia
         alcance de dibujado ..... 12 %
@@ -113,19 +113,27 @@ def preset_rendimiento():
         física a 480 Hz .......... 8 %
 
     Por eso NO se toca la física: cuesta poco y bajarla degradaría el force
-    feedback, que es lo último que conviene sacrificar. Se apagan los dos
-    efectos atmosféricos (que son barridos de numpy sobre todas las
+    feedback, que es lo último que conviene sacrificar. Con el render de SDL
+    se apagan los dos efectos atmosféricos (barridos de numpy sobre todas las
     secciones) y se recorta el alcance, que por debajo de ~130 segmentos ya
-    no da más rendimiento y sí quita visibilidad.
+    no da más rendimiento y sí quita visibilidad. Con la escena en la GPU la
+    bruma va en el sombreador y el sombreado en el vértice: no cuestan CPU y
+    se dejan; solo se recorta el alcance y se quita el fantasma.
 
     El modelo físico queda INTACTO: cambia lo que se ve, no cómo se conduce.
     """
     cfg.DRAW_DISTANCE = 140
-    cfg.GFX_FOG_DIST = 0.0
-    cfg.GFX_SUN_SHADE = 0.0
     cfg.GHOST_ENABLED = False
-    print("Preset de rendimiento: sin bruma ni sombreado, alcance 140 "
-          "(la fisica NO se toca)")
+    if getattr(cfg, "GFX_GPU", False):
+        # con la escena en la GPU la bruma y el sombreado no cuestan CPU
+        # (van en el sombreador y en el vertice): no hay por que quitarlos
+        print("Preset de rendimiento: alcance 140 y sin fantasma "
+              "(la fisica NO se toca)")
+    else:
+        cfg.GFX_FOG_DIST = 0.0
+        cfg.GFX_SUN_SHADE = 0.0
+        print("Preset de rendimiento: sin bruma ni sombreado, alcance 140 "
+              "(la fisica NO se toca)")
 
 
 def main(argv=None):
@@ -540,9 +548,6 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         horizon_px = cfg.WINDOW_HEIGHT // 2
         if view_mode < 2:
             horizon_px += int(render_mod.camera_pitch_px(car.state))
-        scene.draw_background(horizon_px,
-                              car.state.psi * cfg.CAMERA_YAW_GAIN
-                              + base_seg.kappa * 40.0)
         # vistas: 0 = sin coche (camara interior), 1 = trasera cercana,
         # 2 = coche completo 3D con camara de persecucion
         cam_fwd = 0.0
@@ -555,8 +560,11 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             cam_back, ygain = 0.0, None
             if view_mode == 0:
                 cam_fwd = cfg.CAMERA_FORWARD
-        scene.draw_road(track, car.state, show_line, cam_h, cam_back, ygain,
-                        cam_fwd)
+        # fondo + carretera: por la GPU si esta disponible, por SDL si no
+        scene.draw_scene(track, car.state, show_line, cam_h, cam_back, ygain,
+                         cam_fwd, horizon_px,
+                         car.state.psi * cfg.CAMERA_YAW_GAIN
+                         + base_seg.kappa * 40.0)
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
             g = ghost_sample(ghost_best, timer.lap_time, track.length)
@@ -596,7 +604,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                  ffb.ok, wheel.name, auto_gear, time_scale, track, car_name,
                  condition, timer.wrong_way, timer.valid)
         if show_debug:
-            hud.draw_debug(wheel, car.state, surface)
+            hud.draw_debug(wheel, car.state, surface, scene.gpu)
         if show_telemetry:
             hud.draw_telemetry(car.state, wheel.steering, sim_time)
         sdl2.SDL_RenderPresent(renderer)

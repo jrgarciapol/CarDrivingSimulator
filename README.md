@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **314 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **326 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -187,6 +187,15 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
    ```bat
    pip install -r requirements.txt
    ```
+   > **Escena en la GPU y Python 3.14.** `moderngl` (el módulo de la escena
+   > 3D en la GPU) solo publica ruedas precompiladas hasta **Python 3.13**;
+   > en 3.14 `pip` intentaría compilarlo y pediría el compilador de Visual
+   > C++, así que `requirements.txt` lo omite ahí y el juego usa el render
+   > de SDL (lo dice al arrancar y en el panel F1). Para tener la GPU:
+   > instala Python 3.13 desde python.org y lanza el juego con él
+   > (`py -3.13 -m pip install -r requirements.txt` y `py -3.13 -m
+   > simulator.main`), o instala las *Microsoft C++ Build Tools* y luego
+   > `pip install moderngl`.
 4. Conecta el volante **antes** de arrancar y ejecuta:
    ```bat
    run.bat
@@ -553,6 +562,7 @@ tests/
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
   test_audio.py             sintetizador y laboratorio de sonido
   test_gpu.py               proyeccion, geometria y fotogramas reales de la GPU
+  test_hud.py               atlas de fuente y esfera del velocimetro cacheada
 ```
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,

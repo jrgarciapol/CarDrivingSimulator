@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from . import config as cfg
 from . import font
 from . import gpu
+from . import gpu as gpu_mod
 
 # Paleta (mutable: set_condition() la ajusta al estado del asfalto)
 SKY_TOP = (78, 154, 219)
@@ -120,14 +121,39 @@ class _Dibujo:
         # velocimetro real, con el 0 abajo a la izquierda)
         a0, a1 = math.radians(135.0), math.radians(405.0)
 
-        # fondo y aro
+        # la esfera (fondo, aro, marcas y numeros) no cambia nunca: se pinta
+        # UNA vez en una textura y luego se copia. Pintarla cada fotograma
+        # eran ~6.000 llamadas a FillRect (los discos van fila a fila) y
+        # 20 ms a 1080p: era lo que quitaba la fluidez al activarla.
+        if not self._speedo_cacheado(cx, cy, rad, vmax, a0, a1):
+            self._speedo_esfera(cx, cy, rad, vmax, a0, a1)
+
+        # AGUJA
+        vel = max(0.0, min(vmax, abs(car_state.speed_kmh)))
+        a = a0 + (a1 - a0) * (vel / vmax)
+        ca, sa = math.cos(a), math.sin(a)
+        col = (255, 70, 60, 255) if vel > vmax * 0.85 else (255, 230, 120, 255)
+        self._line(cx - ca * rad * 0.14, cy - sa * rad * 0.14,
+                   cx + ca * (rad - 20), cy + sa * (rad - 20), col, 5)
+        self._disc(cx, cy, max(6, int(rad * 0.09)), (230, 230, 235, 255))
+
+        # cifra exacta en el centro-bajo de la esfera
+        txt = f"{int(vel)}"
+        tw = font.text_width(txt, 4)
+        font.draw_text(self.r, txt, cx - tw / 2, cy + rad * 0.30, 4,
+                       (255, 255, 255, 255))
+        tw = font.text_width("KM/H", 2)
+        font.draw_text(self.r, "KM/H", cx - tw / 2, cy + rad * 0.62, 2,
+                       (170, 185, 210, 255))
+
+    def _speedo_esfera(self, cx, cy, rad, vmax, a0, a1):
+        """La parte fija del velocimetro: fondo, aro, marcas y numeros."""
         for k in range(int(rad), 0, -3):
             t = k / rad
             c = int(18 + 26 * (1.0 - t))
             self._disc(cx, cy, k, (c, c, c + 4, 225))
         self._arc(cx, cy, rad - 2, a0, a1, (150, 170, 200, 230), 3)
-
-        # marcas: cada 20 km/h una grande con número, cada 10 una pequeña
+        # marcas: cada 20 km/h una grande con numero, cada 10 una pequena
         paso = 20 if vmax <= 300 else 40
         v = 0
         while v <= vmax + 1e-6:
@@ -147,23 +173,36 @@ class _Dibujo:
                                cy + sa * rt - 7, 2, (215, 225, 240, 255))
             v += paso / 2.0
 
-        # AGUJA
-        vel = max(0.0, min(vmax, abs(car_state.speed_kmh)))
-        a = a0 + (a1 - a0) * (vel / vmax)
-        ca, sa = math.cos(a), math.sin(a)
-        col = (255, 70, 60, 255) if vel > vmax * 0.85 else (255, 230, 120, 255)
-        self._line(cx - ca * rad * 0.14, cy - sa * rad * 0.14,
-                   cx + ca * (rad - 20), cy + sa * (rad - 20), col, 5)
-        self._disc(cx, cy, max(6, int(rad * 0.09)), (230, 230, 235, 255))
-
-        # cifra exacta en el centro-bajo de la esfera
-        txt = f"{int(vel)}"
-        tw = font.text_width(txt, 4)
-        font.draw_text(self.r, txt, cx - tw / 2, cy + rad * 0.30, 4,
-                       (255, 255, 255, 255))
-        tw = font.text_width("KM/H", 2)
-        font.draw_text(self.r, "KM/H", cx - tw / 2, cy + rad * 0.62, 2,
-                       (170, 185, 210, 255))
+    def _speedo_cacheado(self, cx, cy, rad, vmax, a0, a1):
+        """Copia la esfera desde una textura, creandola la primera vez (o si
+        cambia el tamano o la escala). False si el renderizador no admite
+        texturas de destino: entonces se pinta directa."""
+        clave = (int(rad), float(vmax))
+        cache = getattr(self, "_speedo_cache", None)
+        if cache is None or cache[0] != clave:
+            if not sdl2.SDL_RenderTargetSupported(self.r):
+                return False
+            tam = int(2 * rad + 8)
+            tex = sdl2.SDL_CreateTexture(
+                self.r, sdl2.SDL_PIXELFORMAT_ARGB8888,
+                sdl2.SDL_TEXTUREACCESS_TARGET, tam, tam)
+            if not tex:
+                return False
+            sdl2.SDL_SetTextureBlendMode(tex, sdl2.SDL_BLENDMODE_BLEND)
+            previo = sdl2.SDL_GetRenderTarget(self.r)
+            sdl2.SDL_SetRenderTarget(self.r, tex)
+            sdl2.SDL_SetRenderDrawColor(self.r, 0, 0, 0, 0)
+            sdl2.SDL_RenderClear(self.r)
+            self._speedo_esfera(tam / 2.0, tam / 2.0, rad, vmax, a0, a1)
+            sdl2.SDL_SetRenderTarget(self.r, previo)
+            if cache is not None:
+                sdl2.SDL_DestroyTexture(cache[1])
+            cache = (clave, tex, tam)
+            self._speedo_cache = cache
+        _, tex, tam = cache
+        dst = sdl2.SDL_Rect(int(cx - tam / 2.0), int(cy - tam / 2.0), tam, tam)
+        sdl2.SDL_RenderCopy(self.r, tex, None, dst)
+        return True
 
     def _disc(self, cx, cy, radio, color):
         """Disco relleno por franjas horizontales."""
@@ -1313,6 +1352,9 @@ class Hud(_Dibujo):
                            f"GPU: MALLA {gpu.ms_malla:4.1f}  GL {gpu.ms_gl:4.1f}"
                            f"  SUBIDA {gpu.ms_subida:4.1f} MS", 32, 370, 2,
                            (150, 220, 255, 255))
+        else:
+            font.draw_text(self.r, "RENDER GPU: NO - " + gpu_mod.estado()[:44],
+                           32, 370, 2, (255, 170, 90, 255))
         axes = wheel.raw_axes()
         y = 96
         for i, v in enumerate(axes[:8]):

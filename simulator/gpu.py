@@ -812,6 +812,17 @@ class GpuScene:
 _escena = None
 
 
+def estado():
+    """Texto corto para el panel F1: por que no hay escena en la GPU."""
+    if not getattr(cfg, "GFX_GPU", False):
+        return "GFX_GPU APAGADO EN AJUSTES"
+    if moderngl is None:
+        return "FALTA MODERNGL (PIP INSTALL MODERNGL)"
+    if _escena is None:
+        return "SIN INICIAR"
+    return "ACTIVA" if _escena.ok else _escena.motivo.upper()
+
+
 def obtener(sdl_renderer):
     """La escena de GPU de la ventana actual, o None si no se puede.
 

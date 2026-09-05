@@ -117,7 +117,7 @@ def main():
         scene.gpu = escena
         st = Car().state
         st.s, st.vx = 3000.0, 30.0
-        st.omega[:] = [80.0, 80.0, 80.0, 80.0]
+        st.omega[:] = [8.0, 8.0, 8.0, 8.0]
         cfg.GFX_GPU_ASYNC = False
         cfg.CAR_MODEL_3D = "f1"
         sdl2.SDL_RenderClear(ren)
@@ -151,9 +151,36 @@ def main():
         scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
                          coche3d=scene.modelo_coche(0.0, 0.05))
         r.append(check("las ruedas ruedan con la velocidad de la fisica "
-                       "(80 rad/s x 0,05 s = 4 rad)",
-                       np.allclose((mg.ang - ang0) % (2 * np.pi), 4.0 % (2 * np.pi),
-                                   atol=1e-6), str((mg.ang - ang0).round(3))))
+                       "(8 rad/s x 0,05 s = 0,4 rad)",
+                       np.allclose((mg.ang - ang0) % (2 * np.pi), 0.4, atol=1e-6),
+                       str((mg.ang - ang0).round(3))))
+        # a mucha velocidad la rueda se congela (efecto estroboscopico)
+        st.omega[:] = [80.0, 80.0, 80.0, 80.0]
+        ang1 = mg.ang.copy()
+        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d=scene.modelo_coche(0.0, 0.05))
+        r.append(check("...pero por encima de 14 rad/s se congela, para que "
+                       "no parezca que patina", np.allclose(mg.ang, ang1)))
+        # con bote, cabeceo y balanceo de la suspension, las ruedas siguen
+        # apoyadas en el asfalto (solo se mueve la carroceria)
+        st.omega[:] = [0.0, 0.0, 0.0, 0.0]
+        st.heave, st.pitch, st.roll = 0.10, 0.08, 0.10
+        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d=scene.modelo_coche(0.4, 0.0))
+        mats = escena._mats_coche
+        inv_base = np.linalg.inv(escena._base_coche)
+        apoyadas = True
+        for k in range(1, 5):
+            c = np.r_[mg.centros[k], 1.0]
+            p = inv_base @ mats[k] @ c          # centro de la rueda respecto
+            if np.abs(p[:3] - c[:3]).max() > 1e-6:   # al chasis en el suelo
+                apoyadas = False
+        cuerpo = inv_base @ mats[0]
+        cuerpo_sube = cuerpo[1, 3] > 0.03
+        r.append(check("con la suspension comprimida/cabeceando las ruedas "
+                       "siguen en el asfalto y solo se mueve la carroceria",
+                       apoyadas and cuerpo_sube))
+        st.heave = st.pitch = st.roll = 0.0
         r.append(check("el modelo se pinta rapido (GL < 40 ms incluso por "
                        "software)", escena.ms_gl < 40.0,
                        f"{escena.ms_gl:.1f} ms"))

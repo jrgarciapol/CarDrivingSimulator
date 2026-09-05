@@ -948,12 +948,18 @@ class GpuScene:
         delta = max(-0.6, min(0.6, delta))
         m.rodar(getattr(st, "omega", (0.0, 0.0, 0.0, 0.0)),
                 float(coche.get("dt", 0.0)))
+        # Las ruedas van con ``base``, NO con ``cuerpo``: el bote, cabeceo y
+        # balanceo de la suspension mueven la carroceria sobre ellas, que se
+        # quedan asentadas en el asfalto. Colgadas del cuerpo, al frenar o
+        # en curva se levantaban del suelo o se hundian en el.
         mats = [cuerpo]
         for k in range(1, 5):
             c = m.centros[k]
             giro = _mat_guinada(-delta) if k <= 2 else np.eye(4)
-            mats.append(cuerpo @ _mat_traslacion(*c) @ giro
+            mats.append(base @ _mat_traslacion(*c) @ giro
                         @ _mat_cabeceo(-m.ang[k - 1]) @ _mat_traslacion(*(-c)))
+        self._mats_coche = mats            # (pruebas)
+        self._base_coche = base
         # sol: mismo azimut absoluto que el disco del cielo, pasado al
         # espacio de la escena (rumbo del tramo)
         az = SOL_AZIMUT - rumbo_seg

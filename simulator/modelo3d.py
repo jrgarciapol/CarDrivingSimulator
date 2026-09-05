@@ -140,11 +140,20 @@ class ModeloGpu:
         self.ang = np.zeros(4)           # angulo de rodadura de cada rueda
         self.n_triangulos = len(tri)
 
+    #: rad/s por encima de los cuales la rueda deja de girar en pantalla.
+    #: A 60-120 fotogramas por segundo una rueda a 80 rad/s avanza 0,7-1,3
+    #: radianes por fotograma: efecto estroboscopico, parece que patina o
+    #: que gira hacia atras. En la realidad a esa velocidad la llanta se ve
+    #: borrosa; congelarla es lo que menos llama la atencion.
+    OMEGA_VISIBLE = 14.0
+
     def rodar(self, omegas, dt):
         """Acumula el giro de cada rueda (rad/s de la fisica, orden DI DD
         TI TD, el mismo que las piezas 1..4)."""
         for i in range(4):
-            self.ang[i] = (self.ang[i] + float(omegas[i]) * dt) % (2.0 * np.pi)
+            w = float(omegas[i])
+            if abs(w) < self.OMEGA_VISIBLE:
+                self.ang[i] = (self.ang[i] + w * dt) % (2.0 * np.pi)
 
     def dibujar(self, vista, proy, matrices, luz):
         """Pinta todas las piezas. ``matrices``: lista de 5 matrices 4x4

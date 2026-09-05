@@ -587,6 +587,13 @@ CAMERA_FORWARD = 0.5         # m que el ojo del conductor va por DELANTE del
 CAMERA_HEIGHT_REAR = 2.5     # m, altura de la cámara de la vista trasera
                              # cercana (con el coche visto desde atrás)
                              # [1.5 .. 3.5]
+CAMERA_HEIGHT_CHASE = 2.5    # m, altura de la cámara de la vista EXTERIOR
+                             # (coche completo, cámara de persecución)
+                             # [1.0 .. 5.0]
+CAMERA_BACK_CHASE = 6.5      # m que la cámara de la vista exterior va por
+                             # DETRÁS del coche. Es la distancia real; el
+                             # FOV (CAMERA_DEPTH) solo cambia cuánto ocupa
+                             # en pantalla [3.0 .. 15.0]
 CAMERA_DEPTH = 1.2           # proyección (1/tan(fov/2)); subir acerca el
                              # coche a la parte baja de la pantalla, como
                              # los juegos comerciales [0.7 .. 1.6]
@@ -624,6 +631,10 @@ SPEEDO_DIAL = True           # velocímetro de AGUJA (tipo reloj) en vez de
 SPEEDO_SIZE = 250            # px de diámetro del velocímetro de aguja
                              # [120 .. 460]
 SPEEDO_MAX_KMH = 260         # fondo de escala del velocímetro [80 .. 400]
+SPEEDO_STEP_KMH = 40         # cada cuántos km/h va un NÚMERO en la esfera
+                             # (con marca grande; media marca a la mitad y
+                             # pequeñas cada cuarto). Menos números, cifras
+                             # más grandes [20 .. 100]
 MAP_AHEAD_M = 1000.0         # m de circuito por delante que se dibujan
                              # [300 .. 2500]
 MAP_AHEAD_PX_PER_M = 0.30    # px por metro. FIJO a propósito: con escala

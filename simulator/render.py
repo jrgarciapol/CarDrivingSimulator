@@ -153,31 +153,42 @@ class _Dibujo:
             c = int(18 + 26 * (1.0 - t))
             self._disc(cx, cy, k, (c, c, c + 4, 225))
         self._arc(cx, cy, rad - 2, a0, a1, (150, 170, 200, 230), 3)
-        # marcas: cada 20 km/h una grande con numero, cada 10 una pequena
-        paso = 20 if vmax <= 300 else 40
-        v = 0
-        while v <= vmax + 1e-6:
+        # marcas: un NUMERO con marca grande cada SPEEDO_STEP_KMH, una
+        # media a la mitad y pequenas en los cuartos. Antes iba un numero
+        # cada 20 km/h: 14 cifras apretadas y pequenas en una esfera de
+        # 250 px; con 40 caben 7, mas grandes
+        paso = float(max(10, int(getattr(cfg, "SPEEDO_STEP_KMH", 40))))
+        escala = 3 if rad >= 100 else 2
+        cuarto = paso / 4.0
+        k = 0
+        while k * cuarto <= vmax + 1e-6:
+            v = k * cuarto
             a = a0 + (a1 - a0) * (v / vmax)
             ca, sa = math.cos(a), math.sin(a)
-            grande = (v % paso == 0)
-            r1 = rad - (16 if grande else 9)
+            grande = (k % 4 == 0)
+            media = (k % 2 == 0) and not grande
+            r1 = rad - (18 if grande else 12 if media else 8)
             self._line(cx + ca * r1, cy + sa * r1,
                        cx + ca * (rad - 4), cy + sa * (rad - 4),
-                       (235, 235, 235, 235) if grande else (150, 150, 150, 200),
+                       (235, 235, 235, 235) if grande
+                       else (185, 185, 185, 220) if media
+                       else (130, 130, 130, 190),
                        3 if grande else 2)
             if grande:
-                txt = str(int(v))
-                tw = font.text_width(txt, 2)
-                rt = rad - 34
+                txt = str(int(round(v)))
+                tw = font.text_width(txt, escala)
+                rt = rad - 24 - 7 * escala
                 font.draw_text(self.r, txt, cx + ca * rt - tw / 2,
-                               cy + sa * rt - 7, 2, (215, 225, 240, 255))
-            v += paso / 2.0
+                               cy + sa * rt - 3.5 * escala, escala,
+                               (215, 225, 240, 255))
+            k += 1
 
     def _speedo_cacheado(self, cx, cy, rad, vmax, a0, a1):
         """Copia la esfera desde una textura, creandola la primera vez (o si
         cambia el tamano o la escala). False si el renderizador no admite
         texturas de destino: entonces se pinta directa."""
-        clave = (int(rad), float(vmax))
+        clave = (int(rad), float(vmax),
+                 int(getattr(cfg, "SPEEDO_STEP_KMH", 40)))
         cache = getattr(self, "_speedo_cache", None)
         if cache is None or cache[0] != clave:
             if not sdl2.SDL_RenderTargetSupported(self.r):

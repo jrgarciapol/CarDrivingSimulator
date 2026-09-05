@@ -590,7 +590,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         # 2 = coche completo 3D con camara de persecucion
         cam_fwd = 0.0
         if view_mode == 2:
-            cam_h, cam_back, ygain = 2.5, 6.5, 0.35
+            cam_h = float(getattr(cfg, "CAMERA_HEIGHT_CHASE", 2.5))
+            cam_back = float(getattr(cfg, "CAMERA_BACK_CHASE", 6.5))
+            ygain = 0.35
         else:
             # vista interior: ojo del conductor (altura y adelantamiento
             # dependen del coche); vista trasera: cámara elevada tras el coche

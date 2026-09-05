@@ -481,6 +481,15 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
     desplazar = np.array([(lo[0] + hi[0]) / 2, y_suelo, (lo[2] + hi[2]) / 2])
     for _, p in partes:
         p["pos"] = p["pos"] - desplazar
+    # cada rueda apoya en el suelo POR SU CUENTA: en el Lamborghini las
+    # delanteras (mas pequenas) quedaban 2 cm en el aire porque el suelo lo
+    # marcaban las traseras
+    for k in range(1, 5):
+        piezas_k = [p for kk, p in partes if kk == k]
+        if piezas_k:
+            fondo = min(p["pos"][:, 1].min() for p in piezas_k)
+            for p in piezas_k:
+                p["pos"] = p["pos"] - np.array([0.0, fondo, 0.0])
     largo_m = float(hi[2] - lo[2])
     partes, n_tri, celda = simplificar_hasta(partes, int(max_tri), largo_m)
     pos, nrm, uv, col, tex, parte, idx = [], [], [], [], [], [], []

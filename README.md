@@ -375,7 +375,15 @@ los ocho: Citroën 2CV (utilitario), Rolls-Royce Ghost (berlina), Bugatti
 Yaris WRC (rally), Beijing BJ212 (todoterreno) y un autobús urbano de
 Nagoya (también hay un Alfa Romeo 33 Stradale, `alfa`, sin asignar). La iluminación trabaja en espacio lineal con luz ambiente
 hemisférica, brillo del sol y reflejo del cielo de refilón, que es lo que
-hace que la chapa parezca chapa.
+hace que la chapa parezca chapa; bajo el coche va una sombra de contacto
+(oscura bajo cada neumático y el centro del bajo, difuminada hacia fuera).
+Lo que se mueve viene de la física: el giro de cada rueda es su velocidad
+angular real (patina y se bloquea con ella), la dirección es el ángulo de
+las ruedas delanteras, y la carrocería bota, cabecea y balancea con la
+suspensión del modelo (atenuado y con tope para que se lea); cada rueda
+sube y baja además con los baches del firme que siente la física. No se
+representa la caída de las ruedas ni el recorrido independiente de cada
+esquina.
 
 ## Jugar en Steam Deck
 

@@ -102,6 +102,60 @@ void main() {
 """
 
 
+_VS_SOMBRA = """#version 330
+uniform mat4 u_view;
+uniform mat4 u_proj;
+uniform mat4 u_model;
+in vec3 in_pos;
+in vec2 in_uv;
+out vec2 v_uv;
+void main() {
+    v_uv = in_uv;
+    gl_Position = u_proj * u_view * u_model * vec4(in_pos, 1.0);
+}
+"""
+
+_FS_SOMBRA = """#version 330
+uniform sampler2D u_tex;
+in vec2 v_uv;
+out vec4 f_col;
+void main() { f_col = vec4(0.0, 0.0, 0.0, texture(u_tex, v_uv).r); }
+"""
+
+
+def mapa_sombra(medidas, centros, radios, n=96):
+    """Sombra de contacto del coche vista desde arriba, como mapa de
+    opacidad (n x n, 0..1) sobre un rectangulo algo mayor que el coche:
+    oscura bajo la carroceria (y mas en el centro), muy oscura justo bajo
+    cada neumatico, y difuminada hacia fuera. Un rectangulo uniforme, que
+    era lo que habia, hacia que el coche pareciera levitar sobre una
+    losa; lo que "pega" un coche al suelo es la oscuridad bajo las ruedas.
+    Devuelve (mapa, semiancho, semilargo) del rectangulo en metros."""
+    an, _, la = [float(v) for v in medidas]
+    sx, sz = an * 0.5 + 0.45, la * 0.5 + 0.45
+    xs = np.linspace(-sx, sx, n)
+    zs = np.linspace(-sz, sz, n)
+    X, Z = np.meshgrid(xs, zs, indexing="xy")          # filas = z
+    # carroceria: 1 dentro (menos un margen), cae en 0,45 m fuera
+    dx = np.maximum(0.0, np.abs(X) - (an * 0.5 - 0.10))
+    dz = np.maximum(0.0, np.abs(Z) - (la * 0.5 - 0.15))
+    d = np.hypot(dx, dz)
+    cuerpo = 0.50 * np.clip(1.0 - d / 0.45, 0.0, 1.0) ** 1.6
+    # mas oscuro hacia el centro del bajo (menos luz llega)
+    centro = np.clip(1.0 - np.hypot(X / max(an * 0.5, 0.1),
+                                    Z / max(la * 0.5, 0.1)), 0.0, 1.0)
+    cuerpo += 0.18 * centro
+    mapa = cuerpo
+    for k in range(1, 5):
+        if radios[k] <= 0.0:
+            continue
+        cx, cz, r = float(centros[k][0]), float(centros[k][2]), float(radios[k])
+        dr = np.hypot((X - cx) / (r * 0.75), (Z - cz) / (r * 1.05))
+        rueda = 0.85 * np.clip(1.0 - dr, 0.0, 1.0) ** 0.6
+        mapa = 1.0 - (1.0 - mapa) * (1.0 - rueda)
+    return np.clip(mapa, 0.0, 0.92).astype(np.float32), sx, sz
+
+
 def ruta(nombre):
     return os.path.join(CARPETA, f"{nombre}.npz")
 
@@ -170,13 +224,45 @@ class ModeloGpu:
         self.medidas = np.asarray(datos["medidas"], dtype=float)
         self.ang = np.zeros(4)           # angulo de rodadura de cada rueda
         self.n_triangulos = len(tri)
+        # sombra de contacto: un rectangulo a ras de suelo con el mapa de
+        # opacidad de mapa_sombra como textura de un canal
+        mapa, sx, sz = mapa_sombra(self.medidas, self.centros, self.radios)
+        self.tex_sombra = ctx.texture(mapa.shape[::-1], 1,
+                                      (mapa * 255).astype(np.uint8).tobytes())
+        self.tex_sombra.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.tex_sombra.repeat_x = self.tex_sombra.repeat_y = False
+        self.prog_sombra = ctx.program(vertex_shader=_VS_SOMBRA,
+                                       fragment_shader=_FS_SOMBRA)
+        y = 0.012
+        quad = np.array([[-sx, y, -sz, 0, 0], [sx, y, -sz, 1, 0],
+                         [sx, y, sz, 1, 1], [-sx, y, sz, 0, 1]], dtype="f4")
+        self.vbo_sombra = ctx.buffer(quad.tobytes())
+        self.ibo_sombra = ctx.buffer(np.array([0, 1, 2, 0, 2, 3],
+                                              dtype=np.uint32).tobytes())
+        self.vao_sombra = ctx.vertex_array(
+            self.prog_sombra, [(self.vbo_sombra, "3f 2f", "in_pos", "in_uv")],
+            index_buffer=self.ibo_sombra, index_element_size=4)
+
+    def dibujar_sombra(self, ctx, vista, proy, base):
+        """La sombra de contacto, con la matriz del chasis en el suelo
+        (sin bote ni cabeceo: la sombra no se levanta con la carroceria)."""
+        p = self.prog_sombra
+        p["u_view"].write(vista.T.astype("f4").tobytes())
+        p["u_proj"].write(proy.T.astype("f4").tobytes())
+        p["u_model"].write(base.T.astype("f4").tobytes())
+        self.tex_sombra.use(location=0)
+        p["u_tex"].value = 0
+        ctx.enable(moderngl.BLEND)
+        ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self.vao_sombra.render(moderngl.TRIANGLES, vertices=6)
+        ctx.disable(moderngl.BLEND)
 
     #: rad/s por encima de los cuales la rueda deja de girar en pantalla.
-    #: A 60-120 fotogramas por segundo una rueda a 80 rad/s avanza 0,7-1,3
-    #: radianes por fotograma: efecto estroboscopico, parece que patina o
-    #: que gira hacia atras. En la realidad a esa velocidad la llanta se ve
-    #: borrosa; congelarla es lo que menos llama la atencion.
-    OMEGA_VISIBLE = 14.0
+    #: Se probo congelarla a partir de 14 rad/s para evitar el efecto
+    #: estroboscopico (a 120 fps una rueda a 80 rad/s avanza 0,7 rad por
+    #: fotograma), pero el resultado era peor: "las ruedas no rotan". Sin
+    #: tope: a veces pareceran girar hacia atras, como en el cine.
+    OMEGA_VISIBLE = 1e9
 
     def rodar(self, omegas, dt):
         """Acumula el giro de cada rueda (rad/s de la fisica, orden DI DD
@@ -217,6 +303,9 @@ class ModeloGpu:
     def release(self):
         for tx in self.texturas.values():
             tx.release()
+        for obj in (self.vao_sombra, self.vbo_sombra, self.ibo_sombra,
+                    self.tex_sombra, self.prog_sombra):
+            obj.release()
         self.vao.release()
         self.vbo.release()
         self.ibo.release()

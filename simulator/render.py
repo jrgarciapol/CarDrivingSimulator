@@ -212,6 +212,44 @@ class _Dibujo:
             if w > 0:
                 self._fill(cx - w, cy + dy, 2 * w, 1, color)
 
+    def _fills(self, rects, color):
+        """Muchos rectangulos del MISMO color en una sola llamada a SDL.
+        ``rects`` es un array (n, 4) de x, y, ancho, alto.
+
+        Cada llamada a SDL por ctypes cuesta unos microsegundos, y el
+        minimapa (1.500 puntos) y la telemetria (1.400) los pintaban de uno
+        en uno: 12 y 6 ms por fotograma medidos en un PC. Con
+        SDL_RenderFillRects el array de rectangulos se pasa entero."""
+        a = np.ascontiguousarray(rects, dtype=np.int32).reshape(-1, 4)
+        n = len(a)
+        if n == 0:
+            return
+        arr = (sdl2.SDL_Rect * n).from_buffer(a)
+        sdl2.SDL_SetRenderDrawColor(self.r, int(color[0]), int(color[1]),
+                                    int(color[2]),
+                                    int(color[3]) if len(color) > 3 else 255)
+        sdl2.SDL_RenderFillRects(self.r, arr, n)
+
+    def _textura_destino(self, w, h, pintar):
+        """Textura de w x h con lo que pinte ``pintar()`` (con el origen en su
+        esquina superior izquierda), para copiarla cada fotograma en vez de
+        repintar. None si el renderizador no admite texturas de destino."""
+        if not sdl2.SDL_RenderTargetSupported(self.r):
+            return None
+        tex = sdl2.SDL_CreateTexture(self.r, sdl2.SDL_PIXELFORMAT_ARGB8888,
+                                     sdl2.SDL_TEXTUREACCESS_TARGET,
+                                     int(w), int(h))
+        if not tex:
+            return None
+        sdl2.SDL_SetTextureBlendMode(tex, sdl2.SDL_BLENDMODE_BLEND)
+        previo = sdl2.SDL_GetRenderTarget(self.r)
+        sdl2.SDL_SetRenderTarget(self.r, tex)
+        sdl2.SDL_SetRenderDrawColor(self.r, 0, 0, 0, 0)
+        sdl2.SDL_RenderClear(self.r)
+        pintar()
+        sdl2.SDL_SetRenderTarget(self.r, previo)
+        return tex
+
 
 class Renderer(_Dibujo):
     def __init__(self, renderer):
@@ -327,6 +365,7 @@ class Renderer(_Dibujo):
         self._rect.w = int(w)
         self._rect.h = int(h)
         sdl2.SDL_RenderFillRect(self.r, self._rect)
+
 
     # ------------------------------------------------------------------
     def draw_background(self, horizon_y, road_heading):
@@ -1349,9 +1388,10 @@ class Hud(_Dibujo):
         font.draw_text(self.r, "F1: DIAGNOSTICO DE EJES/BOTONES", 32, 70, 2)
         if gpu is not None:
             font.draw_text(self.r,
-                           f"GPU: MALLA {gpu.ms_malla:4.1f}  GL {gpu.ms_gl:4.1f}"
-                           f"  SUBIDA {gpu.ms_subida:4.1f} MS", 32, 370, 2,
-                           (150, 220, 255, 255))
+                           f"GPU MS: MALLA {gpu.ms_malla:.1f} GL {gpu.ms_gl:.1f}"
+                           f" LECT {gpu.ms_lectura:.1f} SUB {gpu.ms_subida:.1f}"
+                           + (" ASINC" if getattr(gpu, "asincrono", False)
+                              else ""), 32, 370, 2, (150, 220, 255, 255))
         else:
             font.draw_text(self.r, "RENDER GPU: NO - " + gpu_mod.estado()[:44],
                            32, 370, 2, (255, 170, 90, 255))
@@ -1426,36 +1466,56 @@ class Hud(_Dibujo):
         """Plano del circuito arriba a la izquierda: trazado completo, el
         tramo que viene resaltado en ámbar, la meta y el coche como punto
         rojo — para leer la siguiente curva y preparar la velocidad."""
-        pts = track.map_points()
-        n = len(pts)
         box_w, box_h = 236, 176
         x0, y0 = 16, 16
-        pad = 14
-        aw, ah = track._map_aspect
-        scale = min((box_w - 2 * pad) / max(aw, 1e-6),
-                    (box_h - 2 * pad) / max(ah, 1e-6))
-        ox = x0 + (box_w - aw * scale) / 2
-        oy = y0 + (box_h - ah * scale) / 2
+        # La parte FIJA (fondo, trazado completo y meta) se pinta una vez por
+        # circuito en una textura y se copia; cada fotograma solo se anaden
+        # el tramo que viene y el coche. Pintar los ~1.500 puntos del
+        # trazado uno a uno costaba 12 ms por fotograma.
+        cache = getattr(self, "_mapa_cache", None)
+        if cache is None or cache[0] is not track:
+            pts = np.asarray(track.map_points(), dtype=float)
+            pad = 14
+            aw, ah = track._map_aspect
+            scale = min((box_w - 2 * pad) / max(aw, 1e-6),
+                        (box_h - 2 * pad) / max(ah, 1e-6))
+            ox = x0 + (box_w - aw * scale) / 2
+            oy = y0 + (box_h - ah * scale) / 2
+            pix = np.empty((len(pts), 2), dtype=np.int32)
+            pix[:, 0] = (ox + pts[:, 0] * scale).astype(np.int32)
+            pix[:, 1] = (oy + (ah - pts[:, 1]) * scale).astype(np.int32)
 
-        self._fill(x0, y0, box_w, box_h, (0, 0, 0, 165))
-
-        def to_px(p):
-            return ox + p[0] * scale, oy + (ah - p[1]) * scale
-
-        # trazado completo
-        for i in range(0, n, 2):
-            px, py = to_px(pts[i])
-            self._fill(px, py, 2, 2, (210, 210, 210))
+            def fijo(dx=0, dy=0):
+                self._fill(x0 - dx, y0 - dy, box_w, box_h, (0, 0, 0, 165))
+                tr = np.empty((len(pix[::2]), 4), dtype=np.int32)
+                tr[:, 0] = pix[::2, 0] - dx
+                tr[:, 1] = pix[::2, 1] - dy
+                tr[:, 2:] = 2
+                self._fills(tr, (210, 210, 210))
+                self._fill(pix[0, 0] - 2 - dx, pix[0, 1] - 2 - dy, 6, 6,
+                           (255, 255, 255))
+            if cache is not None and cache[2]:
+                sdl2.SDL_DestroyTexture(cache[2])
+            tex = self._textura_destino(box_w, box_h,
+                                        lambda: fijo(x0, y0))
+            cache = (track, pix, tex, fijo)
+            self._mapa_cache = cache
+        _, pix, tex, fijo = cache
+        n = len(pix)
+        if tex:
+            sdl2.SDL_RenderCopy(self.r, tex, None,
+                                sdl2.SDL_Rect(x0, y0, box_w, box_h))
+        else:
+            fijo()
         # tramo inmediato por delante (600 m) en ámbar, más grueso
         i_car = track._index_at(car_state.s)
-        for k in range(0, 150, 1):
-            px, py = to_px(pts[(i_car + k) % n])
-            self._fill(px - 1, py - 1, 3, 3, (250, 200, 60))
-        # línea de meta
-        mx, my = to_px(pts[0])
-        self._fill(mx - 2, my - 2, 6, 6, (255, 255, 255))
+        idx = (i_car + np.arange(150)) % n
+        amb = np.empty((150, 4), dtype=np.int32)
+        amb[:, :2] = pix[idx] - 1
+        amb[:, 2:] = 3
+        self._fills(amb, (250, 200, 60))
         # el coche
-        cx_, cy_ = to_px(pts[i_car])
+        cx_, cy_ = pix[i_car]
         self._fill(cx_ - 3, cy_ - 3, 7, 7, (235, 45, 35))
 
     #: Escalas admitidas para la planta (px por metro). Se elige la mayor
@@ -1693,6 +1753,37 @@ class Hud(_Dibujo):
         radius = 52
         peak_a = math.radians(cfg.TIRE_PEAK_SLIP_ANGLE_DEG)
         static_q = cfg.CAR_MASS * 9.81 / 4.0
+        ratio_l = cfg.TIRE_LONG_GRIP_RATIO
+        ry = radius * ratio_l                 # semieje longitudinal (vertical)
+        # geometria FIJA de los paneles (aros, ejes, linea de trayectoria):
+        # se calcula una vez y cada fotograma se pinta por lotes (_fills)
+        geo_clave = (box_x, box_y, radius, round(ry, 3))
+        geo = getattr(self, "_tel_geo", None)
+        if geo is None or geo[0] != geo_clave:
+            anillos, ejes = [], []
+            for i in range(4):
+                cx = box_x + 80 + (i % 2) * 145
+                cy = box_y + 88 + (i // 2) * 148
+                a = np.radians(np.arange(0, 360, 3, dtype=float))
+                an = np.empty((len(a), 4), dtype=np.int32)
+                an[:, 0] = (cx + radius * np.cos(a) - 2).astype(np.int32)
+                an[:, 1] = (cy + ry * np.sin(a) - 2).astype(np.int32)
+                an[:, 2:] = 4
+                anillos.append(an)
+                ejes.append((int(cx - radius), int(cy), int(radius * 2), 1))
+                ejes.append((int(cx), int(cy - int(ry)), 1, int(ry) * 2))
+            ccx0 = W // 2 + hueco + 84
+            ccy0 = box_y + 34 + 96
+            ks = np.arange(-56, 57, 3)
+            linea = np.empty((len(ks) + 1, 4), dtype=np.int32)
+            linea[:-1, 0] = ccx0 - 1
+            linea[:-1, 1] = ccy0 + ks
+            linea[:-1, 2:] = 2
+            linea[-1] = (ccx0 - 3, ccy0 - 62, 6, 6)
+            geo = (geo_clave, anillos, np.array(ejes, dtype=np.int32), linea)
+            self._tel_geo = geo
+        _, anillos, ejes, linea = geo
+        self._fills(ejes, (70, 70, 70))
         for i in range(4):
             cx = box_x + 80 + (i % 2) * 145
             cy = box_y + 88 + (i // 2) * 148
@@ -1712,14 +1803,7 @@ class Hud(_Dibujo):
             # longitudinal que lateral (TIRE_LONG_GRIP_RATIO), así que el eje
             # vertical (longitudinal) se estira ese factor. El aro marca a la
             # vez la temperatura y el límite real de agarre.
-            ratio_l = cfg.TIRE_LONG_GRIP_RATIO
-            ry = radius * ratio_l                 # semieje longitudinal (vertical)
-            for deg in range(0, 360, 3):
-                a = math.radians(deg)
-                self._fill(cx + radius * math.cos(a) - 2,
-                           cy + ry * math.sin(a) - 2, 4, 4, tcol)
-            self._fill(cx - radius, cy, radius * 2, 1, (70, 70, 70))
-            self._fill(cx, cy - int(ry), 1, int(ry) * 2, (70, 70, 70))
+            self._fills(anillos[i], tcol)
             font.draw_text(self.r, names[i], cx - radius, cy - radius - 4, 2)
 
             a_n = car_state.slip_angle[i] / peak_a
@@ -1733,11 +1817,20 @@ class Hud(_Dibujo):
                 trail.append((sim_time, a_n, s_n))
             while trail and sim_time - trail[0][0] > 2.0:
                 trail.pop(0)
-            for (ts, ta, tsn) in trail:
-                age = (sim_time - ts) / 2.0
-                al = int(30 + 110 * (1.0 - age))
-                self._fill(cx + ta * radius - 1, cy - tsn * radius - 1,
-                           2, 2, (140, 200, 255, al))
+            if trail:
+                # la estela se desvanece con la edad: se agrupa en 8 niveles
+                # de transparencia y cada nivel va en un lote
+                tr = np.asarray(trail, dtype=float)
+                edad = (sim_time - tr[:, 0]) / 2.0
+                al = (30.0 + 110.0 * (1.0 - edad)).astype(np.int32)
+                nivel = np.clip((al - 30) // 14, 0, 7)
+                rects = np.empty((len(tr), 4), dtype=np.int32)
+                rects[:, 0] = (cx + tr[:, 1] * radius - 1).astype(np.int32)
+                rects[:, 1] = (cy - tr[:, 2] * radius - 1).astype(np.int32)
+                rects[:, 2:] = 2
+                for nv in np.unique(nivel):
+                    self._fills(rects[nivel == nv],
+                                (140, 200, 255, 30 + 14 * int(nv) + 7))
             # punto actual suavizado, con diámetro segun la carga
             d0 = self._tel_dot[i]
             d0[0] += (a_n - d0[0]) * k_dot
@@ -1791,32 +1884,39 @@ class Hud(_Dibujo):
         pxb, pyb = math.cos(theta), math.sin(theta)    # su perpendicular
 
         # trayectoria del CG: línea vertical que atraviesa el coche
-        for k in range(-56, 57, 3):
-            self._fill(ccx - 1, ccy + k, 2, 2, (170, 170, 170))
-        self._fill(ccx - 3, ccy - 62, 6, 6, (170, 170, 170))
+        self._fills(linea, (170, 170, 170))
 
         # ruedas (debajo de la carrocería): las delanteras giran con el
         # volante, también amplificadas x3
         half_len, half_w = 38, 14
+        kw = np.arange(-7, 8, 2, dtype=float)
+        ruedas = []
         for kk, front in ((26, True), (-26, False)):
             wang = theta + (delta * AMP if front else 0.0)
             wdx, wdy = math.sin(wang), -math.cos(wang)
             for side in (-1, 1):
                 wx = ccx + dxb * kk + pxb * side * (half_w + 4)
                 wy = ccy + dyb * kk + pyb * side * (half_w + 4)
-                for k in range(-7, 8, 2):
-                    self._fill(wx + wdx * k - 2, wy + wdy * k - 2, 4, 4,
-                               (15, 15, 15))
+                rr = np.empty((len(kw), 4), dtype=np.int32)
+                rr[:, 0] = (wx + wdx * kw - 2).astype(np.int32)
+                rr[:, 1] = (wy + wdy * kw - 2).astype(np.int32)
+                rr[:, 2:] = 4
+                ruedas.append(rr)
+        self._fills(np.concatenate(ruedas), (15, 15, 15))
 
         # carrocería a lo largo del eje del coche, con cabina oscura
         body_c = getattr(cfg, "CAR_COLOR", (178, 24, 30))
         dark_c = _shade(body_c, 0.70)
-        for k in range(-half_len, half_len + 1, 2):
-            for w in range(-half_w, half_w + 1, 2):
-                px = ccx + dxb * k + pxb * w
-                py = ccy + dyb * k + pyb * w
-                c = dark_c if 2 < k < 22 and abs(w) < half_w - 3 else body_c
-                self._fill(px - 1, py - 1, 3, 3, c)
+        K, Wc = np.meshgrid(np.arange(-half_len, half_len + 1, 2),
+                            np.arange(-half_w, half_w + 1, 2), indexing="ij")
+        K, Wc = K.ravel(), Wc.ravel()
+        cuerpo = np.empty((len(K), 4), dtype=np.int32)
+        cuerpo[:, 0] = (ccx + dxb * K + pxb * Wc - 1).astype(np.int32)
+        cuerpo[:, 1] = (ccy + dyb * K + pyb * Wc - 1).astype(np.int32)
+        cuerpo[:, 2:] = 3
+        cabina = (K > 2) & (K < 22) & (np.abs(Wc) < half_w - 3)
+        self._fills(cuerpo[~cabina], body_c)
+        self._fills(cuerpo[cabina], dark_c)
 
         font.draw_text(self.r, f"CHASIS {math.degrees(beta_s):+5.1f}",
                        box_x + 158, comp_y + 60, 2, (255, 255, 255, 255))

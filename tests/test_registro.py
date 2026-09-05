@@ -37,7 +37,7 @@ class Reloj:
 
 
 class GpuFalsa:
-    ms_malla, ms_gl, ms_subida = 1.0, 2.0, 0.5
+    ms_malla, ms_gl, ms_lectura, ms_subida = 1.0, 2.0, 0.7, 0.5
     info = {"GL_RENDERER": "Tarjeta de prueba", "GL_VERSION": "4.5"}
 
 
@@ -159,6 +159,26 @@ def main():
         r.append(check("alternar arranca un registro NUEVO (otro archivo)",
                        len([x for x in os.listdir(carpeta)
                             if x.endswith(".csv")]) == 2))
+
+        # --- F3 a mitad de fotograma: la primera fase no cuenta el pasado ---
+        # (en el primer registro real salio un fotograma de 794 segundos)
+        reg3 = perf_log.RegistroRendimiento(carpeta, reloj)
+        reloj.t += 3600.0                        # una hora sin grabar
+        reg3.arrancar()                          # pulsado en la fase de entrada
+        reloj.t += 0.005
+        reg3.marca("entrada")
+        reloj.t += 0.010
+        reg3.marca("presentar")
+        reg3.fotograma(ctx(), GpuFalsa())
+        b = reg3._bloques[0]
+        r.append(check("al arrancar a mitad de fotograma la 'entrada' mide "
+                       "solo desde F3 (5 ms, no 3600 s)",
+                       abs(b.fases["entrada"] - 5.0) < 0.01
+                       and abs(b.total[0] - 15.0) < 0.01,
+                       f"entrada={b.fases['entrada']:.2f} ms"))
+        r.append(check("la lectura de la GPU tiene su columna",
+                       b.gpu["lectura"] == 0.7))
+        reg3.parar()
 
         # --- percentiles sin numpy ------------------------------------------
         r.append(check("percentil 50 de 1..10 = 5,5",

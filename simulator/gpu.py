@@ -44,6 +44,7 @@ juego sigue con el renderizador de SDL como si nada.
 """
 
 import contextlib
+import ctypes
 import math
 import time
 
@@ -253,7 +254,13 @@ class GpuScene:
         self._track_id = None
         self._rels_key = None
         self._idx_key = None
-        self.ms_malla = self.ms_gl = self.ms_subida = 0.0
+        self.ms_malla = self.ms_gl = self.ms_lectura = self.ms_subida = 0.0
+        # lectura ASINCRONA del fotograma (ver dibujar): dos PBO que se
+        # alternan y el fotograma pendiente de mostrar (indice, cache)
+        self.pbo = None
+        self._pbo_i = 0
+        self._pendiente = None
+        self.asincrono = False      # (informativo) si el ultimo fue asincrono
         if sin_gl:
             # solo la geometria (pruebas): ni contexto ni textura
             self.motivo = "sin GL a proposito"
@@ -348,6 +355,14 @@ class GpuScene:
         self.msaa = m
         self.fbo = ctx.framebuffer([ctx.renderbuffer(tam, 4)],
                                    ctx.depth_renderbuffer(tam))
+        # dos PBO (pixel buffer objects) para leer el fotograma sin esperar
+        # a la GPU: se pide la lectura de este fotograma y se recoge el del
+        # anterior, que ya esta listo. Si no se pueden crear, lectura directa.
+        try:
+            self.pbo = [ctx.buffer(reserve=self.W * self.H * 4)
+                        for _ in range(2)]
+        except Exception:                            # noqa: BLE001
+            self.pbo = None
         ctx.disable(moderngl.CULL_FACE)
         self.info = dict(ctx.info)
 
@@ -378,6 +393,8 @@ class GpuScene:
         desvio = (total + math.pi) % (2.0 * math.pi) - math.pi
         self.rumbo = h - desvio * np.arange(N) / N
         self._track_id = id(track)
+        # cambio de circuito: el fotograma pendiente era del anterior
+        self._pendiente = None
 
     def _rels(self):
         """Estaciones de las secciones relativas al coche: malla adaptativa
@@ -586,8 +603,15 @@ class GpuScene:
         self._frame = (s0, rels, x, z, hx, hz, elev, cb, sb, vista[:3],
                        cam.f, cam.pitch_px, track.length)
         self.ms_malla = (time.perf_counter() - t0) * 1000.0
+        frame_actual = self._frame
 
         # --- pintar -------------------------------------------------------
+        # La textura de SDL se bloquea ANTES de entrar en GL: bloquearla no
+        # toca OpenGL, pero podria vaciar la cola de dibujo de SDL, y eso
+        # tiene que pasar con el contexto de SDL activo. Asi el fotograma se
+        # lee de la GPU directamente sobre los pixeles de la textura, sin
+        # pasar por una copia intermedia.
+        destino = self._bloquear_textura()
         t1 = time.perf_counter()
         with self._gl() as ctx:
             fbo = self.fbo_ms or self.fbo
@@ -643,14 +667,73 @@ class GpuScene:
                 self.vao.render(moderngl.TRIANGLES, vertices=len(ib))
             if self.fbo_ms is not None:
                 ctx.copy_framebuffer(self.fbo, self.fbo_ms)
-            pixeles = self.fbo.read(components=4, alignment=1)
-        self.ms_gl = (time.perf_counter() - t1) * 1000.0
+            self.ms_gl = (time.perf_counter() - t1) * 1000.0
+
+            # --- leer el fotograma ------------------------------------------
+            # Leer el framebuffer es SINCRONO: la CPU se queda esperando a
+            # que la GPU termine de pintar y luego copia 8 MB (a 1080p). Con
+            # la lectura asincrona se ENCARGA la lectura de este fotograma a
+            # un PBO y se RECOGE la del anterior, que la GPU acabo mientras la
+            # CPU hacia la fisica y el HUD: la espera desaparece a cambio de
+            # mostrar la carretera con un fotograma de retraso (16-25 ms).
+            # El primer fotograma (o tras cambiar de circuito) se lee al
+            # momento para no ensenar nada viejo.
+            t2 = time.perf_counter()
+            asinc = (self.pbo is not None
+                     and bool(getattr(cfg, "GFX_GPU_ASYNC", True)))
+            self.asincrono = asinc
+            if asinc:
+                self.fbo.read_into(self.pbo[self._pbo_i], components=4,
+                                   alignment=1)
+                if self._pendiente is None:
+                    listo, frame_mostrado = self._pbo_i, frame_actual
+                else:
+                    listo, frame_mostrado = self._pendiente
+                self._pendiente = (self._pbo_i, frame_actual)
+                self._pbo_i ^= 1
+                origen = self.pbo[listo]
+            else:
+                self._pendiente = None
+                origen = self.fbo
+                frame_mostrado = frame_actual
+            if destino is not None:
+                if isinstance(origen, moderngl.Framebuffer):
+                    origen.read_into(destino[0], components=4, alignment=1)
+                else:
+                    origen.read_into(destino[0])
+            else:
+                if isinstance(origen, moderngl.Framebuffer):
+                    pixeles = origen.read(components=4, alignment=1)
+                else:
+                    pixeles = origen.read()
+            self.ms_lectura = (time.perf_counter() - t2) * 1000.0
+        # world_to_screen (fantasma, particulas) tiene que proyectar con la
+        # camara del fotograma QUE SE VE, no con la del que se acaba de pedir
+        self._frame = frame_mostrado
 
         # --- entregar a SDL ----------------------------------------------
-        t2 = time.perf_counter()
-        sdl2.SDL_UpdateTexture(self.tex, None, pixeles, W * 4)
+        t3 = time.perf_counter()
+        if destino is not None:
+            sdl2.SDL_UnlockTexture(self.tex)
+        else:
+            sdl2.SDL_UpdateTexture(self.tex, None, pixeles, W * 4)
         sdl2.SDL_RenderCopy(self.r, self.tex, None, None)
-        self.ms_subida = (time.perf_counter() - t2) * 1000.0
+        self.ms_subida = (time.perf_counter() - t3) * 1000.0
+
+    def _bloquear_textura(self):
+        """Bloquea la textura de la escena y devuelve (bufer ctypes sobre sus
+        pixeles, paso) o None si no se puede (o el paso no es W*4: entonces
+        se sube con SDL_UpdateTexture desde una copia)."""
+        pix = ctypes.c_void_p()
+        paso = ctypes.c_int()
+        if sdl2.SDL_LockTexture(self.tex, None, ctypes.byref(pix),
+                                ctypes.byref(paso)) != 0 or not pix.value:
+            return None
+        if paso.value != self.W * 4:
+            sdl2.SDL_UnlockTexture(self.tex)
+            return None
+        buf = (ctypes.c_ubyte * (self.W * self.H * 4)).from_address(pix.value)
+        return (buf, paso.value)
 
     def _sol_en_pantalla(self, rumbo, bank_cam, f, pitch_px):
         """Centro del sol en píxeles del framebuffer (origen abajo a la

@@ -181,10 +181,13 @@ def main():
         st = Car().state
         st.s, st.vx = 3000.0, 25.0
         cam = _camara(cam_forward=cfg.CAMERA_FORWARD)
+        cfg.GFX_GPU_ASYNC = False        # aqui se comprueba fotograma a fotograma
         sdl2.SDL_RenderClear(ren)
         escena.dibujar(c90, st, cam, True, pal)
         sdl2.SDL_RenderPresent(ren)
         img = leer().astype(int)
+        img_c90 = img.copy()
+        st_c90 = (st.s, st.vx)
         arriba = img[8, W // 2]
         abajo = img[H - 8, W // 2 + 60]
         # la hierba se ve a los lados justo bajo el horizonte; el rincon
@@ -289,6 +292,50 @@ def main():
                        f"{rojo} px"))
         r.append(check("el coste de la malla con balizas sigue bajo",
                        escena.ms_malla < 8.0, f"{escena.ms_malla:.1f} ms"))
+        img_c50 = img.copy()
+
+        # --- lectura ASINCRONA: un fotograma de retraso, y nunca uno viejo --
+        st.s, st.vx = st_c90
+        sdl2.SDL_RenderClear(ren)
+        escena.dibujar(c90, st, cam, True, pal)      # referencia, al momento
+        sdl2.SDL_RenderPresent(ren)
+        img_c90 = leer().astype(int)
+        cfg.GFX_GPU_ASYNC = True
+        sdl2.SDL_RenderClear(ren)
+        escena.dibujar(c90, st, cam, True, pal)      # primer fotograma
+        sdl2.SDL_RenderPresent(ren)                  # asincrono: no hay
+        a = leer().astype(int)                       # anterior, se lee ya
+        r.append(check("asincrona: el primer fotograma se lee al momento "
+                       "(no hay anterior que mostrar)",
+                       np.array_equal(a, img_c90)))
+        st.s, st.vx = 3300.0, 30.0                   # mismo circuito, otro sitio
+        sdl2.SDL_RenderClear(ren)
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        b = leer().astype(int)
+        r.append(check("asincrona: el siguiente muestra el fotograma ANTERIOR",
+                       np.array_equal(b, img_c90) and escena.asincrono))
+        r.append(check("...y world_to_screen proyecta con la camara del "
+                       "fotograma que se ve", escena._frame[0] == st_c90[0],
+                       f"s0={escena._frame[0]}"))
+        sdl2.SDL_RenderClear(ren)
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        c = leer().astype(int)
+        r.append(check("...y al siguiente ya sale el nuevo sitio",
+                       not np.array_equal(c, img_c90)
+                       and escena._frame[0] == 3300.0))
+        cfg.GFX_GPU_ASYNC = False
+        st.s, st.vx = 1450.0, 18.0
+        sdl2.SDL_RenderClear(ren)
+        escena.dibujar(c50, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        d = leer().astype(int)
+        r.append(check("con GFX_GPU_ASYNC=False vuelve la lectura al momento "
+                       "(mismo fotograma que antes)",
+                       np.array_equal(d, img_c50) and not escena.asincrono))
+        r.append(check("la lectura se mide aparte (ms_lectura)",
+                       escena.ms_lectura > 0.0, f"{escena.ms_lectura:.2f} ms"))
         escena.close()
 
     # ================================================================

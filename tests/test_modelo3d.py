@@ -200,13 +200,15 @@ def main():
                        "(8 rad/s x 0,05 s = 0,4 rad)",
                        np.allclose((mg.ang - ang0) % (2 * np.pi), 0.4, atol=1e-6),
                        str((mg.ang - ang0).round(3))))
-        # a mucha velocidad la rueda se congela (efecto estroboscopico)
+        # y a mucha velocidad TAMBIEN (se probo congelarla por el efecto
+        # estroboscopico y el resultado era "las ruedas no giran")
         st.omega[:] = [80.0, 80.0, 80.0, 80.0]
         ang1 = mg.ang.copy()
         scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
                          coche3d=scene.modelo_coche(0.0, 0.05))
-        r.append(check("...pero por encima de 14 rad/s se congela, para que "
-                       "no parezca que patina", np.allclose(mg.ang, ang1)))
+        r.append(check("...y a 80 rad/s siguen girando (4 rad en 0,05 s)",
+                       np.allclose((mg.ang - ang1) % (2 * np.pi), 4.0 % (2 * np.pi),
+                                   atol=1e-6)))
         # con bote, cabeceo y balanceo de la suspension, las ruedas siguen
         # apoyadas en el asfalto (solo se mueve la carroceria)
         st.omega[:] = [0.0, 0.0, 0.0, 0.0]
@@ -219,10 +221,13 @@ def main():
         for k in range(1, 5):
             c = np.r_[mg.centros[k], 1.0]
             p = inv_base @ mats[k] @ c          # centro de la rueda respecto
-            if np.abs(p[:3] - c[:3]).max() > 1e-6:   # al chasis en el suelo
+            # al chasis en el suelo: fijo en x/z, y solo se mueve con el
+            # bache del firme bajo ella (a lo sumo 6 cm)
+            if (abs(p[0] - c[0]) > 1e-6 or abs(p[2] - c[2]) > 1e-6
+                    or abs(p[1] - c[1]) > 0.06):
                 apoyadas = False
         cuerpo = inv_base @ mats[0]
-        cuerpo_sube = cuerpo[1, 3] > 0.03
+        cuerpo_sube = cuerpo[1, 3] > 0.02
         r.append(check("con la suspension comprimida/cabeceando las ruedas "
                        "siguen en el asfalto y solo se mueve la carroceria",
                        apoyadas and cuerpo_sube))

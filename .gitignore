@@ -10,3 +10,6 @@ jugar.sh
 # se prueba, cambian en cada ejecucion y no son parte del programa. Si se
 # versionan, cada 'git pull' choca con el de la otra maquina.
 diagnostico_*.txt
+# Registros de rendimiento (F3 / --registro): idem, son de cada maquina.
+rendimiento_*.csv
+rendimiento_*.txt

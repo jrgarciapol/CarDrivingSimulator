@@ -32,6 +32,8 @@ Teclado (siempre activo):
   T              camara lenta (1x / 0.5x / 0.25x / 0.1x)
   M              mostrar/ocultar el plano del circuito completo
   N              mostrar/ocultar la planta del tramo que viene
+  F3             grabar/parar el REGISTRO DE RENDIMIENTO (ms por fase y
+                 configuracion de pantalla; resumen en rendimiento_*.txt)
   ESC            salir
 """
 
@@ -43,7 +45,9 @@ import sys
 import sdl2
 
 from . import config as cfg
+from . import font as font_mod
 from . import garage
+from . import perf_log
 from . import render as render_mod
 from .audio import EngineSound
 from .menu import run_menu
@@ -75,6 +79,15 @@ def ghost_sample(data, t, track_len):
         s1 += track_len          # cruce de meta dentro del tramo
     return ((s0 + (s1 - s0) * u) % track_len,
             n0 + (n1 - n0) * u, p0 + (p1 - p0) * u)
+
+
+def _nombre_renderer(renderer):
+    """Nombre del backend de SDL (direct3d, opengl, software...) para la
+    cabecera del registro de rendimiento."""
+    info = sdl2.SDL_RendererInfo()
+    if sdl2.SDL_GetRendererInfo(renderer, ctypes.byref(info)) == 0 and info.name:
+        return info.name.decode(errors="replace")
+    return "?"
 
 
 def ajustar_ventana():
@@ -142,6 +155,11 @@ def main(argv=None):
                         help="salir tras N frames (pruebas automatizadas)")
     parser.add_argument("--rendimiento", action="store_true",
                         help="preset para equipos modestos (Steam Deck)")
+    parser.add_argument("--registro", action="store_true",
+                        help="grabar desde el principio el REGISTRO DE "
+                        "RENDIMIENTO (lo mismo que pulsar F3): ms por fase "
+                        "y configuracion de pantalla en rendimiento_*.csv, "
+                        "resumen por configuracion en rendimiento_*.txt")
     parser.add_argument("--ventana", metavar="ANCHOxALTO",
                         help="forzar el tamano de ventana, p.ej. 1280x800")
     parser.add_argument("--completa", action="store_true",
@@ -329,6 +347,12 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     car = Car()
     scene = Renderer(renderer)
     hud = Hud(renderer)
+    # registro de rendimiento (F3 o --registro): mide cada fase del
+    # fotograma y anota que hay en pantalla; ver perf_log.py
+    registro = perf_log.RegistroRendimiento()
+    registro.describir_equipo(_nombre_renderer(renderer), scene.gpu)
+    if args.registro:
+        registro.arrancar()
 
     print(f"Car Driving Simulator {cfg.VERSION}")
     print(f"Coche: {car_name} | Asfalto: {condition}")
@@ -381,6 +405,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     to_menu = False
 
     while running:
+        registro.inicio()
         # ------------------------------------------------ eventos
         while sdl2.SDL_PollEvent(ctypes.byref(event)):
             if event.type == sdl2.SDL_QUIT:
@@ -394,6 +419,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                     show_debug = not show_debug
                 elif sym == sdl2.SDLK_F2:
                     show_telemetry = not show_telemetry
+                elif sym == sdl2.SDLK_F3:
+                    registro.alternar()
                 elif sym == sdl2.SDLK_l:
                     show_line = not show_line
                 elif sym == sdl2.SDLK_g:
@@ -461,6 +488,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         if auto_gear and car.auto_shift(wheel.throttle):
             ffb.notify_gear_shift()
 
+        registro.marca("entrada")
         # ------------------------------------------------ tiempo
         now = sdl2.SDL_GetPerformanceCounter()
         frame_dt = (now - last) / perf_freq
@@ -498,6 +526,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                 ghost_rec = []
                 ghost_next = 0.0
             accumulator -= physics_dt
+        registro.marca("fisica")
 
         # ------------------------------------------------ force feedback
         ffb.update(frame_dt, car.state, surface, abs(car.state.vx))
@@ -540,6 +569,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
                      abs(st.vx), adas_u, adas_o, gear=st.gear,
                      scrub=scrub, spin=spin, lock=lock, brake=wheel.brake)
+        registro.marca("sonido")
 
         # ------------------------------------------------ render
         sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
@@ -565,6 +595,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                          cam_fwd, horizon_px,
                          car.state.psi * cfg.CAMERA_YAW_GAIN
                          + base_seg.kappa * 40.0)
+        registro.marca("escena")
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
             g = ghost_sample(ghost_best, timer.lap_time, track.length)
@@ -592,12 +623,12 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             scene.draw_car(car.state, wheel.steering)
         elif view_mode == 2:
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
+        registro.marca("coche")
         if show_minimap:
             hud.draw_minimap(track, car.state)
         if show_plan:
             hud.draw_plan_ahead(track, car.state)
         if sim_time < record_banner_until:
-            from . import font as font_mod
             txt = "NUEVO RECORD"
             font_mod.draw_text(renderer, txt,
                                cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 4) // 2,
@@ -609,13 +640,29 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             hud.draw_debug(wheel, car.state, surface, scene.gpu)
         if show_telemetry:
             hud.draw_telemetry(car.state, wheel.steering, sim_time)
+        if registro.activo:
+            seg = int(registro.segundos())
+            txt = f"REC RENDIMIENTO {seg // 60:02d}:{seg % 60:02d}  (F3 PARA)"
+            font_mod.draw_text(renderer, txt,
+                               cfg.WINDOW_WIDTH // 2 - font_mod.text_width(txt, 2) // 2,
+                               8, 2, (255, 80, 80, 255))
+        registro.marca("hud")
         sdl2.SDL_RenderPresent(renderer)
+        registro.marca("presentar")
+        if registro.activo:
+            registro.fotograma(
+                perf_log.contexto(scene.gpu, view_mode, show_telemetry,
+                                  show_debug, show_minimap, show_plan,
+                                  show_line, time_scale, car_name,
+                                  track.name, condition),
+                scene.gpu, car.state.speed_kmh)
 
         frame += 1
         if args.frames and frame >= args.frames:
             running = False
 
     # dejar el volante quieto y el motor en silencio mientras dura el menú
+    registro.cerrar()          # si grababa, escribe el resumen
     sound.pause()
     ffb.still()
     return to_menu

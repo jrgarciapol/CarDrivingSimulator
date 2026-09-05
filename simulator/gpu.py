@@ -718,6 +718,8 @@ class GpuScene:
         # cambio de circuito: el fotograma pendiente era del anterior
         self._pendiente = None
         self._arboles_track = self._plantar(track)
+        self._bionda, self._lado_bionda = self._barreras()
+        self._senales = self._senales_curva()
         self._huellas_n = self._huellas_i = 0
         self._huella_ultimo = [None] * 4
 
@@ -935,6 +937,18 @@ class GpuScene:
         # --- arboles en la hierba: geometria en el espacio de la escena -----
         arb = self._arboles(track, s0, rels, x, z, hx, hz, elev, cb, sb, hw,
                             kw, float(self.rumbo[int(s0 / L) % N]))
+        # --- bionda en el exterior de las curvas: misma clase de geometria ---
+        mob = self._mobiliario(s0, rels, x, z, hx, hz, elev, cb, sb, hw, kw,
+                               sm, float(self.rumbo[int(s0 / L) % N]))
+        self.bionda_dibujada = 0 if mob is None else len(mob[1]) // 6
+        if mob is not None:
+            if arb is None:
+                arb = mob
+            else:
+                va, ia = arb
+                vm, im = mob
+                arb = (np.concatenate([va, vm]),
+                       np.concatenate([ia, im + len(va)]))
 
         # --- balizas y paneles: cuadriláteros orientados a la cámara ----------
         # Se construyen ya en el espacio de la cámara, de frente por
@@ -1238,6 +1252,125 @@ class GpuScene:
         return (float(sx), float(sy))
 
     # -- arboles ------------------------------------------------------------
+    # -- mobiliario de la carretera ------------------------------------------
+    def _barreras(self):
+        """Donde va BIONDA (barrera metalica): en el exterior de las curvas
+        de radio menor que TRACK_GUARDRAIL_RADIUS, prolongada 20 m antes y
+        despues. Devuelve (hay_bionda, lado) por segmento; lado = -1
+        izquierda, +1 derecha (el exterior de la curva)."""
+        N = self.N
+        r_max = float(getattr(cfg, "TRACK_GUARDRAIL_RADIUS", 250.0))
+        hay = np.zeros(N, dtype=bool)
+        lado = np.zeros(N)
+        if r_max <= 0.0 or N == 0:
+            return hay, lado
+        curva = np.abs(self.kap) >= 1.0 / r_max
+        if not curva.any():
+            return hay, lado
+        ext = int(round(20.0 / cfg.SEGMENT_LENGTH))
+        # dilatar 20 m a cada lado (circuito cerrado: con vuelta); el lado
+        # es el exterior de la curva mas cercana: kappa > 0 gira a la
+        # izquierda -> bionda a la derecha (+1)
+        signo = np.where(self.kap > 0, 1.0, -1.0) * curva
+        suma = np.zeros(N)
+        for k in range(-ext, ext + 1):
+            r = np.roll(curva, k)
+            hay |= r
+            suma += np.roll(signo, k)
+        lado = np.where(hay, np.where(suma >= 0, 1.0, -1.0), 0.0)
+        return hay, lado
+
+    def _senales_curva(self):
+        """Senales de curva peligrosa: (estacion, sentido) 120 m antes de la
+        entrada de cada curva de radio menor que TRACK_SIGN_RADIUS; sentido
+        +1 = curva a la derecha (kappa < 0), -1 = a la izquierda."""
+        r_max = float(getattr(cfg, "TRACK_SIGN_RADIUS", 200.0))
+        N = self.N
+        if r_max <= 0.0 or N == 0 or not getattr(cfg, "TRACK_SIGNS", True):
+            return np.zeros((0, 2))
+        curva = np.abs(self.kap) >= 1.0 / r_max
+        entra = curva & ~np.roll(curva, 1)
+        out = []
+        for i in np.nonzero(entra)[0]:
+            s_ent = i * cfg.SEGMENT_LENGTH
+            out.append(((s_ent - 120.0) % (N * cfg.SEGMENT_LENGTH),
+                        -1.0 if self.kap[i] > 0 else 1.0))
+        return np.array(out) if out else np.zeros((0, 2))
+
+    def _mobiliario(self, s0, rels, x, z, hx, hz, elev, cb, sb, hw, kw, sm,
+                    rumbo_seg):
+        """Bionda en el espacio de la escena: banda metalica continua a
+        0,5..0,8 m con su sombra inferior y postes cada 4 m, en el lado
+        exterior de las curvas (ver _barreras). (vertices, indices) o None."""
+        hay = getattr(self, "_bionda", None)
+        if hay is None or not hay.any():
+            return None
+        alcance = min(rels[-1], 500.0)
+        act = hay[sm] & (rels >= -10.0) & (rels <= alcance)
+        lado = self._lado_bionda[sm]
+        # tramos: secciones seguidas con bionda en el mismo lado
+        par = act[:-1] & act[1:] & (lado[:-1] == lado[1:])
+        i0 = np.nonzero(par)[0]
+        if len(i0) == 0:
+            return None
+        i1 = i0 + 1
+        o0 = lado[i0] * (hw[i0] + kw + 0.6)
+        o1 = lado[i1] * (hw[i1] + kw + 0.6)
+
+        def punto(i, o, dy):
+            return np.stack([x[i] + hx[i] * o * cb[i], elev[i] - o * sb[i] + dy,
+                             z[i] + hz[i] * o * cb[i]], axis=1)
+        # luz: la cara que mira a la calzada, segun mire al sol
+        az = SOL_AZIMUT - rumbo_seg
+        ce = math.cos(SOL_ELEVACION)
+        luz = np.array([math.sin(az) * ce, math.sin(SOL_ELEVACION),
+                        math.cos(az) * ce])
+        nrm = np.stack([-lado[i0] * hx[i0] * cb[i0], np.full(len(i0), 0.0),
+                        -lado[i0] * hz[i0] * cb[i0]], axis=1)
+        sombra = 0.62 + 0.38 * np.clip(nrm @ luz, 0.0, 1.0)
+        bloques = []          # (n,4,3) posiciones, (n,3) colores
+        # banda alta (metal claro) y banda baja (el pliegue en sombra)
+        for (ya, yb, col) in ((0.62, 0.80, (200.0, 205.0, 210.0)),
+                              (0.50, 0.62, (120.0, 125.0, 130.0))):
+            v = np.stack([punto(i0, o0, ya), punto(i1, o1, ya),
+                          punto(i0, o0, yb), punto(i1, o1, yb)], axis=1)
+            bloques.append((v, np.asarray(col)[None, :] * sombra[:, None]))
+        # postes cada 4 m a estaciones fijas: dos tablas cruzadas
+        paso = 4.0
+        ini = math.ceil((s0 + max(rels[0], -10.0)) / paso) * paso - s0
+        est = np.arange(ini, alcance, paso)
+        if len(est):
+            j = np.searchsorted(rels, est).clip(1, len(rels) - 1)
+            ok = act[j] & act[j - 1]
+            est, j = est[ok], j[ok]
+        if len(est):
+            xi, zi = np.interp(est, rels, x), np.interp(est, rels, z)
+            hxi, hzi = np.interp(est, rels, hx), np.interp(est, rels, hz)
+            ei = np.interp(est, rels, elev)
+            cbi, sbi = np.interp(est, rels, cb), np.interp(est, rels, sb)
+            hwi = np.interp(est, rels, hw)
+            o = lado[j] * (hwi + kw + 0.6)
+            pie = np.stack([xi + hxi * o * cbi, ei - o * sbi, zi + hzi * o * cbi],
+                           axis=1)
+            for (ax, az_) in (((1.0, 0.0)), ((0.0, 1.0))):
+                d = np.stack([np.full(len(pie), 0.06 * ax), np.zeros(len(pie)),
+                              np.full(len(pie), 0.06 * az_)], axis=1)
+                v = np.stack([pie - d, pie + d, pie - d + (0.0, 0.8, 0.0),
+                              pie + d + (0.0, 0.8, 0.0)], axis=1)
+                bloques.append((v, np.full((len(pie), 3), 95.0)))
+        pos = np.concatenate([v for v, _ in bloques])
+        col = np.concatenate([np.broadcast_to(c, (len(v), 3))
+                              for v, c in bloques])
+        n = len(pos)
+        vb = np.empty((n, 4), dtype=_VERTICE)
+        vb["pos"] = pos
+        vb["col"][:, :, :3] = np.clip(col, 0, 255).astype(np.uint8)[:, None, :]
+        vb["col"][:, :, 3] = 255
+        base = np.arange(n, dtype=np.int32) * 4
+        idx = np.stack([base, base + 1, base + 2, base + 1, base + 3, base + 2],
+                       axis=1).reshape(-1)
+        return vb.reshape(-1), idx
+
     def _plantar(self, track):
         """Arboles FIJOS de un circuito: estacion, lado, distancia al borde
         de la calzada, altura, tipo y tono, repartidos al azar (con semilla
@@ -1496,6 +1629,105 @@ class GpuScene:
                         v[:, 2, 0], v[:, 2, 1] = x1 - nx, y1 - ny
                         v[:, 3, 0], v[:, 3, 1] = x1 + nx, y1 + ny
                         anade(v, (205, 35, 35))
+        # --- hitos kilometricos y hectometricos, con su estacion REAL -------
+        # (lado derecho): cada km un hito blanco con la franja roja y el
+        # numero del km; cada 100 m un hito pequeno con el hectometro (1..9)
+        s0 = float(self._frame_s0) if getattr(self, "_frame_s0", None) is not None else 0.0
+        Ltot = float(self.N * cfg.SEGMENT_LENGTH)
+
+        def digitos(px, py, pz, texto, alto, col, dz):
+            """Cifras de siete segmentos centradas en (px, py) del plano de
+            la cartela; alto en m."""
+            w, t, sep = alto * 0.55, alto * 0.16, alto * 0.18
+            segs = {"a": (0, alto - t, w, alto), "d": (0, 0, w, t),
+                    "g": (0, alto / 2 - t / 2, w, alto / 2 + t / 2),
+                    "b": (w - t, alto / 2, w, alto), "c": (w - t, 0, w, alto / 2),
+                    "f": (0, alto / 2, t, alto), "e": (0, 0, t, alto / 2)}
+            forma = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd",
+                     "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc",
+                     "8": "abcdefg", "9": "abcdfg"}
+            total = len(texto) * w + (len(texto) - 1) * sep
+            x_ini = px - total / 2.0
+            v = []
+            for k, ch in enumerate(texto):
+                cx = x_ini + k * (w + sep)
+                for sg in forma.get(ch, ""):
+                    x0, y0, x1, y1 = segs[sg]
+                    v.append([[cx + x0, py + y0, pz + dz], [cx + x1, py + y0, pz + dz],
+                              [cx + x0, py + y1, pz + dz], [cx + x1, py + y1, pz + dz]])
+            if v:
+                anade(np.array(v), col)
+
+        if getattr(cfg, "TRACK_KM_POSTS", True) and Ltot > 0:
+            paso = 100.0
+            ini = math.ceil((s0 + max(rels[0], 0.0)) / paso) * paso - s0
+            for d in np.arange(ini, min(rels[-1], 700.0), paso):
+                if d < 0.0:
+                    continue
+                s_abs = int(round((s0 + d) % Ltot))
+                if s_abs % 100 != 0:
+                    continue
+                km, hm = s_abs // 1000, (s_abs // 100) % 10
+                hwi = float(np.interp(d, rels, hw))
+                o = hwi + kw + 0.9
+                p = np.array([[np.interp(d, rels, x) + np.interp(d, rels, hx) * o * np.interp(d, rels, cb),
+                               np.interp(d, rels, elev) - o * np.interp(d, rels, sb),
+                               np.interp(d, rels, z) + np.interp(d, rels, hz) * o * np.interp(d, rels, cb),
+                               1.0]])
+                pv = p @ vista[:3].T
+                if pv[0, 2] < 0.3:
+                    continue
+                px, py, pz = pv[0]
+                if hm == 0:
+                    cajas(pv, 0.42, 1.05, (245, 245, 245))
+                    cima = pv.copy()
+                    cima[:, 1] += 0.80
+                    cajas(cima, 0.42, 0.25, (205, 35, 35), dz=-0.01)
+                    digitos(px, py + 0.28, pz, str(km), 0.36, (30, 30, 30), -0.01)
+                else:
+                    cajas(pv, 0.30, 0.62, (245, 245, 245))
+                    digitos(px, py + 0.16, pz, str(hm), 0.30, (30, 30, 30), -0.01)
+
+        # --- senales de curva peligrosa 120 m antes de cada curva ----------
+        sen = getattr(self, "_senales", None)
+        if sen is not None and len(sen):
+            ds = (sen[:, 0] - s0 + Ltot / 2.0) % Ltot - Ltot / 2.0
+            vis_s = (ds >= max(rels[0], 0.0)) & (ds <= min(rels[-1], 400.0))
+            for d, sentido in zip(ds[vis_s], sen[vis_s, 1]):
+                hwi = float(np.interp(d, rels, hw))
+                o = hwi + kw + 1.0
+                p = np.array([[np.interp(d, rels, x) + np.interp(d, rels, hx) * o * np.interp(d, rels, cb),
+                               np.interp(d, rels, elev) - o * np.interp(d, rels, sb),
+                               np.interp(d, rels, z) + np.interp(d, rels, hz) * o * np.interp(d, rels, cb),
+                               1.0]])
+                pv = p @ vista[:3].T
+                if pv[0, 2] < 0.3:
+                    continue
+                px, py, pz = pv[0]
+                cajas(pv, 0.08, 1.7, (110, 110, 115))          # poste
+                lado_t, alto_t = 0.95, 0.82
+                yb = py + 1.65
+                # triangulo rojo (un cuadrilatero con dos vertices juntos)
+                def tri(escala, col, dz):
+                    hx_ = lado_t / 2 * escala
+                    h_ = alto_t * escala
+                    yc = yb + (alto_t - h_) * 0.42
+                    v = np.array([[[px - hx_, yc, pz + dz], [px + hx_, yc, pz + dz],
+                                   [px, yc + h_, pz + dz], [px, yc + h_, pz + dz]]])
+                    anade(v, col)
+                tri(1.0, (205, 35, 35), 0.0)
+                tri(0.68, (245, 245, 245), -0.01)
+                # flecha negra: tronco vertical y curva hacia el sentido
+                g = float(sentido)
+                for (x0, y0, x1, y1) in ((px - 0.05 * g, yb + 0.12, px - 0.05 * g, yb + 0.38),
+                                         (px - 0.05 * g, yb + 0.38, px + 0.14 * g, yb + 0.50)):
+                    ux, uy = x1 - x0, y1 - y0
+                    ln = math.hypot(ux, uy) + 1e-9
+                    nx, ny = -uy / ln * 0.05, ux / ln * 0.05
+                    v = np.array([[[x0 - nx, y0 - ny, pz - 0.02], [x0 + nx, y0 + ny, pz - 0.02],
+                                   [x1 - nx, y1 - ny, pz - 0.02], [x1 + nx, y1 + ny, pz - 0.02]]])
+                    anade(v, (30, 30, 30))
+
         if not quads:
             return None
         n_tot = sum(len(v) for v, _ in quads)

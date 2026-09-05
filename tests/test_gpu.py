@@ -316,6 +316,60 @@ def main():
                            f"pasos {np.round(pasos[:6], 2)}, "
                            f"{int(amarillas.sum())} balizas (esperadas {n_esperado})"))
 
+        # --- mobiliario: biondas, hitos kilometricos y senales de curva -----
+        e = escena.eje(c90, 0.0)
+        r.append(check("la c-90 lleva bionda en el exterior de sus curvas de "
+                       "radio < 250 m (y no en las rectas)",
+                       escena._bionda.sum() > 50
+                       and escena._bionda.sum() < 0.5 * escena.N
+                       and np.all(escena._lado_bionda[escena._bionda] != 0.0),
+                       f"{int(escena._bionda.sum())} segmentos de {escena.N}"))
+        k = escena.kap
+        cur = np.nonzero(np.abs(k) >= 1.0 / 250.0)[0]
+        lado_ok = np.all(escena._lado_bionda[cur] == np.where(k[cur] > 0, 1.0, -1.0))
+        r.append(check("...a la derecha en las curvas a izquierdas y viceversa "
+                       "(el exterior)", lado_ok))
+        sen = escena._senales
+        entradas = np.abs(k) >= 1.0 / 200.0
+        n_ent = int((entradas & ~np.roll(entradas, 1)).sum())
+        r.append(check("hay una senal de curva peligrosa 120 m antes de cada "
+                       "entrada en curva de radio < 200 m",
+                       len(sen) == n_ent and n_ent > 0,
+                       f"{len(sen)} senales, {n_ent} entradas"))
+        # geometria de la bionda al pasar por una curva con ella
+        s_b = float(np.nonzero(escena._bionda)[0][10] * cfg.SEGMENT_LENGTH)
+        e = escena.eje(c90, s_b)
+        # (calzada llana y sin peralte: asi las alturas son sobre el asfalto)
+        llano = np.zeros_like(e["elev"])
+        mob = escena._mobiliario(s_b, e["rels"], e["x"], e["z"], e["hx"], e["hz"],
+                                 llano, llano + 1.0, llano, e["hw"], cfg.KERB_WIDTH,
+                                 e["sm"], 0.0)
+        alturas = None if mob is None else mob[0]["pos"][:, 1]
+        r.append(check("la bionda se construye: banda metalica entre 0,5 y "
+                       "0,8 m sobre el asfalto y postes de 0,8 m",
+                       mob is not None and len(mob[1]) // 6 > 20
+                       and abs(alturas.max() - 0.8) < 1e-6 and alturas.min() >= 0.0
+                       and (np.abs(alturas - 0.5) < 1e-6).any()
+                       and (np.abs(alturas - 0.62) < 1e-6).any(),
+                       f"{0 if mob is None else len(mob[1]) // 6} cuadrilateros"))
+        # hitos: en s0 = 22900 el km 23 queda 100 m por delante (franja roja)
+        cfg.CHEVRON_MAX_RADIUS = 0.0
+        cfg.TRACK_POLES = False
+        e = escena.eje(c90, 22900.0)
+        escena._frame_s0 = 22900.0
+        bill = escena._balizas(np.eye(4), e["x"], e["z"], e["hx"], e["hz"],
+                               e["elev"], e["cb"], e["sb"], e["hw"], e["rels"],
+                               e["seg_idx"], e["sm"], cfg.KERB_WIDTH)
+        rojos = 0 if bill is None else int(((bill[0]["col"][:, 0, 0] == 205)
+                                            & (bill[0]["col"][:, 0, 1] == 35)).sum())
+        blancos = 0 if bill is None else int((bill[0]["col"][:, 0, 0] == 245).sum())
+        r.append(check("hitos: desde s = 22900 se ven el hito del km 23 (franja "
+                       "roja) y los hectometricos (blancos) cada 100 m",
+                       rojos == 1 and blancos >= 6,
+                       f"{rojos} franjas rojas, {blancos} hitos blancos"))
+        cfg.TRACK_POLES = True
+        cfg.CHEVRON_MAX_RADIUS = 200.0
+
         # --- cielo con nubes y montes con laderas ----------------------------
         st.s, st.vx = 3000.0, 25.0
         cfg.SKY_CLOUDS = 0.0

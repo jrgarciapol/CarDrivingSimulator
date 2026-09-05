@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **430 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **435 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -407,6 +407,14 @@ oscura cuanto más pasada y más cargada, y las huellas se pintan como cintas
 translúcidas pegadas al asfalto (con el ancho del neumático aunque el coche
 vaya cruzado) que se quedan en la pista; se recuerdan las últimas 24.000
 marcas y se borran al cambiar de circuito.
+Mobiliario de carretera: **bionda** (barrera metálica con sus postes cada
+4 m) en el exterior de toda curva de radio menor que
+`TRACK_GUARDRAIL_RADIUS`, prolongada 20 m antes y después; **hitos
+kilométricos** (franja roja y número del km) y **hectométricos** (1..9) en
+el margen derecho a su estación real (`TRACK_KM_POSTS`); y **señal de curva
+peligrosa** (triángulo con la flecha hacia el lado de la curva) 120 m antes
+de cada curva de radio menor que `TRACK_SIGN_RADIUS` (`TRACK_SIGNS`). Las
+cifras son de siete segmentos, sin texturas.
 Lo que se mueve viene de la física: el giro de cada rueda es su velocidad
 angular real (patina y se bloquea con ella), la dirección es el ángulo de
 las ruedas delanteras, y la carrocería bota, cabecea y balancea con la

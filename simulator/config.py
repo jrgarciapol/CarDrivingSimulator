@@ -717,6 +717,17 @@ TRACK_TREES = True           # árboles en la franja de hierba (solo con la
 TREE_SPACING_M = 40.0        # m entre árboles a lo largo del circuito (se
                              # reparten al azar a un lado u otro y a
                              # distintas distancias del borde) [15 .. 150]
+TRACK_GUARDRAIL_RADIUS = 250.0  # BIONDA (barrera metalica) en el exterior de
+                             # toda curva de radio menor que este valor (m),
+                             # prolongada 20 m antes y despues; 0 = sin
+                             # biondas (solo con la escena en la GPU) [0 .. 1000]
+TRACK_KM_POSTS = True        # hitos kilometricos (franja roja y numero del
+                             # km) y hectometricos (1..9) en el margen
+                             # derecho, a su estacion real
+TRACK_SIGNS = True           # senal de curva peligrosa 120 m antes de cada
+                             # curva de radio menor que TRACK_SIGN_RADIUS
+TRACK_SIGN_RADIUS = 200.0    # m: radio por debajo del cual una curva lleva
+                             # senal de curva peligrosa [0 .. 600]
 SKY_CLOUDS = 0.45            # cobertura de nubes en el cielo (solo con la
                              # escena en la GPU): 0 = cielo limpio, 1 =
                              # cubierto; con lluvia se suma 0,5 [0 .. 1]

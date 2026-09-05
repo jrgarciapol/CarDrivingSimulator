@@ -52,6 +52,7 @@ import numpy as np
 import sdl2
 
 from . import config as cfg
+from . import modelo3d
 
 try:
     import moderngl
@@ -255,6 +256,15 @@ def _mat_balanceo(theta):
     return m
 
 
+def _mat_cabeceo(theta):
+    """Giro sobre el eje x: +theta levanta el morro (+z sube hacia +y)."""
+    c, s = math.cos(theta), math.sin(theta)
+    m = np.eye(4)
+    m[1, 1], m[1, 2] = c, s
+    m[2, 1], m[2, 2] = -s, c
+    return m
+
+
 def _mat_proyeccion(f, pitch_ndc):
     """Reproduce EXACTAMENTE la proyección del render de SDL:
 
@@ -296,6 +306,10 @@ class GpuScene:
         self._pbo_i = 0
         self._pendiente = None
         self.asincrono = False      # (informativo) si el ultimo fue asincrono
+        # modelo 3D del coche (modelo3d.ModeloGpu) y su sombra
+        self._modelo_gpu = None
+        self._vao_sombra = None
+        self.coche_dibujado = False
         if sin_gl:
             # solo la geometria (pruebas): ni contexto ni textura
             self.motivo = "sin GL a proposito"
@@ -621,11 +635,15 @@ class GpuScene:
                     hw=self._interp(self.hw, sa),
                     seg_idx=seg_idx, sm=seg_idx % self.N)
 
-    def dibujar(self, track, car_state, cam, show_line, pal):
+    def dibujar(self, track, car_state, cam, show_line, pal, coche=None):
         """Construye la malla del fotograma, la pinta y la copia al fondo del
         renderizador de SDL. ``cam`` es el estado de cámara que calcula
-        ``Renderer._camara``; ``pal`` la paleta (ver ``render.paleta``)."""
+        ``Renderer._camara``; ``pal`` la paleta (ver ``render.paleta``).
+        ``coche``: dict(datos=modelo cargado, steering, dt) para pintar el
+        modelo 3D del coche dentro de la escena (vista de coche completo);
+        ``coche_dibujado`` dice si se ha hecho."""
         t0 = time.perf_counter()
+        self.coche_dibujado = False
         L = cfg.SEGMENT_LENGTH
         W, H = self.W, self.H
         s0 = car_state.s
@@ -816,6 +834,20 @@ class GpuScene:
                 self.vbo.write(db)
                 self.ibo.write(ib.tobytes())
                 self.vao.render(moderngl.TRIANGLES, vertices=len(ib))
+            # el coche (vista de coche completo): modelo 3D con su sombra,
+            # con profundidad, dentro de la misma escena
+            if coche is not None and coche.get("datos") is not None:
+                try:
+                    self._dibujar_coche(ctx, coche, car_state, vista, proy,
+                                        rels, elev, elev_cam, bank_cam,
+                                        float(self.rumbo[int(s0 / L) % N]))
+                    self.coche_dibujado = True
+                except Exception as e:               # noqa: BLE001
+                    if not getattr(self, "_aviso_coche", False):
+                        print(f"Modelo 3D del coche: no se pudo pintar "
+                              f"({type(e).__name__}: {str(e)[:80]}); se usa "
+                              "el coche de cajas")
+                        self._aviso_coche = True
             if self.fbo_ms is not None:
                 ctx.copy_framebuffer(self.fbo, self.fbo_ms)
             self.ms_gl = (time.perf_counter() - t1) * 1000.0
@@ -878,6 +910,77 @@ class GpuScene:
             sdl2.SDL_UpdateTexture(self.tex, None, pixeles, W * 4)
         sdl2.SDL_RenderCopy(self.r, self.tex, None, None)
         self.ms_subida = (time.perf_counter() - t3) * 1000.0
+
+    def _dibujar_coche(self, ctx, coche, st, vista, proy, rels, elev,
+                       elev_cam, bank_cam, rumbo_seg):
+        """Modelo 3D del coche en la escena: posicion (n del eje, cota del
+        asfalto bajo el), rumbo psi, peralte y pendiente del tramo mas el
+        cabeceo, balanceo y bote de la suspension (exagerados como en el
+        coche de cajas); ruedas delanteras giradas con la direccion y las
+        cuatro rodando; sombra oscura en el suelo; luz del sol."""
+        datos = coche["datos"]
+        if self._modelo_gpu is None or self._modelo_gpu.datos is not datos:
+            if self._modelo_gpu is not None:
+                self._modelo_gpu.release()
+            self._modelo_gpu = modelo3d.ModeloGpu(ctx, datos)
+        m = self._modelo_gpu
+        ex = float(getattr(cfg, "CAR_BODY_MOTION_EXAG", 1.0)) * 0.55
+        heave = max(-0.12, min(0.12, float(getattr(st, "heave", 0.0)) * ex))
+        pitch = max(-0.10, min(0.10, float(getattr(st, "pitch", 0.0)) * ex))
+        roll = max(-0.12, min(0.12, float(getattr(st, "roll", 0.0)) * ex))
+        # pendiente del tramo bajo el coche (la malla lleva la cota real)
+        j0 = int(np.searchsorted(rels, 0.0))
+        j0 = min(max(j0, 1), len(rels) - 2)
+        pendiente = math.atan2(elev[j0 + 1] - elev[j0 - 1],
+                               rels[j0 + 1] - rels[j0 - 1])
+        n = float(st.n)
+        y_suelo = elev_cam - n * math.tan(bank_cam)
+        # misma convencion que la camara: la vista gira el mundo con
+        # _mat_guinada(psi) y _mat_balanceo(peralte), asi que el coche se
+        # coloca con las inversas
+        base = (_mat_traslacion(n, y_suelo, 0.0)
+                @ _mat_balanceo(-bank_cam + roll)
+                @ _mat_cabeceo(pendiente + pitch)
+                @ _mat_guinada(-float(st.psi)))
+        cuerpo = base @ _mat_traslacion(0.0, heave, 0.0)
+        delta = (float(coche.get("steering", 0.0))
+                 * math.radians(cfg.WHEEL_ROTATION_DEG / 2.0) / cfg.STEER_RATIO)
+        delta = max(-0.6, min(0.6, delta))
+        m.rodar(getattr(st, "omega", (0.0, 0.0, 0.0, 0.0)),
+                float(coche.get("dt", 0.0)))
+        mats = [cuerpo]
+        for k in range(1, 5):
+            c = m.centros[k]
+            giro = _mat_guinada(-delta) if k <= 2 else np.eye(4)
+            mats.append(cuerpo @ _mat_traslacion(*c) @ giro
+                        @ _mat_cabeceo(-m.ang[k - 1]) @ _mat_traslacion(*(-c)))
+        # sol: mismo azimut absoluto que el disco del cielo, pasado al
+        # espacio de la escena (rumbo del tramo)
+        az = SOL_AZIMUT - rumbo_seg
+        ce = math.cos(SOL_ELEVACION)
+        luz = (math.sin(az) * ce, math.sin(SOL_ELEVACION), math.cos(az) * ce)
+        # sombra: un rectangulo oscuro translucido pegado al suelo
+        an, _, la = m.medidas
+        esq = np.array([[-an * 0.55, 0.02, -la * 0.52], [an * 0.55, 0.02, -la * 0.52],
+                        [an * 0.55, 0.02, la * 0.52], [-an * 0.55, 0.02, la * 0.52]])
+        esq = (np.c_[esq, np.ones(4)] @ base.T)[:, :3]
+        som = np.empty(4, dtype=_VERTICE)
+        som["pos"] = esq
+        som["col"] = (0, 0, 0, 120)
+        if self._vao_sombra is None:
+            self._vbo_sombra = ctx.buffer(reserve=4 * _VERTICE.itemsize)
+            self._ibo_sombra = ctx.buffer(np.array([0, 1, 2, 0, 2, 3],
+                                                   dtype=np.uint32).tobytes())
+            self._vao_sombra = ctx.vertex_array(
+                self.prog, [(self._vbo_sombra, "3f 4f1", "in_pos", "in_col")],
+                index_buffer=self._ibo_sombra, index_element_size=4)
+        self._vbo_sombra.write(som.tobytes())
+        self.prog["u_view"].write(vista.T.astype("f4").tobytes())
+        ctx.enable(moderngl.BLEND)
+        ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self._vao_sombra.render(moderngl.TRIANGLES, vertices=6)
+        ctx.disable(moderngl.BLEND)
+        m.dibujar(vista, proy, mats, luz)
 
     def _bloquear_textura(self):
         """Bloquea la textura de la escena y devuelve (bufer ctypes sobre sus

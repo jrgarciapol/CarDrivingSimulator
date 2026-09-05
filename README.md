@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **375 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **395 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -336,6 +336,29 @@ Y tres sonidos que vienen **apagados** porque no todos los coches los tienen:
 no al régimen), `SND_TURBO` (silbido que sube con la carga, con su retraso) y
 `SND_VALVULA` (el soplido al levantar el pie de golpe).
 
+## Modelo 3D del coche
+
+En la vista de coche completo (tecla `C` dos veces) el coche es un **modelo
+3D real** pintado por la GPU dentro de la escena, con la luz del sol, una
+sombra en el suelo, las ruedas delanteras giradas con la dirección y las
+cuatro rodando con la velocidad que calcula la física de cada rueda. El
+modelo viene de un `.glb` (el formato de Sketchfab y de Blender) que
+`tools/importar_modelo.py` convierte al formato del juego:
+
+```bat
+python tools/importar_modelo.py simulator/models/mi_coche.glb mi_coche
+```
+
+Deja `simulator/models/mi_coche.npz` con la geometría en metros (suelo en
+y = 0, morro hacia +z; si el modelo mira a −z, `--frente=-z`), las texturas
+ya decodificadas a 1024 px como mucho (así el juego no necesita Pillow, solo
+la herramienta) y las cinco piezas: carrocería y cuatro ruedas, que reconoce
+por su forma (piezas tan anchas como el coche, redondas de lado y lejos del
+centro) y parte en izquierda y derecha. Qué modelo se usa lo dice
+`CAR_MODEL_3D` en `config.py` o en el `.car` de cada coche; vacío, o si el
+archivo no existe, vuelve el coche de cajas. Incluido: `f1`, un Fórmula 1
+de 31.000 triángulos que cuesta menos de 1 ms por fotograma.
+
 ## Jugar en Steam Deck
 
 El simulador corre **nativo** en SteamOS, sin Proton: es Python + SDL2 y el
@@ -573,8 +596,10 @@ simulator/
   audio.py    sonido de motor, neumaticos, viento y turbo sintetizados
   audio_lab.py laboratorio de sonido: afinarlo oyendolo en directo
   perf_log.py registro de rendimiento (F3): ms por fase + configuracion
+  modelo3d.py modelo 3D del coche en la GPU (piezas, ruedas, texturas, luz)
   font.py     fuente bitmap del HUD
   cars/       los 8 vehículos (.car, parámetros comentados)
+  models/     modelos 3D (.npz del juego; f1.npz y su .glb de origen)
   tracks/     circuitos (silverstone, spa, ovalo)
 tools/
   import_track.py  importa circuitos reales (TUM) y sintetiza relieve/peralte
@@ -585,6 +610,8 @@ tools/
   alignment_geom.py    geometría del editor (ajustes y ensamblado, testeable)
   make_oval.py     genera el óvalo peraltado
   ffb_info.py      diagnostico del force feedback sin SDL (solo stdlib)
+  importar_modelo.py  convierte un coche .glb (Sketchfab/Blender) al .npz
+                   del juego: piezas, ruedas y texturas (requiere Pillow)
 docs/
   FISICA.md        el modelo físico explicado para un ingeniero
   NOTA_REVISION.md orientación para revisores del código
@@ -601,6 +628,7 @@ tests/
   test_audio.py             sintetizador y laboratorio de sonido
   test_gpu.py               proyeccion, geometria y fotogramas reales de la GPU
   test_gpu_compartido.py    la escena dentro del contexto OpenGL de SDL (Xvfb)
+  test_modelo3d.py          importacion del .glb y pintado del modelo del coche
   test_hud.py               atlas de fuente y esfera del velocimetro cacheada
   test_registro.py          registro de rendimiento: filas, bloques y resumen
 ```

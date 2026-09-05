@@ -173,6 +173,10 @@ FFB_SHIFT_JOLT = 0.35        # sacudida al cambiar de marcha [0 .. 1]
 # VEHÍCULO — masas y geometría (ficha técnica)
 # ===========================================================================
 CAR_COLOR = (178, 24, 30)    # color RGB de la carrocería en pantalla
+CAR_MODEL_3D = "f1"          # modelo 3D para la vista de coche completo
+                             # (simulator/models/NOMBRE.npz, creado con
+                             # tools/importar_modelo.py). "" = coche de
+                             # cajas. Se puede fijar por coche en su .car
 CAR_MASS = 1250.0            # kg, masa total [800 .. 2500]
 CAR_INERTIA_Z = 1900.0       # kg·m², inercia de guiñada; más alta = coche
                              # más "perezoso" al girar [1200 .. 4000]

@@ -598,11 +598,15 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             cam_back, ygain = 0.0, None
             if view_mode == 0:
                 cam_fwd = cfg.CAMERA_FORWARD
-        # fondo + carretera: por la GPU si esta disponible, por SDL si no
+        # fondo + carretera: por la GPU si esta disponible, por SDL si no.
+        # En la vista de coche completo, el modelo 3D va dentro de la escena
+        coche3d = None
+        if view_mode == 2:
+            coche3d = scene.modelo_coche(wheel.steering, frame_dt * time_scale)
         scene.draw_scene(track, car.state, show_line, cam_h, cam_back, ygain,
                          cam_fwd, horizon_px,
                          car.state.psi * cfg.CAMERA_YAW_GAIN
-                         + base_seg.kappa * 40.0)
+                         + base_seg.kappa * 40.0, coche3d=coche3d)
         registro.marca("escena")
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
@@ -629,7 +633,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             particles.draw(renderer, scene, track)
         if view_mode == 1:
             scene.draw_car(car.state, wheel.steering)
-        elif view_mode == 2:
+        elif view_mode == 2 and not scene.coche_gpu:
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
         registro.marca("coche")
         if show_minimap:

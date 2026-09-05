@@ -2,6 +2,7 @@
 NAME = "TODOTERRENO"              # nombre que aparece en el menu
 DESC = "2250 KG - 250 CV - AWD - ALTO Y VALIENTE" # descripcion en el menu
 CAR_COLOR = (60, 110, 60)         # color RGB de la carroceria
+CAR_MODEL_3D = "bj212"            # modelo 3D (Beijing BJ212)
 CAR_MASS = 2250.0                 # kg, masa total del vehiculo
 CAR_INERTIA_Z = 3800.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 4200.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

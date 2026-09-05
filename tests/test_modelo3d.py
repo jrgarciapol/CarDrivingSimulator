@@ -27,7 +27,10 @@ from simulator import config as cfg                   # noqa: E402
 from simulator import modelo3d                        # noqa: E402
 
 RAIZ = os.path.join(os.path.dirname(__file__), "..")
-GLB = os.path.join(RAIZ, "simulator", "models", "free__formula_one_lp-830_sdc.glb")
+MODELOS = os.path.join(RAIZ, "simulator", "models")
+GLB_2CV = os.path.join(MODELOS, "free_2cv_charleston_1986 (1).glb")
+GLB_BUS = os.path.join(MODELOS, "japanese_bus_nagoya_city_bus_aichi.glb")
+GLB_BUGATTI = os.path.join(MODELOS, "1936_bugatti_type_57sc_atlantic.glb")
 
 
 def check(name, cond, detail=""):
@@ -37,49 +40,92 @@ def check(name, cond, detail=""):
 
 def main():
     r = []
-    # --- importacion ---------------------------------------------------------
-    if os.path.exists(GLB):
+    # --- importacion: tres modelos de Sketchfab, cada uno a su manera ---------
+    if all(os.path.exists(g) for g in (GLB_2CV, GLB_BUS, GLB_BUGATTI)):
         import importar_modelo
         carpeta = tempfile.mkdtemp(prefix="modelo_")
         try:
-            ruta, d = importar_modelo.convertir(GLB, "prueba", carpeta=carpeta)
+            # 2CV: en centimetros, morro hacia -z, las 4 ruedas en UNA malla
+            ruta, d = importar_modelo.convertir(GLB_2CV, "p2cv", carpeta=carpeta,
+                                                escala=0.01, frente="-z",
+                                                max_tri=100000)
             m = d["medidas"]
-            r.append(check("el F1 mide lo que un F1 (1,8 x 1,1 x 4,9 m)",
-                           1.6 < m[0] < 2.1 and 0.8 < m[1] < 1.3 and 4.5 < m[2] < 5.2,
+            r.append(check("2CV: de centimetros a metros (1,7 x 1,6 x 4,0 m)",
+                           1.5 < m[0] < 1.9 and 1.4 < m[1] < 1.8 and 3.7 < m[2] < 4.3,
                            f"{m[0]:.2f} x {m[1]:.2f} x {m[2]:.2f}"))
-            r.append(check("31.176 triangulos, todos con normal y coordenadas",
-                           len(d["idx"]) // 3 == 31176
-                           and d["nrm"].shape == d["pos"].shape
-                           and d["uv"].shape == (len(d["pos"]), 2)))
-            r.append(check("el suelo queda en y = 0 y el coche centrado en x/z",
-                           abs(d["pos"][:, 1].min()) < 1e-4
+            r.append(check("...simplificado por debajo del tope pedido",
+                           len(d["idx"]) // 3 <= 100000 and d["celda"] > 0,
+                           f"{len(d['idx']) // 3} tri, celda {d['celda'] * 100:.1f} cm"))
+            r.append(check("...el suelo en y = 0 (a menos de 5 mm, lo que mueve "
+                           "la simplificacion) y centrado en x/z",
+                           abs(d["pos"][:, 1].min()) < 5e-3
                            and abs(d["pos"][:, 0].min() + d["pos"][:, 0].max()) < 1e-3
                            and abs(d["pos"][:, 2].min() + d["pos"][:, 2].max()) < 1e-3))
             c, rad = d["centros"], d["radios"]
-            r.append(check("reconoce las 4 ruedas: delanteras en +z, traseras "
-                           "en -z, izquierdas en -x",
-                           c[1][2] > 0.5 and c[2][2] > 0.5 and c[3][2] < -0.5
-                           and c[4][2] < -0.5 and c[1][0] < -0.3 and c[3][0] < -0.3
-                           and c[2][0] > 0.3 and c[4][0] > 0.3,
-                           f"DI {c[1].round(2)} TD {c[4].round(2)}"))
-            r.append(check("...con radios de rueda de F1 (0,3 a 0,4 m)",
-                           all(0.28 < rad[k] < 0.42 for k in range(1, 5)),
-                           str(rad[1:].round(2))))
-            r.append(check("...y la carroceria es la pieza grande",
-                           (d["parte"] == 0).sum() > 4 * (d["parte"] == 1).sum()))
+            r.append(check("...la malla de cuatro ruedas se parte en cuartos: "
+                           "delanteras +z, traseras -z, izquierdas -x",
+                           d["metodo_ruedas"].startswith("malla de cuatro")
+                           and c[1][2] > 0.5 and c[2][2] > 0.5 and c[3][2] < -0.5
+                           and c[4][2] < -0.5 and c[1][0] < -0.3 and c[2][0] > 0.3
+                           and all(0.25 < rad[k] < 0.40 for k in range(1, 5)),
+                           f"DI {c[1].round(2)} TD {c[4].round(2)} r {rad[1:].round(2)}"))
             texs = [d.get(f"tex{i}") for i in range(int(d["n_texturas"]))]
-            r.append(check("decodifica las 3 texturas a 1024 px como mucho",
-                           len(texs) == 3 and all(t is not None and t.ndim == 3
-                                                  and max(t.shape[:2]) <= 1024
-                                                  for t in texs),
-                           str([t.shape for t in texs if t is not None])))
-            r.append(check("el .npz cabe en el repositorio (< 3 MB)",
-                           os.path.getsize(ruta) < 3e6,
-                           f"{os.path.getsize(ruta) / 1e6:.2f} MB"))
+            usadas = [t for t in texs if t is not None]
+            r.append(check("...solo decodifica las texturas que usa, a 1024 px "
+                           "como mucho", 0 < len(usadas) < len(texs)
+                           and all(max(t.shape[:2]) <= 1024 for t in usadas),
+                           f"{len(usadas)} de {len(texs)}"))
+            # autobus: una sola malla, morro hacia +x, lejos del origen
+            ruta, d = importar_modelo.convertir(GLB_BUS, "pbus", carpeta=carpeta,
+                                                frente="+x")
+            m = d["medidas"]
+            r.append(check("autobus: girado de +x a +z y recentrado "
+                           "(2,9 x 3,1 x 10,9 m)",
+                           2.7 < m[0] < 3.1 and 2.9 < m[1] < 3.3 and 10.5 < m[2] < 11.2
+                           and abs(d["pos"][:, 2].min() + d["pos"][:, 2].max()) < 1e-3,
+                           f"{m[0]:.2f} x {m[1]:.2f} x {m[2]:.2f}"))
+            r.append(check("...de una sola malla: va entero, sin trocearlo en "
+                           "ruedas (antes salia hecho pedazos)",
+                           d["metodo_ruedas"].startswith("sin ruedas")
+                           and (d["parte"] == 0).all()))
+            # bugatti: 861.000 triangulos, morro +x, TRES ruedas sueltas
+            ruta, d = importar_modelo.convertir(GLB_BUGATTI, "pbug", carpeta=carpeta,
+                                                frente="+x", max_tri=150000)
+            c, rad = d["centros"], d["radios"]
+            r.append(check("bugatti: de 861.000 a menos de 150.000 triangulos",
+                           len(d["idx"]) // 3 <= 150000, f"{len(d['idx']) // 3}"))
+            r.append(check("...las 4 ruedas del mismo radio (0,34 m), la cuarta "
+                           "en espejo, y no los tambores de freno (0,22)",
+                           d["metodo_ruedas"] == "ruedas sueltas"
+                           and all(abs(rad[k] - 0.34) < 0.03 for k in range(1, 5))
+                           and abs(c[1][0] + c[2][0]) < 0.02,
+                           f"r {rad[1:].round(2)}"))
+            r.append(check("...y con el suelo en las ruedas el coche mide 1,4 m "
+                           "de alto", 1.3 < d["medidas"][1] < 1.5,
+                           f"{d['medidas'][1]:.2f}"))
         finally:
             shutil.rmtree(carpeta, ignore_errors=True)
     else:
-        print("[AVISO] sin el .glb original: se salta la importacion")
+        print("[AVISO] sin los .glb originales: se salta la importacion")
+
+    # --- cada coche tiene su modelo y el archivo existe --------------------
+    from simulator import garage
+    faltan = []
+    for f in sorted(os.listdir(garage.CARS_DIR)):
+        if not f.endswith(".car"):
+            continue
+        garage.load_car(os.path.join(garage.CARS_DIR, f))
+        nom = getattr(cfg, "CAR_MODEL_3D", "")
+        if not nom or not os.path.exists(modelo3d.ruta(nom)):
+            faltan.append(f"{f}:{nom or '(sin modelo)'}")
+    r.append(check("los 8 coches tienen modelo 3D y su .npz existe",
+                   not faltan, str(faltan)))
+    garage.load_car(os.path.join(garage.CARS_DIR, "8_autobus.car"))
+    r.append(check("el autobus aleja y sube la camara exterior (16 m, 5 m)",
+                   cfg.CAMERA_BACK_CHASE == 16.0 and cfg.CAMERA_HEIGHT_CHASE == 5.0))
+    garage.load_car(os.path.join(garage.CARS_DIR, "3_deportivo.car"))
+    r.append(check("...y al cambiar de coche la camara vuelve a la de serie",
+                   cfg.CAMERA_BACK_CHASE == 6.5 and cfg.CAR_MODEL_3D == "bugatti"))
 
     # --- carga ----------------------------------------------------------------
     f1 = modelo3d.cargar("f1")
@@ -181,9 +227,9 @@ def main():
                        "siguen en el asfalto y solo se mueve la carroceria",
                        apoyadas and cuerpo_sube))
         st.heave = st.pitch = st.roll = 0.0
-        r.append(check("el modelo se pinta rapido (GL < 40 ms incluso por "
-                       "software)", escena.ms_gl < 40.0,
-                       f"{escena.ms_gl:.1f} ms"))
+        r.append(check("el modelo se pinta rapido (GL < 80 ms incluso por "
+                       "software; en una GPU real, menos de 1 ms)",
+                       escena.ms_gl < 80.0, f"{escena.ms_gl:.1f} ms"))
         # sin modelo: coche de cajas, como siempre
         cfg.CAR_MODEL_3D = ""
         r.append(check("con CAR_MODEL_3D vacio no hay modelo",

@@ -2,6 +2,7 @@
 NAME = "DEPORTIVO"                # nombre que aparece en el menu
 DESC = "1250 KG - 232 CV - RWD - EL DE SIEMPRE" # descripcion en el menu
 CAR_COLOR = (178, 24, 30)         # color RGB de la carroceria
+CAR_MODEL_3D = "bugatti"          # modelo 3D (Bugatti 57SC Atlantic)
 CAR_MASS = 1250.0                 # kg, masa total del vehiculo
 CAR_INERTIA_Z = 1900.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 2100.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

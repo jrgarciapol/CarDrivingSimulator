@@ -840,7 +840,8 @@ class GpuScene:
                 try:
                     self._dibujar_coche(ctx, coche, car_state, vista, proy,
                                         rels, elev, elev_cam, bank_cam,
-                                        float(self.rumbo[int(s0 / L) % N]))
+                                        float(self.rumbo[int(s0 / L) % N]),
+                                        pal)
                     self.coche_dibujado = True
                 except Exception as e:               # noqa: BLE001
                     if not getattr(self, "_aviso_coche", False):
@@ -912,7 +913,7 @@ class GpuScene:
         self.ms_subida = (time.perf_counter() - t3) * 1000.0
 
     def _dibujar_coche(self, ctx, coche, st, vista, proy, rels, elev,
-                       elev_cam, bank_cam, rumbo_seg):
+                       elev_cam, bank_cam, rumbo_seg, pal):
         """Modelo 3D del coche en la escena: posicion (n del eje, cota del
         asfalto bajo el), rumbo psi, peralte y pendiente del tramo mas el
         cabeceo, balanceo y bote de la suspension (exagerados como en el
@@ -986,7 +987,13 @@ class GpuScene:
         ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self._vao_sombra.render(moderngl.TRIANGLES, vertices=6)
         ctx.disable(moderngl.BLEND)
-        m.dibujar(vista, proy, mats, luz)
+        # posicion de la camara en el espacio de la escena (para el brillo
+        # especular y el Fresnel) y colores del cielo y el suelo para la
+        # luz ambiente hemisferica
+        cam_pos = np.linalg.inv(vista)[:3, 3]
+        cielo = np.asarray(pal["sky_top"], float) / 255.0
+        suelo = np.asarray(pal["grass"][0], float) / 255.0
+        m.dibujar(vista, proy, mats, luz, cam_pos, cielo, suelo)
 
     def _bloquear_textura(self):
         """Bloquea la textura de la escena y devuelve (bufer ctypes sobre sus

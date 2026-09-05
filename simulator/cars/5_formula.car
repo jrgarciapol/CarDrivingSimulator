@@ -2,6 +2,7 @@
 NAME = "FORMULA"                  # nombre que aparece en el menu
 DESC = "750 KG - 730 CV - SIN ABS - PARA EXPERTOS" # descripcion en el menu
 CAR_COLOR = (230, 120, 20)        # color RGB de la carroceria
+CAR_MODEL_3D = "f1"               # modelo 3D (Formula 1)
 CAR_MASS = 750.0                  # kg, masa total del vehiculo
 CAR_INERTIA_Z = 900.0             # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 1000.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

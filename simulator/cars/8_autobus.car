@@ -2,6 +2,9 @@
 NAME = "AUTOBUS"                  # nombre que aparece en el menu
 DESC = "12000 KG - 290 CV DIESEL - LENTO PERO IMPARABLE" # descripcion en el menu
 CAR_COLOR = (200, 160, 30)        # color RGB de la carroceria
+CAR_MODEL_3D = "autobus"          # modelo 3D (autobus urbano de Nagoya)
+CAMERA_HEIGHT_CHASE = 5.0            # m, camara exterior mas alta: el autobus mide 3,1 m
+CAMERA_BACK_CHASE = 16.0             # m por detras: con 6,5 la camara quedaba dentro del autobus
 CAR_MASS = 12000.0                # kg, masa total del vehiculo
 CAR_INERTIA_Z = 90000.0           # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 110000.0      # kg*m2, inercia de cabeceo (frenar/acelerar)

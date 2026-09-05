@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **398 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **403 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -350,14 +350,32 @@ python tools/importar_modelo.py simulator/models/mi_coche.glb mi_coche
 ```
 
 Deja `simulator/models/mi_coche.npz` con la geometría en metros (suelo en
-y = 0, morro hacia +z; si el modelo mira a −z, `--frente=-z`), las texturas
-ya decodificadas a 1024 px como mucho (así el juego no necesita Pillow, solo
-la herramienta) y las cinco piezas: carrocería y cuatro ruedas, que reconoce
-por su forma (piezas tan anchas como el coche, redondas de lado y lejos del
-centro) y parte en izquierda y derecha. Qué modelo se usa lo dice
-`CAR_MODEL_3D` en `config.py` o en el `.car` de cada coche; vacío, o si el
-archivo no existe, vuelve el coche de cajas. Incluido: `f1`, un Fórmula 1
-de 31.000 triángulos que cuesta menos de 1 ms por fotograma.
+y = 0, morro hacia +z), las texturas ya decodificadas (así el juego no
+necesita Pillow, solo la herramienta) y las cinco piezas: carrocería y cuatro
+ruedas. Los modelos de Sketchfab vienen de cualquier manera, y de ahí las
+opciones: `--frente=-z|+x|-x` (hacia dónde mira el morro en el archivo),
+`--arriba=z` (eje vertical), `--escala=0.01` o `--largo=4.2` (a metros),
+`--quitar=regex` (planos de suelo y demás), `--ruedas=regex` (mallas que son
+ruedas, si no se reconocen solas) y `--max_tri=150000` (simplifica agrupando
+vértices; un Bugatti de 861.000 triángulos queda en 136.000 sin que se note
+a la distancia de la cámara). Las ruedas se reconocen solas de tres formas:
+mallas individuales con forma de rueda (dos medidas iguales, la tercera
+menor, a la altura de su radio, y se elige el juego con la batalla más
+larga, que los pasos de rueda y los tambores también parecen ruedas), una
+malla con las cuatro (se parte en cuartos) o ejes (se parten en izquierda y
+derecha); si a un modelo le falta una, se fabrica en espejo de la del otro
+lado. Si no hay forma, el coche va entero y las ruedas no giran.
+
+Qué modelo usa cada coche lo dice `CAR_MODEL_3D` en su `.car` (o en
+`config.py`); vacío, o si el archivo no existe, vuelve el coche de cajas. La
+cámara exterior también se ajusta por coche (`CAMERA_HEIGHT_CHASE`,
+`CAMERA_BACK_CHASE`: el autobús la lleva a 16 m y 5 m de alto). Incluidos
+los ocho: Citroën 2CV (utilitario), Rolls-Royce Ghost (berlina), Bugatti
+57SC Atlantic (deportivo), Alfa Romeo 33 Stradale (GT), Fórmula 1, Toyota GR
+Yaris WRC (rally), Beijing BJ212 (todoterreno) y un autobús urbano de
+Nagoya. La iluminación trabaja en espacio lineal con luz ambiente
+hemisférica, brillo del sol y reflejo del cielo de refilón, que es lo que
+hace que la chapa parezca chapa.
 
 ## Jugar en Steam Deck
 

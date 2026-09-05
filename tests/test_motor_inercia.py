@@ -137,6 +137,30 @@ def main():
                        "20 s con el motor de inercia",
                        c.state.speed_kmh > 60.0,
                        f"v={c.state.speed_kmh:.0f} km/h marcha {c.state.gear}"))
+        # --- el FORMULA usa las 6 marchas (regresion) --------------------
+        # Con desarrollos de 2.9..1.22 y un Cd de 1.32 se quedaba en 4a a
+        # 250 km/h: la 1a llegaba a 150 km/h y el arrastre no dejaba subir
+        # al 93 % del corte en las marchas largas. "No pasa de 3a" en
+        # circuito, donde no hay recta para llegar a 250.
+        garage.load_car(os.path.join(os.path.dirname(__file__), "..",
+                                     "simulator", "cars", "5_formula.car"))
+        cfg.ENGINE_MODEL = "inertia"
+        c = Car()
+        for _ in range(500):
+            c.step(DT, 0.0, 0.0, 0.0, flat)
+        t = t100 = 0.0
+        while t < 45.0:
+            c.auto_shift(1.0)
+            c.step(DT, 0.0, 1.0, 0.0, flat)
+            t += DT
+            if not t100 and c.state.speed_kmh >= 100.0:
+                t100 = t
+        r.append(check("el FORMULA llega a 6a y pasa de 280 km/h a fondo, "
+                       "con 0-100 en menos de 3,5 s",
+                       c.state.gear == 6 and c.state.speed_kmh > 280.0
+                       and 0.0 < t100 < 3.5,
+                       f"v={c.state.speed_kmh:.0f} km/h marcha {c.state.gear} "
+                       f"0-100 {t100:.1f} s"))
     finally:
         cfg.ENGINE_MODEL = prev
 

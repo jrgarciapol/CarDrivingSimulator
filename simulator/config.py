@@ -717,6 +717,10 @@ TRACK_TREES = True           # árboles en la franja de hierba (solo con la
 TREE_SPACING_M = 40.0        # m entre árboles a lo largo del circuito (se
                              # reparten al azar a un lado u otro y a
                              # distintas distancias del borde) [15 .. 150]
+TRACK_SKID_MARKS = True      # huellas de goma en el asfalto al derrapar o
+                             # bloquear (solo con la escena en la GPU); se
+                             # quedan en la pista hasta que se olvidan las
+                             # más viejas
 GFX_GPU_COMPARTIDO = True    # pintar la escena DENTRO del contexto OpenGL
                              # de SDL (el renderizador de SDL pasa a ser
                              # "opengl"): la GPU escribe directamente en la

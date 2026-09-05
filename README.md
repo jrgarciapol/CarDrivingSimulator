@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **326 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **349 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -227,6 +227,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `R` | Recolocar el coche |
 | `F1` | Diagnóstico de ejes y botones |
 | `F2` | Telemetría: círculo de fricción por rueda y deriva del chasis |
+| `F3` | Grabar / parar el **registro de rendimiento** (ms por fase + lo que hay en pantalla) |
 | `L` | Mostrar/ocultar la trazada ideal |
 | `G` | Alternar cambio automático / manual |
 | `C` | Cambiar vista: interior / trasera / coche completo |
@@ -268,6 +269,35 @@ El mando se detecta solo. Un volante reconocido siempre tiene prioridad.
   El panel es semitransparente para no tapar la carretera, y la escala se
   ajusta en saltos discretos (nunca de forma continua, que haría el dibujo
   ilegible) con una regla de referencia abajo.
+
+### Registro de rendimiento (`F3` o `--registro`)
+
+Los números del panel F1 saltan de fotograma en fotograma y no se pueden
+apuntar a mano. Con `F3` el programa los graba él mismo, y **anota junto a
+cada medida lo que hay en pantalla en ese momento**, así que no hace falta
+preparar varios archivos de configuración: se arranca con la pantalla
+limpia, se van activando cosas (F2, velocímetro de aguja, vista 3D, planta…)
+y al parar (`F3` otra vez, `ESC` o cerrar) quedan dos archivos en la carpeta
+del juego, que no se versionan:
+
+- `rendimiento_FECHA_HORA.csv`: una fila por segundo con fps, media,
+  mediana, percentil 95 y máximo del fotograma, el desglose por fases
+  (entrada, física, sonido, escena, coche, HUD, presentar), los tres tiempos
+  de la GPU (`MALLA`, `GL`, `SUBIDA`) y las columnas de configuración
+  (vista, telemetría, aguja, minimapa, planta, trazada, partículas,
+  fantasma, bruma, sombreado, GPU, MSAA, ventana, coche, circuito,
+  asfalto). Separado por `;`: se abre directamente en una hoja de cálculo.
+- `rendimiento_FECHA_HORA.txt`: el **resumen** legible. Cabecera con el
+  equipo (sistema, Python, CPU, render de SDL, tarjeta y versión de OpenGL)
+  y una tabla con **una línea por cada configuración distinta** que se ha
+  tenido, con su coste y **qué cambia respecto a la primera**
+  (`TELEMETRIA F2 SI`, `VISTA COCHE 3D`…).
+
+La columna que importa es **`trabaj`**: el fotograma sin la espera del
+vsync. Con sincronía vertical la media no baja de 16,7 ms aunque el trabajo
+sean 4 ms; si el trabajo pasa de 16,7 ms el juego ya no llega a 60 fps. En
+la Deck, donde no hay F3, se lanza con `./jugar.sh --registro` y graba
+desde el principio. Es el archivo que conviene enviar cuando algo va lento.
 
 ## Laboratorio de sonido
 
@@ -398,6 +428,8 @@ A motor · B recolocar · X vista · Y automático · cruceta ↑ telemetría,
   recorta el alcance de dibujado a 140 segmentos. Elegido midiendo: la
   bruma sola cuesta el 22 % del fotograma. **La física no se toca** —
   cuesta un 8 % y bajarla degradaría el force feedback.
+- **`--registro`**: graba desde el principio el registro de rendimiento
+  (la Deck no tiene F3); ver *Registro de rendimiento* más arriba.
 - **Dirección adaptada al stick**: zona muerta reescalada, curva
   progresiva, velocidad de giro limitada y **tope que se cierra con la
   velocidad** (a 170 km/h queda el 30 % del recorrido). Sin esto un stick
@@ -537,6 +569,7 @@ simulator/
   gpu.py      escena 3D en la GPU (moderngl): carretera, cielo y balizas
   audio.py    sonido de motor, neumaticos, viento y turbo sintetizados
   audio_lab.py laboratorio de sonido: afinarlo oyendolo en directo
+  perf_log.py registro de rendimiento (F3): ms por fase + configuracion
   font.py     fuente bitmap del HUD
   cars/       los 8 vehículos (.car, parámetros comentados)
   tracks/     circuitos (silverstone, spa, ovalo)
@@ -565,6 +598,7 @@ tests/
   test_audio.py             sintetizador y laboratorio de sonido
   test_gpu.py               proyeccion, geometria y fotogramas reales de la GPU
   test_hud.py               atlas de fuente y esfera del velocimetro cacheada
+  test_registro.py          registro de rendimiento: filas, bloques y resumen
 ```
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,

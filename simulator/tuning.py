@@ -299,8 +299,9 @@ def run_tuning(renderer, wheel=None):
     cats = _categorias()
     base = _baselines()                 # valor de referencia de cada parámetro
     n_cat = len(cats)
-    ACC_GUARDAR, ACC_RESET = n_cat, n_cat + 1
-    n_items = n_cat + 2                 # + guardar coche + restaurar todo
+    ACC_GUARDAR_AQUI, ACC_GUARDAR, ACC_RESET = n_cat, n_cat + 1, n_cat + 2
+    n_items = n_cat + 3                 # + guardar en este coche + guardar
+                                        #   como nuevo + restaurar todo
 
     modo = "cats"                       # "cats" o "params"
     sel_cat = 0
@@ -341,9 +342,19 @@ def run_tuning(renderer, wheel=None):
         elif e["is_bool"]:
             v = not cur
         else:
-            v = cur + _step(e, big) * direccion
+            paso = _step(e, big)
+            v = cur + paso * direccion
             if e["is_int"]:
                 v = int(round(v))
+            else:
+                # ENCAJAR en la rejilla del paso: si el valor de partida no
+                # es multiplo del paso, con las flechas nunca se pasaba por
+                # 0 (que en muchos parametros es "apagado") ni por 1
+                v = round(round(v / paso) * paso, 6)
+                if e["lo"] is not None:
+                    v = max(e["lo"], v)
+                if e["hi"] is not None:
+                    v = min(e["hi"], v)
         setattr(cfg, e["name"], v)
         anota(e, v)
 
@@ -386,6 +397,12 @@ def run_tuning(renderer, wheel=None):
                 elif a == "ok":
                     if sel_cat < n_cat:
                         modo, sel, top = "params", 0, 0
+                    elif sel_cat == ACC_GUARDAR_AQUI:
+                        ruta = settings.guardar_en_este_coche()
+                        mensaje = ("GUARDADO EN " + ruta if ruta
+                                   else "NADA QUE GUARDAR EN ESTE COCHE")
+                        mensaje_t = 180
+                        base = _baselines()      # el coche ya lleva el reglaje
                     elif sel_cat == ACC_GUARDAR:
                         nombre = _pedir_texto(renderer, wheel,
                                               "NOMBRE DEL COCHE", "MI COCHE")
@@ -449,15 +466,16 @@ def run_tuning(renderer, wheel=None):
                         font.draw_text(renderer, f"({n_ch} CAMBIADOS)",
                                        W - 320, y, 2, (140, 230, 140, 255))
                 else:
-                    txt = ("GUARDAR COCHE COMO..." if i == ACC_GUARDAR
+                    txt = ("GUARDAR EN ESTE COCHE" if i == ACC_GUARDAR_AQUI
+                           else "GUARDAR COCHE COMO..." if i == ACC_GUARDAR
                            else "RESTAURAR TODO POR DEFECTO")
-                    col = (140, 235, 170, 255) if i == ACC_GUARDAR \
+                    col = (140, 235, 170, 255) if i in (ACC_GUARDAR, ACC_GUARDAR_AQUI) \
                         else (235, 150, 90, 255)
                     font.draw_text(renderer, txt, 190, y, 2, col)
                 y += 30
             font.draw_text(renderer,
                            "LOS CAMBIOS DE 'CONFIG' SE GUARDAN SOLOS. LOS DE "
-                           "'COCHE' SON REGLAJE: GUARDALO COMO COCHE NUEVO.",
+                           "'COCHE' SON REGLAJE: GUARDALO EN ESTE COCHE O COMO NUEVO.",
                            60, H - 60, 2, (150, 160, 175, 255))
 
         else:                           # modo params

@@ -289,6 +289,57 @@ def _mat_proyeccion(f, pitch_ndc):
     return m
 
 
+def _plantillas_arbol():
+    """Dos arboles de formas sencillas, de altura 1 y con el pie en el
+    origen, como listas de triangulos (T,3,3) con su color base (T,3) y su
+    normal (T,3): 0 = frondoso (tronco + copa en bipiramide de 8 lados),
+    1 = pino (tronco + dos conos de 6 lados). Se escalan por la altura."""
+    out = []
+
+    def cono(r, y0, y1, lados, col, tris, cols):
+        a = np.linspace(0.0, 2 * math.pi, lados, endpoint=False)
+        for k in range(lados):
+            p0 = (r * math.cos(a[k]), y0, r * math.sin(a[k]))
+            p1 = (r * math.cos(a[(k + 1) % lados]), y0, r * math.sin(a[(k + 1) % lados]))
+            tris.append((p0, p1, (0.0, y1, 0.0)))
+            cols.append(col)
+
+    def tronco(w, h, col, tris, cols):
+        c = [(-w, 0, -w), (w, 0, -w), (w, 0, w), (-w, 0, w)]
+        for k in range(4):
+            a, b = c[k], c[(k + 1) % 4]
+            a2, b2 = (a[0], h, a[2]), (b[0], h, b[2])
+            tris.append((a, b, b2))
+            tris.append((a, b2, a2))
+            cols += [col, col]
+
+    for tipo in (0, 1):
+        tris, cols = [], []
+        if tipo == 0:
+            tronco(0.035, 0.40, (95, 66, 38), tris, cols)
+            cono(0.34, 0.62, 1.00, 8, (58, 122, 40), tris, cols)     # media copa alta
+            cono(0.34, 0.62, 0.30, 8, (46, 98, 32), tris, cols)      # media copa baja
+        else:
+            tronco(0.03, 0.32, (90, 62, 36), tris, cols)
+            cono(0.30, 0.30, 0.70, 6, (38, 92, 46), tris, cols)
+            cono(0.22, 0.56, 1.00, 6, (44, 104, 52), tris, cols)
+        t = np.array(tris, dtype=float)                       # (T,3,3)
+        n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+        n /= np.maximum(np.linalg.norm(n, axis=1), 1e-9)[:, None]
+        # las caras deben mirar hacia fuera para el sombreado: se orientan
+        # por el signo respecto al radio desde el eje del arbol
+        centro = t.mean(axis=1)
+        radial = centro.copy()
+        radial[:, 1] = 0.0
+        malas = (n * radial).sum(axis=1) < 0
+        n[malas] *= -1
+        out.append((t, np.array(cols, dtype=float), n))
+    return out
+
+
+_PLANTILLAS_ARBOL = None
+
+
 class GpuScene:
     """La escena 3D en la GPU. Un objeto por ventana (ver ``obtener``)."""
 
@@ -574,6 +625,7 @@ class GpuScene:
         self._track_id = id(track)
         # cambio de circuito: el fotograma pendiente era del anterior
         self._pendiente = None
+        self._arboles_track = self._plantar(track)
 
     def _rels(self):
         """Estaciones de las secciones relativas al coche: malla adaptativa
@@ -664,6 +716,7 @@ class GpuScene:
         ``coche_dibujado`` dice si se ha hecho."""
         t0 = time.perf_counter()
         self.coche_dibujado = False
+        self._frame_s0 = float(car_state.s)      # (balizas a estaciones fijas)
         L = cfg.SEGMENT_LENGTH
         W, H = self.W, self.H
         s0 = car_state.s
@@ -781,6 +834,10 @@ class GpuScene:
             v["col"][:, :, 3] = 255
         idx = self._indices(len(bandas), n_q)
 
+        # --- arboles en la hierba: geometria en el espacio de la escena -----
+        arb = self._arboles(track, s0, rels, x, z, hx, hz, elev, cb, sb, hw,
+                            kw, float(self.rumbo[int(s0 / L) % N]))
+
         # --- balizas y paneles: cuadriláteros orientados a la cámara ----------
         # Se construyen ya en el espacio de la cámara, de frente por
         # construcción, y se dibujan con la profundidad de la carretera: una
@@ -842,6 +899,17 @@ class GpuScene:
             self.vbo.write(datos)
             self.ibo.write(idx.tobytes())
             self.vao.render(moderngl.TRIANGLES, vertices=len(idx))
+            # arboles: misma vista que la carretera, con profundidad
+            if arb is not None:
+                va, ia = arb
+                da = va.tobytes()
+                if len(da) > self.vbo.size:
+                    self.vbo.orphan(len(da) * 2)
+                if ia.nbytes > self.ibo.size:
+                    self.ibo.orphan(ia.nbytes * 2)
+                self.vbo.write(da)
+                self.ibo.write(ia.tobytes())
+                self.vao.render(moderngl.TRIANGLES, vertices=len(ia))
             # balizas: ya en espacio de cámara -> vista identidad
             if bill is not None:
                 vb, ib = bill
@@ -1047,6 +1115,77 @@ class GpuScene:
         # y de gl_FragCoord: no hay que restarla de H
         return (float(sx), float(sy))
 
+    # -- arboles ------------------------------------------------------------
+    def _plantar(self, track):
+        """Arboles FIJOS de un circuito: estacion, lado, distancia al borde
+        de la calzada, altura, tipo y tono, repartidos al azar (con semilla
+        fija: siempre los mismos) cada TREE_SPACING_M metros."""
+        paso = float(getattr(cfg, "TREE_SPACING_M", 40.0))
+        L = float(track.length)
+        n = int(L / max(paso, 5.0))
+        if n <= 0:
+            return None
+        rng = np.random.default_rng(int(L * 7.0) + self.N)
+        s = (np.arange(n) * paso + rng.uniform(-0.4, 0.4, n) * paso) % L
+        return dict(s=s,
+                    lado=np.where(rng.random(n) < 0.5, -1.0, 1.0),
+                    dist=rng.uniform(4.0, 24.0, n),
+                    alto=rng.uniform(5.0, 11.0, n),
+                    tipo=(rng.random(n) < 0.45).astype(int),
+                    tono=rng.uniform(0.80, 1.15, n))
+
+    def _arboles(self, track, s0, rels, x, z, hx, hz, elev, cb, sb, hw, kw,
+                 rumbo_seg):
+        """Los arboles a la vista este fotograma como triangulos en el
+        espacio de la escena (misma vista que la carretera), con el
+        sombreado del sol horneado en el color. (vertices, indices) o None."""
+        global _PLANTILLAS_ARBOL
+        arb = getattr(self, "_arboles_track", None)
+        if arb is None or not getattr(cfg, "TRACK_TREES", True):
+            return None
+        L = float(track.length)
+        ds = (arb["s"] - s0 + L / 2.0) % L - L / 2.0
+        vis = (ds > max(rels[0], -30.0)) & (ds < min(rels[-1], 650.0))
+        if not vis.any():
+            return None
+        if _PLANTILLAS_ARBOL is None:
+            _PLANTILLAS_ARBOL = _plantillas_arbol()
+        d = ds[vis]
+        xi, zi = np.interp(d, rels, x), np.interp(d, rels, z)
+        hxi, hzi = np.interp(d, rels, hx), np.interp(d, rels, hz)
+        ei = np.interp(d, rels, elev)
+        cbi, sbi = np.interp(d, rels, cb), np.interp(d, rels, sb)
+        hwi = np.interp(d, rels, hw)
+        dist = np.minimum(arb["dist"][vis], ANCHO_HIERBA - hwi - kw - 3.0)
+        o = arb["lado"][vis] * (hwi + kw + dist)
+        base = np.stack([xi + hxi * o * cbi, ei - o * sbi, zi + hzi * o * cbi],
+                        axis=1)
+        alto, tipo, tono = arb["alto"][vis], arb["tipo"][vis], arb["tono"][vis]
+        az = SOL_AZIMUT - rumbo_seg
+        ce = math.cos(SOL_ELEVACION)
+        luz = np.array([math.sin(az) * ce, math.sin(SOL_ELEVACION),
+                        math.cos(az) * ce])
+        bloques = []
+        for t in (0, 1):
+            sel = tipo == t
+            if not sel.any():
+                continue
+            tri, col, nrm = _PLANTILLAS_ARBOL[t]
+            sombra = 0.55 + 0.45 * np.clip(nrm @ luz, 0.0, 1.0)       # (T,)
+            pos = (tri[None, :, :, :] * alto[sel][:, None, None, None]
+                   + base[sel][:, None, None, :])                    # (n,T,3,3)
+            c = (col[None, :, :] * sombra[None, :, None]
+                 * tono[sel][:, None, None])                        # (n,T,3)
+            c = np.repeat(c[:, :, None, :], 3, axis=2)               # (n,T,3,3)
+            bloques.append((pos.reshape(-1, 3), c.reshape(-1, 3)))
+        pos = np.concatenate([p for p, _ in bloques])
+        col = np.concatenate([c for _, c in bloques])
+        vb = np.empty(len(pos), dtype=_VERTICE)
+        vb["pos"] = pos
+        vb["col"][:, :3] = np.clip(col, 0, 255).astype(np.uint8)
+        vb["col"][:, 3] = 255
+        return vb, np.arange(len(pos), dtype=np.int32)
+
     def _balizas(self, vista, x, z, hx, hz, elev, cb, sb, hw, rels, seg_idx,
                  sm, kw):
         """Balizas de borde y paneles direccionales como cuadriláteros de
@@ -1079,17 +1218,33 @@ class GpuScene:
             v[:, 3] = pv + (w / 2, h, dz)
             anade(v, col)
 
-        # --- balizas (amarilla izquierda, azul derecha) cada 6 segmentos ----
+        # --- balizas (amarilla izquierda, azul derecha) cada 6 m ------------
+        # A ESTACIONES FIJAS, interpolando entre secciones: la malla es
+        # adaptativa (secciones cada 1, 2 o 4 m) y colocarlas "cada 6
+        # secciones" las agrupaba de distinta forma en cada tramo.
         if cfg.TRACK_POLES:
-            mask = (seg_idx % 6 == 0) & (rels >= 0.0) & (rels <= 700.0)
+            paso_b = 6.0
+            s0 = float(self._frame_s0) if getattr(self, "_frame_s0", None) is not None else 0.0
+            ini = math.ceil((s0 + max(rels[0], 0.0)) / paso_b) * paso_b - s0
+            est = np.arange(ini, min(rels[-1], 700.0), paso_b)
+            est = est[est >= 0.0]
             alto = float(getattr(cfg, "TRACK_POLE_HEIGHT", 2.2))
-            for lado, col in ((-1.0, (255, 215, 30)), (1.0, (60, 145, 255))):
-                pv = a_vista(lado * (hw[mask] + kw + 0.5), mask)
-                pv = pv[pv[:, 2] > 0.3]
-                cajas(pv, 0.22, alto, col)
-                cima = pv.copy()
-                cima[:, 1] += alto * 0.75
-                cajas(cima, 0.22, alto * 0.25, (245, 245, 245), dz=-0.01)
+            if len(est):
+                xi, zi = np.interp(est, rels, x), np.interp(est, rels, z)
+                hxi, hzi = np.interp(est, rels, hx), np.interp(est, rels, hz)
+                ei = np.interp(est, rels, elev)
+                cbi, sbi = np.interp(est, rels, cb), np.interp(est, rels, sb)
+                hwi = np.interp(est, rels, hw)
+                for lado, col in ((-1.0, (255, 215, 30)), (1.0, (60, 145, 255))):
+                    o = lado * (hwi + kw + 0.5)
+                    p = np.stack([xi + hxi * o * cbi, ei - o * sbi,
+                                  zi + hzi * o * cbi, np.ones_like(xi)], axis=1)
+                    pv = p @ vista[:3].T
+                    pv = pv[pv[:, 2] > 0.3]
+                    cajas(pv, 0.22, alto, col)
+                    cima = pv.copy()
+                    cima[:, 1] += alto * 0.75
+                    cajas(cima, 0.22, alto * 0.25, (245, 245, 245), dz=-0.01)
 
         # --- paneles direccionales en el exterior de las curvas cerradas ----
         r_chev = float(getattr(cfg, "CHEVRON_MAX_RADIUS", 0.0))

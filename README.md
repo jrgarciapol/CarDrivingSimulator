@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **405 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **415 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -376,7 +376,14 @@ Yaris WRC (rally), Beijing BJ212 (todoterreno) y un autobús urbano de
 Nagoya (también hay un Alfa Romeo 33 Stradale, `alfa`, sin asignar). La iluminación trabaja en espacio lineal con luz ambiente
 hemisférica, brillo del sol y reflejo del cielo de refilón, que es lo que
 hace que la chapa parezca chapa; bajo el coche va una sombra de contacto
-(oscura bajo cada neumático y el centro del bajo, difuminada hacia fuera).
+(oscura bajo cada neumático y el centro del bajo, difuminada hacia fuera,
+pintada sin test de profundidad para que no se corte con las rasantes).
+En la franja de hierba hay **árboles** (`TRACK_TREES`, uno cada
+`TREE_SPACING_M` metros): frondosos y pinos de formas sencillas, plantados
+al azar con semilla fija (siempre los mismos en cada circuito), sombreados
+por el sol y con la bruma de la distancia; cuestan unos 1.500 triángulos por
+fotograma. Las balizas de borde van a estaciones fijas cada 6 m, sea cual
+sea el paso de la malla.
 Lo que se mueve viene de la física: el giro de cada rueda es su velocidad
 angular real (patina y se bloquea con ella), la dirección es el ángulo de
 las ruedas delanteras, y la carrocería bota, cabecea y balancea con la
@@ -661,7 +668,13 @@ tests/
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,
 `DIFF_TYPE`) y el resto de reglajes se pueden cambiar desde el menú de
-**AJUSTES** del juego, sin editar `config.py`.
+**AJUSTES**. Los cambios de parámetros del coche (reglaje, cámara exterior,
+exageración de la carrocería) se guardan con **GUARDAR EN ESTE COCHE**, que
+reescribe el `.car` del coche elegido conservando sus comentarios, o con
+**GUARDAR COCHE COMO...**, que crea uno nuevo. Las flechas mueven cada valor
+por una rejilla de pasos que pasa siempre por 0 y por los valores redondos,
+para que un parámetro que se apaga en 0 se pueda apagar. Todo sin editar
+`config.py`.
 
 ## Solución de problemas
 

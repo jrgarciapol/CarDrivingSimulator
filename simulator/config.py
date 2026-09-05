@@ -709,6 +709,12 @@ GFX_GPU = True               # escena 3D en la GPU (moderngl): búfer de
                              # hay OpenGL 3.3 vuelve solo al render de SDL
 GFX_MSAA = 4                 # muestras de antialiasing de la GPU: 0, 2, 4
                              # u 8. Cuesta poco en cualquier GPU [0 .. 8]
+TRACK_TREES = True           # árboles en la franja de hierba (solo con la
+                             # escena en la GPU): frondosos y pinos de
+                             # formas sencillas, fijos en cada circuito
+TREE_SPACING_M = 40.0        # m entre árboles a lo largo del circuito (se
+                             # reparten al azar a un lado u otro y a
+                             # distintas distancias del borde) [15 .. 150]
 GFX_GPU_COMPARTIDO = True    # pintar la escena DENTRO del contexto OpenGL
                              # de SDL (el renderizador de SDL pasa a ser
                              # "opengl"): la GPU escribe directamente en la

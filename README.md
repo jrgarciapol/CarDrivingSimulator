@@ -192,10 +192,12 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
    > en 3.14 `pip` intentaría compilarlo y pediría el compilador de Visual
    > C++, así que `requirements.txt` lo omite ahí y el juego usa el render
    > de SDL (lo dice al arrancar y en el panel F1). Para tener la GPU:
-   > instala Python 3.13 desde python.org y lanza el juego con él
-   > (`py -3.13 -m pip install -r requirements.txt` y `py -3.13 -m
-   > simulator.main`), o instala las *Microsoft C++ Build Tools* y luego
-   > `pip install moderngl`.
+   > instala **Python 3.13 junto al 3.14** (los instaladores de python.org
+   > conviven; no hace falta desinstalar nada) y prepara sus dependencias con
+   > `py -3.13 -m pip install -r requirements.txt`. `run.bat` detecta el
+   > 3.13 y lo usa solo; a mano sería `py -3.13 -m simulator.main`. La
+   > alternativa es instalar las *Microsoft C++ Build Tools* y luego
+   > `pip install moderngl` en el 3.14.
 4. Conecta el volante **antes** de arrancar y ejecuta:
    ```bat
    run.bat

@@ -692,12 +692,18 @@ GFX_GPU = True               # escena 3D en la GPU (moderngl): búfer de
                              # hay OpenGL 3.3 vuelve solo al render de SDL
 GFX_MSAA = 4                 # muestras de antialiasing de la GPU: 0, 2, 4
                              # u 8. Cuesta poco en cualquier GPU [0 .. 8]
-GFX_GPU_ASYNC = True         # leer el fotograma de la GPU sin esperarla:
-                             # se recoge el ANTERIOR mientras pinta este.
-                             # Medido en un Intel Arc: la espera eran 15 ms
-                             # por fotograma. A cambio la carretera va un
-                             # fotograma por detras (16-25 ms); el HUD y el
-                             # volante no. False = lectura al momento
+GFX_GPU_COMPARTIDO = True    # pintar la escena DENTRO del contexto OpenGL
+                             # de SDL (el renderizador de SDL pasa a ser
+                             # "opengl"): la GPU escribe directamente en la
+                             # textura de fondo y no hay que leer el
+                             # fotograma. Medido: la lectura costaba 15 ms
+                             # por fotograma en un Intel Arc. False = contexto
+                             # propio + lectura (Direct3D en Windows)
+GFX_GPU_ASYNC = False        # solo con contexto propio: leer el fotograma
+                             # por PBO recogiendo el ANTERIOR. En un Intel
+                             # Arc bajo Windows es 5 veces MAS LENTO que la
+                             # lectura directa (memoria sin cache), asi que
+                             # va apagado; puede ayudar con Mesa (Deck)
 
 # ===========================================================================
 # SONIDO

@@ -1390,8 +1390,10 @@ class Hud(_Dibujo):
             font.draw_text(self.r,
                            f"GPU MS: MALLA {gpu.ms_malla:.1f} GL {gpu.ms_gl:.1f}"
                            f" LECT {gpu.ms_lectura:.1f} SUB {gpu.ms_subida:.1f}"
-                           + (" ASINC" if getattr(gpu, "asincrono", False)
-                              else ""), 32, 370, 2, (150, 220, 255, 255))
+                           + (" COMPARTIDO" if getattr(gpu, "compartido", False)
+                              else " ASINC" if getattr(gpu, "asincrono", False)
+                              else " LECTURA"), 32, 370, 2,
+                           (150, 220, 255, 255))
         else:
             font.draw_text(self.r, "RENDER GPU: NO - " + gpu_mod.estado()[:44],
                            32, 370, 2, (255, 170, 90, 255))

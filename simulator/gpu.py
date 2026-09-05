@@ -196,6 +196,41 @@ void main() {
 _VERTICE = np.dtype([("pos", "f4", 3), ("col", "u1", 4)])
 
 
+class _CargadorSDL:
+    """Cargador de funciones de OpenGL para moderngl a traves de SDL: asi
+    moderngl se ENGANCHA al contexto que ya tiene el renderizador de SDL en
+    vez de crear uno propio, en cualquier sistema (Windows, Linux, Deck)."""
+
+    def load_opengl_function(self, name):
+        return int(sdl2.SDL_GL_GetProcAddress(name.encode()) or 0)
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        pass
+
+    def release(self):
+        pass
+
+
+# funciones crudas de GL que hacen falta para devolverle a SDL el estado
+# que espera tras pintar con moderngl (nombre -> tipos de los argumentos)
+_GL_CRUDAS = {
+    "glGetIntegerv": (ctypes.c_uint, ctypes.POINTER(ctypes.c_int)),
+    "glUseProgram": (ctypes.c_uint,),
+    "glBindVertexArray": (ctypes.c_uint,),
+    "glBindBuffer": (ctypes.c_uint, ctypes.c_uint),
+    "glBindFramebuffer": (ctypes.c_uint, ctypes.c_uint),
+    "glBindRenderbuffer": (ctypes.c_uint, ctypes.c_uint),
+}
+_GL_TEXTURE_BINDING_2D = 0x8069
+_GL_ARRAY_BUFFER = 0x8892
+_GL_ELEMENT_ARRAY_BUFFER = 0x8893
+_GL_FRAMEBUFFER = 0x8D40
+_GL_RENDERBUFFER = 0x8D41
+
+
 def _mat_traslacion(x, y, z):
     m = np.eye(4)
     m[0, 3], m[1, 3], m[2, 3] = x, y, z
@@ -268,25 +303,115 @@ class GpuScene:
         if moderngl is None:
             self.motivo = "falta moderngl (pip install moderngl)"
             return
-        prev = self._contexto_sdl()
-        try:
-            self.ctx = self._crear_contexto()
-            self._montar(msaa)
-            self.ok = True
-        except Exception as e:                       # noqa: BLE001
-            self.motivo = f"{type(e).__name__}: {str(e)[:120]}"
-            self.ctx = None
-        finally:
-            self._devolver_contexto_sdl(prev)
-        if self.ok:
-            self.tex = sdl2.SDL_CreateTexture(
-                sdl_renderer, sdl2.SDL_PIXELFORMAT_ABGR8888,
-                sdl2.SDL_TEXTUREACCESS_STREAMING, self.W, self.H)
-            if not self.tex:
-                self.ok = False
-                self.motivo = "SDL no pudo crear la textura de la escena"
-            else:
-                sdl2.SDL_SetTextureBlendMode(self.tex, sdl2.SDL_BLENDMODE_NONE)
+        # 1) contexto COMPARTIDO con SDL: la GPU pinta directamente en la
+        #    textura de fondo y no hay que leer el fotograma (ver
+        #    _montar_compartido). Necesita que el renderizador de SDL sea
+        #    el de OpenGL (main.py lo pide con SDL_HINT_RENDER_DRIVER).
+        self.compartido = False
+        self.motivo_compartido = ""
+        self._gl_fn = {}
+        if getattr(cfg, "GFX_GPU_COMPARTIDO", True):
+            try:
+                self._montar_compartido(msaa)
+                self.ok = True
+                self.compartido = True
+            except Exception as e:                   # noqa: BLE001
+                self.motivo_compartido = f"{type(e).__name__}: {str(e)[:120]}"
+                if self.tex:
+                    sdl2.SDL_DestroyTexture(self.tex)
+                    self.tex = None
+                self.ctx = None
+        # 2) contexto PROPIO + lectura del fotograma (Direct3D en Windows,
+        #    pruebas sin ventana, o si lo anterior no ha podido)
+        if not self.ok:
+            prev = self._contexto_sdl()
+            try:
+                self.ctx = self._crear_contexto()
+                self._montar(msaa)
+                self.ok = True
+            except Exception as e:                   # noqa: BLE001
+                self.motivo = f"{type(e).__name__}: {str(e)[:120]}"
+                self.ctx = None
+            finally:
+                self._devolver_contexto_sdl(prev)
+            if self.ok:
+                self.tex = sdl2.SDL_CreateTexture(
+                    sdl_renderer, sdl2.SDL_PIXELFORMAT_ABGR8888,
+                    sdl2.SDL_TEXTUREACCESS_STREAMING, self.W, self.H)
+                if not self.tex:
+                    self.ok = False
+                    self.motivo = "SDL no pudo crear la textura de la escena"
+                else:
+                    sdl2.SDL_SetTextureBlendMode(self.tex,
+                                                 sdl2.SDL_BLENDMODE_NONE)
+
+    # -- contexto compartido con SDL -----------------------------------------
+    def _montar_compartido(self, msaa):
+        """moderngl dentro del contexto OpenGL del renderizador de SDL.
+
+        La textura de fondo la crea SDL; se averigua su identificador de GL
+        (SDL la enlaza con SDL_GL_BindTexture y se pregunta a GL cual es la
+        enlazada) y moderngl la usa como destino de un framebuffer. Cada
+        fotograma: se vacia la cola de SDL (SDL_RenderFlush), se pinta la
+        escena con moderngl, se devuelve el estado que SDL da por sentado
+        (programa 0, sin VAO ni buferes, framebuffer 0, sin test de
+        profundidad) y SDL copia la textura como siempre. Lo que se ahorra
+        es leer 8 MB de la GPU cada fotograma: 15 ms en un Intel Arc."""
+        info = sdl2.SDL_RendererInfo()
+        if sdl2.SDL_GetRendererInfo(self.r, ctypes.byref(info)) != 0:
+            raise RuntimeError("SDL no describe su renderizador")
+        nombre = info.name.decode(errors="replace") if info.name else "?"
+        if nombre != "opengl":
+            raise RuntimeError(f"el renderizador de SDL es '{nombre}', no opengl")
+        if not sdl2.SDL_GL_GetCurrentContext():
+            raise RuntimeError("SDL no tiene un contexto OpenGL activo")
+        for fn, tipos in _GL_CRUDAS.items():
+            addr = sdl2.SDL_GL_GetProcAddress(fn.encode())
+            if not addr:
+                raise RuntimeError(f"sin {fn} en el contexto de SDL")
+            self._gl_fn[fn] = ctypes.CFUNCTYPE(None, *tipos)(addr)
+        moderngl.init_context(_CargadorSDL())
+        ctx = moderngl.get_context()
+        if ctx.version_code < 330:
+            raise RuntimeError(f"OpenGL {ctx.version_code / 100:.1f} en el "
+                               "contexto de SDL; hace falta 3.3")
+        self.ctx = ctx
+        self.tex = sdl2.SDL_CreateTexture(
+            self.r, sdl2.SDL_PIXELFORMAT_ABGR8888,
+            sdl2.SDL_TEXTUREACCESS_STATIC, self.W, self.H)
+        if not self.tex:
+            raise RuntimeError("SDL no pudo crear la textura de la escena")
+        sdl2.SDL_SetTextureBlendMode(self.tex, sdl2.SDL_BLENDMODE_NONE)
+        tw, th = ctypes.c_float(), ctypes.c_float()
+        if sdl2.SDL_GL_BindTexture(self.tex, ctypes.byref(tw),
+                                   ctypes.byref(th)) != 0:
+            raise RuntimeError("SDL_GL_BindTexture no funciona con este "
+                               "renderizador")
+        glo = ctypes.c_int(0)
+        self._gl_fn["glGetIntegerv"](_GL_TEXTURE_BINDING_2D, ctypes.byref(glo))
+        sdl2.SDL_GL_UnbindTexture(self.tex)
+        if glo.value <= 0 or abs(tw.value - 1.0) > 1e-6:
+            raise RuntimeError("la textura de SDL no es una GL_TEXTURE_2D "
+                               f"(id {glo.value}, escala {tw.value:.3f})")
+        self._montar(msaa, externa=glo.value)
+        self._restaurar_estado_sdl()
+
+    def _restaurar_estado_sdl(self):
+        """Deja GL como SDL lo espera tras pintar con moderngl. SDL guarda en
+        cache que programa, mezcla y textura tiene puestos y solo los cambia
+        cuando difieren de lo que quiere: si moderngl los ha tocado por su
+        cuenta, SDL pintaria el HUD con nuestro sombreador o dentro de
+        nuestro framebuffer."""
+        ctx = self.ctx
+        ctx.disable(moderngl.DEPTH_TEST)
+        ctx.screen.use()                     # framebuffer 0 y su viewport
+        fn = self._gl_fn
+        fn["glUseProgram"](0)
+        fn["glBindVertexArray"](0)
+        fn["glBindBuffer"](_GL_ARRAY_BUFFER, 0)
+        fn["glBindBuffer"](_GL_ELEMENT_ARRAY_BUFFER, 0)
+        fn["glBindRenderbuffer"](_GL_RENDERBUFFER, 0)
+        fn["glBindFramebuffer"](_GL_FRAMEBUFFER, 0)
 
     # -- contexto ---------------------------------------------------------
     @staticmethod
@@ -321,6 +446,15 @@ class GpuScene:
 
     @contextlib.contextmanager
     def _gl(self):
+        if self.compartido:
+            # mismo contexto que SDL: vaciar su cola antes de pintar y
+            # devolverle su estado al acabar
+            sdl2.SDL_RenderFlush(self.r)
+            try:
+                yield self.ctx
+            finally:
+                self._restaurar_estado_sdl()
+            return
         prev = self._contexto_sdl()
         self.ctx.__enter__()
         try:
@@ -329,7 +463,10 @@ class GpuScene:
             self.ctx.__exit__(None, None, None)
             self._devolver_contexto_sdl(prev)
 
-    def _montar(self, msaa):
+    def _montar(self, msaa, externa=None):
+        """Programas, buferes y framebuffers. ``externa`` es el id de GL de
+        la textura de SDL en el modo compartido: el framebuffer final pinta
+        sobre ella; si no, sobre un renderbuffer que luego se lee."""
         ctx = self.ctx
         self.prog = ctx.program(vertex_shader=_VS_ESCENA,
                                 fragment_shader=_FS_ESCENA)
@@ -353,16 +490,24 @@ class GpuScene:
             m = 0
             self.fbo_ms = None
         self.msaa = m
-        self.fbo = ctx.framebuffer([ctx.renderbuffer(tam, 4)],
-                                   ctx.depth_renderbuffer(tam))
-        # dos PBO (pixel buffer objects) para leer el fotograma sin esperar
-        # a la GPU: se pide la lectura de este fotograma y se recoge el del
-        # anterior, que ya esta listo. Si no se pueden crear, lectura directa.
-        try:
-            self.pbo = [ctx.buffer(reserve=self.W * self.H * 4)
-                        for _ in range(2)]
-        except Exception:                            # noqa: BLE001
+        if externa is not None:
+            # la textura de SDL como destino: la GPU deja ahi la escena
+            self.tex_externa = ctx.external_texture(int(externa), tam, 4, 0,
+                                                    "f1")
+            self.fbo = ctx.framebuffer([self.tex_externa],
+                                       ctx.depth_renderbuffer(tam))
             self.pbo = None
+        else:
+            self.fbo = ctx.framebuffer([ctx.renderbuffer(tam, 4)],
+                                       ctx.depth_renderbuffer(tam))
+            # dos PBO (pixel buffer objects) para leer el fotograma sin
+            # esperar a la GPU (GFX_GPU_ASYNC): se pide la lectura de este
+            # fotograma y se recoge el del anterior, que ya esta listo
+            try:
+                self.pbo = [ctx.buffer(reserve=self.W * self.H * 4)
+                            for _ in range(2)]
+            except Exception:                        # noqa: BLE001
+                self.pbo = None
         ctx.disable(moderngl.CULL_FACE)
         self.info = dict(ctx.info)
 
@@ -494,8 +639,14 @@ class GpuScene:
         # --- cámara ------------------------------------------------------
         elev_cam = float(self._interp(self.ely, np.array([s0]))[0])
         bank_cam = float(self._interp(self.bnk, np.array([s0]))[0])
-        cam_y = elev_cam + cam.extra_y
         cam_x = -cam.mesh_dx
+        # La calzada se construye con el peralte ABSOLUTO: a una distancia
+        # lateral o del eje esta a elev - o*sin(peralte) (mas abajo por el
+        # lado bajo). La camara va a cam_x del eje, asi que su suelo esta
+        # en elev_cam - cam_x*tan(peralte): sin descontarlo, en el ovalo el
+        # coche iba a la cota del eje y la pista se quedaba por encima (o
+        # por debajo) de el segun el lado en que rodase.
+        cam_y = elev_cam - cam_x * math.tan(bank_cam) + cam.extra_y
         vista = (_mat_traslacion(0.0, 0.0, cam.cam_back)
                  @ _mat_balanceo(bank_cam)
                  @ _mat_guinada(cam.psi_c)
@@ -611,7 +762,7 @@ class GpuScene:
         # tiene que pasar con el contexto de SDL activo. Asi el fotograma se
         # lee de la GPU directamente sobre los pixeles de la textura, sin
         # pasar por una copia intermedia.
-        destino = self._bloquear_textura()
+        destino = None if self.compartido else self._bloquear_textura()
         t1 = time.perf_counter()
         with self._gl() as ctx:
             fbo = self.fbo_ms or self.fbo
@@ -679,10 +830,14 @@ class GpuScene:
             # El primer fotograma (o tras cambiar de circuito) se lee al
             # momento para no ensenar nada viejo.
             t2 = time.perf_counter()
-            asinc = (self.pbo is not None
-                     and bool(getattr(cfg, "GFX_GPU_ASYNC", True)))
+            asinc = (not self.compartido and self.pbo is not None
+                     and bool(getattr(cfg, "GFX_GPU_ASYNC", False)))
             self.asincrono = asinc
-            if asinc:
+            if self.compartido:
+                # la escena ya esta en la textura de SDL: nada que leer
+                self._pendiente = None
+                frame_mostrado = frame_actual
+            elif asinc:
                 self.fbo.read_into(self.pbo[self._pbo_i], components=4,
                                    alignment=1)
                 if self._pendiente is None:
@@ -696,7 +851,9 @@ class GpuScene:
                 self._pendiente = None
                 origen = self.fbo
                 frame_mostrado = frame_actual
-            if destino is not None:
+            if self.compartido:
+                pass
+            elif destino is not None:
                 if isinstance(origen, moderngl.Framebuffer):
                     origen.read_into(destino[0], components=4, alignment=1)
                 else:
@@ -713,7 +870,9 @@ class GpuScene:
 
         # --- entregar a SDL ----------------------------------------------
         t3 = time.perf_counter()
-        if destino is not None:
+        if self.compartido:
+            pass                    # la textura ya tiene la escena
+        elif destino is not None:
             sdl2.SDL_UnlockTexture(self.tex)
         else:
             sdl2.SDL_UpdateTexture(self.tex, None, pixeles, W * 4)
@@ -923,9 +1082,15 @@ def obtener(sdl_renderer):
     if _escena is None:
         _escena = GpuScene(sdl_renderer, W, H, getattr(cfg, "GFX_MSAA", 4))
         if _escena.ok:
+            modo = ("contexto compartido con SDL, sin lectura"
+                    if _escena.compartido else
+                    "contexto propio + lectura del fotograma")
             print(f"Render GPU: {_escena.info.get('GL_RENDERER', '?')} "
                   f"(OpenGL {_escena.info.get('GL_VERSION', '?')}, "
-                  f"MSAA x{_escena.msaa})")
+                  f"MSAA x{_escena.msaa}; {modo})")
+            if not _escena.compartido and _escena.motivo_compartido:
+                print(f"  (sin contexto compartido: "
+                      f"{_escena.motivo_compartido})")
         else:
             print(f"Render GPU no disponible ({_escena.motivo}): "
                   "se usa el renderizador de SDL")

@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **435 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **437 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -376,6 +376,21 @@ larga, que los pasos de rueda y los tambores también parecen ruedas), una
 malla con las cuatro (se parte en cuartos) o ejes (se parten en izquierda y
 derecha); si a un modelo le falta una, se fabrica en espejo de la del otro
 lado. Si no hay forma, el coche va entero y las ruedas no giran.
+Los **cristales** se conservan: el alfa efectivo de cada pieza es el factor
+del material por el alfa medio de su textura (en Sketchfab la
+transparencia suele ir en la textura), se guarda en el color del vértice y
+el juego pinta esas piezas al final, con mezcla y sin escribir
+profundidad, así se ven los faros, los pilotos y el interior a través de
+las ventanillas (antes se tiraban las de factor < 0,3 y las demás salían
+opacas, como chapas blancas). El color de una pieza con textura es factor
+por textura, como manda glTF. Cada grupo de pintado va por (pieza,
+textura) con sitio para miles de texturas: con 16 por pieza, el Rolls (67
+texturas) pintaba dos tercios de la carrocería con la matriz de una rueda
+y las puertas y el capó giraban con la dirección. Y al devolver OpenGL a
+SDL se vuelve a la unidad de textura 0: la sombra usa dos unidades y, con
+un modelo sin texturas (el Bugatti), SDL enlazaba las suyas en la unidad
+equivocada y a partir del segundo fotograma la pantalla salía blanca y
+luego negra.
 
 Qué modelo usa cada coche lo dice `CAR_MODEL_3D` en su `.car` (o en
 `config.py`); vacío, o si el archivo no existe, vuelve el coche de cajas. La

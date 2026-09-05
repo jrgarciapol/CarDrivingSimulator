@@ -309,7 +309,9 @@ _GL_CRUDAS = {
     "glBindFramebuffer": (ctypes.c_uint, ctypes.c_uint),
     "glBindRenderbuffer": (ctypes.c_uint, ctypes.c_uint),
     "glPixelStorei": (ctypes.c_uint, ctypes.c_int),
+    "glActiveTexture": (ctypes.c_uint,),
 }
+_GL_TEXTURE0 = 0x84C0
 _GL_UNPACK_ROW_LENGTH = 0x0CF2
 _GL_UNPACK_SKIP_ROWS = 0x0CF3
 _GL_UNPACK_SKIP_PIXELS = 0x0CF4
@@ -573,6 +575,12 @@ class GpuScene:
         fn["glBindBuffer"](_GL_ELEMENT_ARRAY_BUFFER, 0)
         fn["glBindRenderbuffer"](_GL_RENDERBUFFER, 0)
         fn["glBindFramebuffer"](_GL_FRAMEBUFFER, 0)
+        # UNIDAD DE TEXTURA ACTIVA: la sombra del coche usa dos texturas
+        # (unidades 0 y 1) y moderngl deja activa la ultima; con un modelo
+        # sin texturas (el Bugatti) nadie volvia a la 0 y SDL enlazaba las
+        # suyas en la unidad 1 mientras su sombreador leia la 0: el
+        # fotograma siguiente salia blanco y los demas negros
+        fn["glActiveTexture"](_GL_TEXTURE0)
         # TEXTURAS: SDL recuerda cual dejo enlazada y no la vuelve a enlazar
         # si cree que sigue puesta. Tras pintar el modelo del coche (con sus
         # texturas) SDL copiaba el fondo con la textura de la RUEDA a pantalla

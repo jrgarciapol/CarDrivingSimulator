@@ -203,6 +203,25 @@ def main():
         r.append(check("...y con la textura/materiales, no de un solo color",
                        len(np.unique(con[dif][:, :3] // 16, axis=0)) > 12))
         mg = escena._modelo_gpu
+        # cada grupo de pintado lleva SOLO triangulos de su pieza: con el
+        # Rolls (67 texturas) la clave pieza*16+textura desbordaba y dos
+        # tercios de la carroceria giraban con las ruedas delanteras
+        rolls = modelo3d.cargar("rolls")
+        if rolls is not None:
+            with escena._gl():
+                mg_r = modelo3d.ModeloGpu(escena.ctx, rolls)
+            tri_r = rolls["idx"].reshape(-1, 3)
+            parte_r = rolls["parte"][tri_r[:, 0]].astype(int)
+            n_cuerpo = int((parte_r == 0).sum())
+            n_grupos_cuerpo = sum(n // 3 for pieza, _t, _p, n, _a in mg_r.grupos
+                                  if pieza == 0)
+            r.append(check("el Rolls (67 texturas) pinta toda su carroceria con "
+                           "la matriz de la carroceria, no con la de una rueda",
+                           n_grupos_cuerpo == n_cuerpo and len(mg_r.grupos) > 20,
+                           f"{n_grupos_cuerpo} de {n_cuerpo} triangulos, "
+                           f"{len(mg_r.grupos)} grupos"))
+            with escena._gl():
+                mg_r.release()
         ang0 = mg.ang.copy()
         scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
                          coche3d=scene.modelo_coche(0.0, 0.05))

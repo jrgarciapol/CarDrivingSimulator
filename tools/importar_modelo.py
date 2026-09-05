@@ -39,6 +39,7 @@ Solo hace falta ejecutarlo una vez por modelo; el .npz se versiona.
 
 import io
 import json
+import math
 import os
 import re
 import struct
@@ -400,6 +401,64 @@ def _por_ejes(piezas, ancho, largo, y_suelo, zc):
     return salida
 
 
+def _eje_rueda(pos):
+    """Direccion del eje de una rueda: la de MENOR varianza de la banda
+    exterior del neumatico (los 10 cm mas alejados del centro del coche),
+    que es un disco. Con toda la pieza fallaria: los tirantes y palieres
+    que llegan hasta el centro estiran la nube a lo largo del eje."""
+    ax = np.abs(pos[:, 0])
+    banda = pos[ax >= ax.max() - 0.10]
+    if len(banda) < 30:
+        banda = pos
+    q = banda - banda.mean(0)
+    w, v = np.linalg.eigh(np.cov(q.T))
+    eje = v[:, 0]
+    return eje if eje[0] >= 0 else -eje
+
+
+def _enderezar_ruedas(partes):
+    """Los modelos de exposicion traen a veces las ruedas delanteras GIRADAS
+    (el Lamborghini 10 grados, el 2CV 22): al hacerlas rodar sobre el eje x
+    del coche se bamboleaban como una rueda doblada, y la direccion del
+    juego se sumaba al giro de fabrica. Se gira cada rueda sobre su
+    vertical hasta que su eje queda paralelo a x. Devuelve los grados
+    corregidos por rueda."""
+    giros = {}
+    for k in range(1, 5):
+        piezas_k = [p for kk, p in partes if kk == k]
+        if not piezas_k:
+            continue
+        # el eje se mide sobre la rueda ENTERA (neumatico, llanta, disco,
+        # pinza juntos) y el mismo giro se aplica a todas sus piezas: pieza
+        # a pieza, una pinza de freno o un buje sin forma de disco daban
+        # angulos absurdos y la rueda salia hecha pedazos
+        # el eje se mide en la pieza principal (el neumatico, la que mas
+        # triangulos tiene) y se itera: la banda exterior cambia al girar
+        # y con una sola pasada quedaban 5-8 grados
+        ref = max(piezas_k, key=lambda p: len(p["idx"]))
+        if len(ref["pos"]) < 30:
+            continue
+        todo = np.concatenate([p["pos"] for p in piezas_k])
+        c = (todo.min(0) + todo.max(0)) / 2
+        total = 0.0
+        for _ in range(6):
+            eje = _eje_rueda(ref["pos"])
+            theta = math.atan2(eje[2], eje[0])
+            if abs(theta) < math.radians(0.5) or abs(theta) > math.radians(45.0):
+                break
+            if total == 0.0 and abs(theta) < math.radians(2.0):
+                break                    # recta de fabrica: no tocar
+            cs, sn = math.cos(theta), math.sin(theta)
+            R = np.array([[cs, 0.0, sn], [0.0, 1.0, 0.0], [-sn, 0.0, cs]])
+            for p in piezas_k:
+                p["pos"] = (p["pos"] - c) @ R.T + c
+                p["nrm"] = p["nrm"] @ R.T
+            total += math.degrees(theta)
+        if total:
+            giros[k] = total
+    return giros
+
+
 # ------------------------------------------------------------- simplificar
 def simplificar(p, celda):
     """Agrupa los vertices por celdas de ``celda`` metros (vertex clustering):
@@ -471,6 +530,7 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
         for p in piezas:
             p["pos"] = p["pos"] * float(escala)
     partes, metodo = clasificar(piezas, ruedas)
+    giros = _enderezar_ruedas(partes)
     # centrar en x/z y apoyar en el suelo (con las ruedas, que son lo que
     # toca el asfalto, si se han reconocido)
     todo = np.concatenate([p["pos"] for _, p in partes])
@@ -541,6 +601,7 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
     np.savez_compressed(ruta, **datos)
     datos["metodo_ruedas"] = metodo
     datos["celda"] = celda
+    datos["giros_ruedas"] = giros
     return ruta, datos
 
 
@@ -565,6 +626,8 @@ def main(argv):
     if datos["celda"]:
         print(f"  simplificado con celdas de {datos['celda'] * 100:.1f} cm")
     print(f"  ruedas: {datos['metodo_ruedas']}")
+    for k, g in sorted(datos["giros_ruedas"].items()):
+        print(f"  rueda {k} venia girada {g:+.1f} grados: enderezada")
     nombres = ("carroceria", "rueda del. izq.", "rueda del. der.",
                "rueda tras. izq.", "rueda tras. der.")
     for k in range(5):

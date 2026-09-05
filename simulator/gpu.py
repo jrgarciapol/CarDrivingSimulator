@@ -224,7 +224,11 @@ _GL_CRUDAS = {
     "glBindBuffer": (ctypes.c_uint, ctypes.c_uint),
     "glBindFramebuffer": (ctypes.c_uint, ctypes.c_uint),
     "glBindRenderbuffer": (ctypes.c_uint, ctypes.c_uint),
+    "glPixelStorei": (ctypes.c_uint, ctypes.c_int),
 }
+_GL_UNPACK_ROW_LENGTH = 0x0CF2
+_GL_UNPACK_SKIP_ROWS = 0x0CF3
+_GL_UNPACK_SKIP_PIXELS = 0x0CF4
 _GL_TEXTURE_BINDING_2D = 0x8069
 _GL_ARRAY_BUFFER = 0x8892
 _GL_ELEMENT_ARRAY_BUFFER = 0x8893
@@ -471,8 +475,15 @@ class GpuScene:
     def _gl(self):
         if self.compartido:
             # mismo contexto que SDL: vaciar su cola antes de pintar y
-            # devolverle su estado al acabar
+            # devolverle su estado al acabar. SDL deja puesto el paso de
+            # fila (GL_UNPACK_ROW_LENGTH) de la ultima textura que subio
+            # (el atlas de la fuente): con el, nuestras texturas mas
+            # estrechas se cargarian con las filas descolocadas
             sdl2.SDL_RenderFlush(self.r)
+            fn = self._gl_fn
+            fn["glPixelStorei"](_GL_UNPACK_ROW_LENGTH, 0)
+            fn["glPixelStorei"](_GL_UNPACK_SKIP_ROWS, 0)
+            fn["glPixelStorei"](_GL_UNPACK_SKIP_PIXELS, 0)
             try:
                 yield self.ctx
             finally:

@@ -252,8 +252,11 @@ def main():
                        "al sol) mas alla del mapa de contacto",
                        zmin < -sz - 0.5 and zmax <= sz + 0.36 and xmin < -sx - 0.2,
                        f"rect {np.round(mg.rect_sombra, 2)} contacto +-{sx:.2f}/+-{sz:.2f}"))
-        sil = np.frombuffer(mg.tex_proy.read(), dtype=np.uint8).reshape(
-            modelo3d.SILUETA_PX, modelo3d.SILUETA_PX, 4)[:, :, 3]
+        # la textura se lee con el contexto de la escena activo: fuera de
+        # _gl() (contexto propio no activo) se leia basura
+        with escena._gl():
+            sil = np.frombuffer(mg.tex_proy.read(), dtype=np.uint8).reshape(
+                modelo3d.SILUETA_PX, modelo3d.SILUETA_PX, 4)[:, :, 3]
         frac = (sil > 0).mean()
         r.append(check("la silueta del coche ocupa una parte razonable de su "
                        "textura (10..70 %)", 0.10 < frac < 0.70, f"{frac:.0%}"))

@@ -87,6 +87,7 @@ def main():
         return np.frombuffer(buf, dtype=np.uint8).reshape(H, W, 4).astype(int)
 
     cfg.GFX_GPU_COMPARTIDO = True
+    cfg.SKY_CLOUDS = 0.0             # el pixel de cielo que se mira debe ser azul
     escena = gpu.GpuScene(ren, W, H, msaa=4)
     r.append(check("la escena entra en modo COMPARTIDO", escena.ok and escena.compartido,
                    escena.motivo_compartido or escena.motivo))

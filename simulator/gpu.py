@@ -1071,9 +1071,10 @@ class GpuScene:
         az = SOL_AZIMUT - rumbo_seg
         ce = math.cos(SOL_ELEVACION)
         luz = (math.sin(az) * ce, math.sin(SOL_ELEVACION), math.cos(az) * ce)
-        # sombra de contacto (oscura bajo los neumaticos y el centro del
-        # bajo, difuminada hacia fuera), con el chasis en el suelo
-        m.dibujar_sombra(ctx, vista, proy, base)
+        # sombra: la de contacto (oscura bajo los neumaticos y el centro del
+        # bajo, difuminada hacia fuera) y, con sol, la silueta del coche
+        # proyectada por el rayo de sol; con el chasis en el suelo
+        m.dibujar_sombra(ctx, vista, proy, base, mats, luz, bool(pal["sun"]))
         # posicion de la camara en el espacio de la escena (para el brillo
         # especular y el Fresnel) y colores del cielo y el suelo para la
         # luz ambiente hemisferica

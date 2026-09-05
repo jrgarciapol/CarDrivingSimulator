@@ -15,6 +15,14 @@ La iluminacion es la del sol de la escena (misma direccion que el disco
 del cielo): color del material o de la textura por un termino ambiente y
 otro difuso; y una sombra oscura bajo el coche, que es lo que mas lo
 "pega" al suelo.
+
+La sombra tiene dos partes sobre el mismo rectangulo a ras de suelo: la de
+CONTACTO (oscura bajo los neumaticos y el bajo, un mapa fijo por modelo) y
+la PROYECTADA por el sol: cada fotograma se aplasta el modelo sobre el
+suelo a lo largo del rayo de sol y se pinta su silueta en una textura
+pequena (proyeccion planar, sin doble oscurecimiento porque la silueta se
+pinta primero en la textura y luego se mezcla una sola vez con el suelo).
+Con el sol tapado (lluvia, niebla) solo queda la de contacto.
 """
 
 import os
@@ -109,25 +117,64 @@ void main() {
 """
 
 
+# La sombra: un rectangulo a ras de suelo en el sistema del chasis (x, z en
+# metros) que lleva dos texturas, la de contacto (rectangulo fijo de
+# mapa_sombra) y la silueta proyectada (rectangulo que cambia con el sol)
 _VS_SOMBRA = """#version 330
 uniform mat4 u_view;
 uniform mat4 u_proj;
 uniform mat4 u_model;
 in vec3 in_pos;
-in vec2 in_uv;
-out vec2 v_uv;
+out vec2 v_xz;
 void main() {
-    v_uv = in_uv;
+    v_xz = in_pos.xz;
     gl_Position = u_proj * u_view * u_model * vec4(in_pos, 1.0);
 }
 """
 
 _FS_SOMBRA = """#version 330
-uniform sampler2D u_tex;
-in vec2 v_uv;
+uniform sampler2D u_tex;         // sombra de contacto (alfa)
+uniform sampler2D u_tex_proy;    // silueta proyectada por el sol (alfa)
+uniform vec2 u_semi;             // semiancho, semilargo del mapa de contacto
+uniform vec4 u_rect;             // xmin, zmin, xmax, zmax de la silueta
+uniform float u_proy;            // opacidad de la sombra del sol (0 = sin sol)
+in vec2 v_xz;
 out vec4 f_col;
-void main() { f_col = vec4(0.0, 0.0, 0.0, texture(u_tex, v_uv).a); }
+void main() {
+    vec2 uvc = (v_xz + u_semi) / (2.0 * u_semi);
+    float c = texture(u_tex, uvc).a;
+    // borde suave: 5 muestras de la silueta (penumbra de unos centimetros)
+    vec2 uvp = (v_xz - u_rect.xy) / (u_rect.zw - u_rect.xy);
+    vec2 d = 0.8 / vec2(textureSize(u_tex_proy, 0));
+    float p = texture(u_tex_proy, uvp).a * 0.36
+            + texture(u_tex_proy, uvp + vec2(d.x, 0.0)).a * 0.16
+            + texture(u_tex_proy, uvp - vec2(d.x, 0.0)).a * 0.16
+            + texture(u_tex_proy, uvp + vec2(0.0, d.y)).a * 0.16
+            + texture(u_tex_proy, uvp - vec2(0.0, d.y)).a * 0.16;
+    float a = 1.0 - (1.0 - c) * (1.0 - p * u_proy);
+    f_col = vec4(0.0, 0.0, 0.0, a);
+}
 """
+
+# la silueta: el modelo aplastado sobre el suelo, visto desde arriba
+_VS_SILUETA = """#version 330
+uniform mat4 u_mvp;
+in vec3 in_pos;
+void main() { gl_Position = u_mvp * vec4(in_pos, 1.0); }
+"""
+
+_FS_SILUETA = """#version 330
+out vec4 f_col;
+void main() { f_col = vec4(1.0); }
+"""
+
+#: lado (pixeles) de la textura de la silueta proyectada
+SILUETA_PX = 160
+#: opacidad de la sombra del sol sobre el asfalto (la de contacto llega a 0,92)
+SOMBRA_SOL = 0.5
+#: tangente maxima del rayo de sol respecto a la vertical (sol muy bajo:
+#: la sombra se alargaria sin fin)
+_TAN_MAX = 3.0
 
 
 def mapa_sombra(medidas, centros, radios, n=96):
@@ -243,25 +290,105 @@ class ModeloGpu:
         self.tex_sombra.repeat_x = self.tex_sombra.repeat_y = False
         self.prog_sombra = ctx.program(vertex_shader=_VS_SOMBRA,
                                        fragment_shader=_FS_SOMBRA)
-        y = 0.012
-        quad = np.array([[-sx, y, -sz, 0, 0], [sx, y, -sz, 1, 0],
-                         [sx, y, sz, 1, 1], [-sx, y, sz, 0, 1]], dtype="f4")
-        self.vbo_sombra = ctx.buffer(quad.tobytes())
+        self.semi_sombra = (sx, sz)
+        # el rectangulo cambia cada fotograma con la sombra del sol
+        self.vbo_sombra = ctx.buffer(reserve=4 * 3 * 4, dynamic=True)
         self.ibo_sombra = ctx.buffer(np.array([0, 1, 2, 0, 2, 3],
                                               dtype=np.uint32).tobytes())
         self.vao_sombra = ctx.vertex_array(
-            self.prog_sombra, [(self.vbo_sombra, "3f 2f", "in_pos", "in_uv")],
+            self.prog_sombra, [(self.vbo_sombra, "3f", "in_pos")],
             index_buffer=self.ibo_sombra, index_element_size=4)
+        self.rect_sombra = (-sx, -sz, sx, sz)
+        # silueta proyectada: el modelo aplastado sobre el suelo, pintado
+        # desde arriba en una textura pequena de su propio framebuffer
+        self.prog_silueta = ctx.program(vertex_shader=_VS_SILUETA,
+                                        fragment_shader=_FS_SILUETA)
+        self.vao_silueta = ctx.vertex_array(
+            self.prog_silueta, [(self.vbo, "3f 24x", "in_pos")],
+            index_buffer=self.ibo, index_element_size=4)
+        self.tex_proy = ctx.texture((SILUETA_PX, SILUETA_PX), 4)
+        self.tex_proy.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.tex_proy.repeat_x = self.tex_proy.repeat_y = False
+        self.fbo_proy = ctx.framebuffer([self.tex_proy])
+        # caja del modelo (esquinas), para saber hasta donde llega la sombra
+        lo, hi = datos["pos"].min(0), datos["pos"].max(0)
+        self.esquinas = np.array([[x, y, z] for x in (lo[0], hi[0])
+                                  for y in (lo[1], hi[1])
+                                  for z in (lo[2], hi[2])], dtype=float)
 
-    def dibujar_sombra(self, ctx, vista, proy, base):
-        """La sombra de contacto, con la matriz del chasis en el suelo
-        (sin bote ni cabeceo: la sombra no se levanta con la carroceria)."""
+    def _silueta(self, ctx, base, matrices, luz):
+        """Pinta en tex_proy la silueta del modelo aplastado sobre el suelo
+        del chasis a lo largo del rayo de sol y devuelve el rectangulo
+        (xmin, zmin, xmax, zmax) que cubre, en el sistema del chasis; None
+        si el sol esta demasiado bajo."""
+        # el sol en el sistema del chasis (la rotacion de base es ortonormal)
+        lb = base[:3, :3].T @ np.asarray(luz, dtype=float)
+        if lb[1] < 0.2:
+            return None
+        tx = max(-_TAN_MAX, min(_TAN_MAX, lb[0] / lb[1]))
+        tz = max(-_TAN_MAX, min(_TAN_MAX, lb[2] / lb[1]))
+        # aplastar: (x, y, z) -> (x - tx*y, 0, z - tz*y)
+        apl = np.eye(4)
+        apl[0, 1], apl[2, 1], apl[1, 1] = -tx, -tz, 0.0
+        inv_base = np.linalg.inv(base)
+        # rectangulo: la caja de la carroceria aplastada mas el mapa de contacto
+        c = self.esquinas @ apl[:3, :3].T
+        sx, sz = self.semi_sombra
+        margen = 0.35
+        xmin, xmax = min(c[:, 0].min(), -sx) - margen, max(c[:, 0].max(), sx) + margen
+        zmin, zmax = min(c[:, 2].min(), -sz) - margen, max(c[:, 2].max(), sz) + margen
+        # vista cenital ortografica sobre ese rectangulo
+        orto = np.eye(4)
+        orto[0, 0], orto[0, 3] = 2.0 / (xmax - xmin), -(xmax + xmin) / (xmax - xmin)
+        orto[1, 2], orto[1, 3] = 2.0 / (zmax - zmin), -(zmax + zmin) / (zmax - zmin)
+        orto[2, 2] = 0.0
+        previo = ctx.fbo
+        self.fbo_proy.use()
+        self.fbo_proy.clear(0.0, 0.0, 0.0, 0.0)
+        ctx.disable(moderngl.DEPTH_TEST)
+        ctx.disable(moderngl.BLEND)
+        p = self.prog_silueta
+        ultima = None
+        for pieza, _tex, primero, n in self.grupos:
+            if pieza != ultima:
+                mvp = orto @ apl @ inv_base @ matrices[pieza]
+                p["u_mvp"].write(mvp.T.astype("f4").tobytes())
+                ultima = pieza
+            self.vao_silueta.render(moderngl.TRIANGLES, vertices=n, first=primero)
+        previo.use()
+        return (float(xmin), float(zmin), float(xmax), float(zmax))
+
+    def dibujar_sombra(self, ctx, vista, proy, base, matrices=None, luz=None,
+                       sol=True):
+        """La sombra, con la matriz del chasis en el suelo (sin bote ni
+        cabeceo: la sombra no se levanta con la carroceria): la de contacto
+        siempre y, con ``matrices`` (las cinco piezas), ``luz`` y ``sol``,
+        la silueta proyectada por el sol encima."""
+        sx, sz = self.semi_sombra
+        rect = None
+        if sol and matrices is not None and luz is not None:
+            rect = self._silueta(ctx, base, matrices, luz)
         p = self.prog_sombra
+        if rect is None:
+            rect = (-sx, -sz, sx, sz)
+            p["u_proy"].value = 0.0
+        else:
+            p["u_proy"].value = SOMBRA_SOL
+        self.rect_sombra = rect                      # (pruebas)
+        xmin, zmin, xmax, zmax = rect
+        y = 0.012
+        quad = np.array([[xmin, y, zmin], [xmax, y, zmin],
+                         [xmax, y, zmax], [xmin, y, zmax]], dtype="f4")
+        self.vbo_sombra.write(quad.tobytes())
         p["u_view"].write(vista.T.astype("f4").tobytes())
         p["u_proj"].write(proy.T.astype("f4").tobytes())
         p["u_model"].write(base.T.astype("f4").tobytes())
         self.tex_sombra.use(location=0)
+        self.tex_proy.use(location=1)
         p["u_tex"].value = 0
+        p["u_tex_proy"].value = 1
+        p["u_semi"].value = (float(sx), float(sz))
+        p["u_rect"].value = tuple(float(v) for v in rect)
         # SIN test de profundidad: el cuadrado es plano y la calzada bajo el
         # coche no lo es (rasantes, peralte que cambia, la trazada
         # levantada): con el test, al girar el coche un trozo de la sombra
@@ -321,7 +448,8 @@ class ModeloGpu:
         for tx in self.texturas.values():
             tx.release()
         for obj in (self.vao_sombra, self.vbo_sombra, self.ibo_sombra,
-                    self.tex_sombra, self.prog_sombra):
+                    self.tex_sombra, self.prog_sombra, self.vao_silueta,
+                    self.prog_silueta, self.fbo_proy, self.tex_proy):
             obj.release()
         self.vao.release()
         self.vbo.release()

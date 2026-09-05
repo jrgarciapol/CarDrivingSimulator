@@ -804,11 +804,29 @@ class WheelInput:
                 if cfg.AXIS_STEERING < self.num_axes else 0.0
             estado["up"] |= bool(h & sdl2.SDL_HAT_UP) or bt("TOGGLE_VIEW")
             estado["down"] |= bool(h & sdl2.SDL_HAT_DOWN) or bt("TOGGLE_AUTO")
-            estado["left"] |= bool(h & sdl2.SDL_HAT_LEFT) or vol < -0.45
-            estado["right"] |= bool(h & sdl2.SDL_HAT_RIGHT) or vol > 0.45
+            estado["left"] |= bool(h & sdl2.SDL_HAT_LEFT)
+            estado["right"] |= bool(h & sdl2.SDL_HAT_RIGHT)
             estado["ok"] |= bt("SHIFT_UP")        # leva derecha = ENTER
             estado["back"] |= bt("SHIFT_DOWN")    # leva izquierda = ESC
+            # El giro del volante da UN paso por giro, y hay que volver al
+            # centro para dar otro: NO se repite mientras se mantiene girado.
+            # Con repeticion, al salir al menu con el volante girado (o si
+            # se queda girado por el force feedback) las opciones cambiaban
+            # sin parar hasta centrarlo.
+            zona = getattr(self, "_vol_zona", 0)
+            paso_vol = None
+            if abs(vol) < 0.25:
+                zona = 0
+            elif vol > 0.45 and zona == 0:
+                zona, paso_vol = 1, "right"
+            elif vol < -0.45 and zona == 0:
+                zona, paso_vol = -1, "left"
+            self._vol_zona = zona
+        else:
+            paso_vol = None
         out = set()
+        if paso_vol:
+            out.add(paso_vol)
         _DELAY, _INT = 0.35, 0.06       # pausa inicial y ritmo de repeticion
         for k, v in estado.items():
             prev = self._prev_menu.get(k, False)

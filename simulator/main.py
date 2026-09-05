@@ -257,6 +257,14 @@ def main(argv=None):
     flags = sdl2.SDL_WINDOW_SHOWN
     if args.completa or getattr(cfg, "WINDOW_FULLSCREEN", False):
         flags |= sdl2.SDL_WINDOW_FULLSCREEN_DESKTOP
+    if getattr(cfg, "GFX_GPU", False) and getattr(cfg, "GFX_GPU_COMPARTIDO", False):
+        # la escena se pinta dentro del contexto OpenGL de SDL (ver gpu.py):
+        # hace falta que el renderizador de SDL sea el de OpenGL (en Windows
+        # el que elige solo es Direct3D). Si no lo hay, SDL prueba los demas
+        # y la GPU vuelve al contexto propio con lectura del fotograma. (El
+        # renderizador de OpenGL recrea la ventana con SDL_WINDOW_OPENGL el
+        # solo; pedirlo aqui haria fallar la ventana sin OpenGL, en pruebas)
+        sdl2.SDL_SetHint(sdl2.SDL_HINT_RENDER_DRIVER, b"opengl")
 
     window = sdl2.SDL_CreateWindow(
         cfg.WINDOW_TITLE,

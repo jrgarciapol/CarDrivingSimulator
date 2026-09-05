@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **362 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **375 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -89,12 +89,12 @@ frenar y sube y baja con la suspensión— y la GPU la proyecta con **búfer de
 profundidad**, **antialiasing multimuestra** y **bruma por píxel**; el cielo,
 el sol, los montes lejanos y el suelo hasta el horizonte son un sombreador
 fijo al mundo, así que giran con la cámara y en una curva peraltada el
-horizonte se inclina. El fotograma se lee de la GPU **sin esperarla**
-(`GFX_GPU_ASYNC`: se recoge el anterior mientras pinta este, escribiendo
-directamente en la textura de SDL), porque la espera costaba 15 ms por
-fotograma en un portátil. Si no hay OpenGL 3.3 (o falta `moderngl`), el juego
-vuelve solo al renderizador de SDL, que dibuja la misma geometría con el
-algoritmo del pintor. Cronómetro de vueltas y sonido de motor y chirrido de
+horizonte se inclina. La escena se pinta **dentro del contexto OpenGL de
+SDL** (`GFX_GPU_COMPARTIDO`: el renderizador de SDL pasa a ser el de OpenGL
+también en Windows y la GPU escribe directamente en la textura de fondo),
+porque leer el fotograma de la GPU costaba 15 ms en un portátil. Si no hay
+OpenGL 3.3 (o falta `moderngl`), el juego vuelve solo al renderizador de
+SDL, que dibuja la misma geometría con el algoritmo del pintor. Cronómetro de vueltas y sonido de motor y chirrido de
 neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
 
 - **Spa-Francorchamps** (7,0 km) con **geometría y rasante REALES**: el eje
@@ -600,6 +600,7 @@ tests/
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
   test_audio.py             sintetizador y laboratorio de sonido
   test_gpu.py               proyeccion, geometria y fotogramas reales de la GPU
+  test_gpu_compartido.py    la escena dentro del contexto OpenGL de SDL (Xvfb)
   test_hud.py               atlas de fuente y esfera del velocimetro cacheada
   test_registro.py          registro de rendimiento: filas, bloques y resumen
 ```

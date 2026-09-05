@@ -272,6 +272,34 @@ def main():
                        f"peralte {math.degrees(bancos[i_max]):.1f} grados, "
                        f"horizonte izq fila {izq}, der fila {der}"))
 
+        # --- peralte: el suelo bajo el coche queda a la altura del coche ---
+        # Se reporto que en el ovalo "la pista se queda arriba y el coche
+        # sigue a la misma cota": la camara iba a la cota del EJE, y con el
+        # coche a n metros del eje en un peralte fuerte el asfalto bajo el
+        # esta n*tan(peralte) mas alto o mas bajo. Un punto de la calzada
+        # 8 m por delante, en la misma posicion lateral que el coche, debe
+        # proyectarse a la misma fila de pantalla que en un tramo llano.
+        st.s, st.vx = 3000.0, 25.0
+        st.n = 0.0
+        cam_c = _camara(cam_forward=cfg.CAMERA_FORWARD)
+        cam_c.mesh_dx = 0.0
+        escena.dibujar(c90, st, cam_c, True, pal)
+        fila_llano = escena.world_to_screen(c90, st.s + 8.0, 0.0, 0.0)[1]
+        filas = []
+        for n_lat in (6.0, -6.0):
+            st.s = i_max * cfg.SEGMENT_LENGTH + 2.0
+            st.n = n_lat
+            cam_b = _camara(cam_forward=cfg.CAMERA_FORWARD)
+            cam_b.mesh_dx = -n_lat
+            escena.dibujar(ov, st, cam_b, True, pal)
+            filas.append(escena.world_to_screen(ov, st.s + 8.0, n_lat, 0.0)[1])
+        r.append(check("en el peralte, el asfalto bajo el coche queda a su "
+                       "altura tanto por el lado alto como por el bajo",
+                       all(abs(f - fila_llano) < 12 for f in filas),
+                       f"fila llano {fila_llano:.0f}, peralte "
+                       f"{filas[0]:.0f} / {filas[1]:.0f}"))
+        st.n = 0.0
+
         # --- balizas y chevrons por la GPU: se dibujan y quedan a la vista ---
         cfg.TRACK_FILE = "tracks/c-50.csv"
         c50 = Track()

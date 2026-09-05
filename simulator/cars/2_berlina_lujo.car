@@ -2,6 +2,7 @@
 NAME = "BERLINA DE LUJO"          # nombre que aparece en el menu
 DESC = "1950 KG - 340 CV - RWD - COMODA Y RAPIDA" # descripcion en el menu
 CAR_COLOR = (40, 40, 48)          # color RGB de la carroceria
+CAR_MODEL_3D = "rolls"            # modelo 3D (Rolls-Royce Ghost)
 CAR_MASS = 1950.0                 # kg, masa total del vehiculo
 CAR_INERTIA_Z = 3200.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 3600.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

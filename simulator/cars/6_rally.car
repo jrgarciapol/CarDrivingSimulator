@@ -2,6 +2,7 @@
 NAME = "RALLY"                    # nombre que aparece en el menu
 DESC = "1230 KG - 300 CV - AWD - REY DE LA HIERBA" # descripcion en el menu
 CAR_COLOR = (30, 90, 200)         # color RGB de la carroceria
+CAR_MODEL_3D = "yaris"            # modelo 3D (Toyota GR Yaris WRC)
 CAR_MASS = 1230.0                 # kg, masa total del vehiculo
 CAR_INERTIA_Z = 1800.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 2000.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

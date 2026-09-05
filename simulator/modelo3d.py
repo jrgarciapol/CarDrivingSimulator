@@ -40,11 +40,13 @@ in vec3 in_pos;
 in vec3 in_nrm;
 in vec2 in_uv;
 in vec4 in_col;
+out vec3 v_pos;
 out vec3 v_nrm;
 out vec2 v_uv;
 out vec4 v_col;
 void main() {
     vec4 p = u_model * vec4(in_pos, 1.0);
+    v_pos = p.xyz;
     v_nrm = mat3(u_model) * in_nrm;      // sin escala: la rotacion basta
     v_uv = in_uv;
     v_col = in_col;
@@ -52,21 +54,50 @@ void main() {
 }
 """
 
+# Iluminacion pensada para que un coche de Sketchfab se parezca a como se
+# ve alli: se trabaja en espacio LINEAL (las texturas y los colores vienen
+# en sRGB; iluminar sin convertirlos apaga los medios tonos), con luz
+# ambiente HEMISFERICA (cielo por arriba, suelo por abajo), difusa del sol,
+# brillo especular (la chapa refleja el sol) y un termino de Fresnel que
+# tine con el cielo las superficies vistas de refilon, como hace la
+# pintura de un coche.
 _FS_MODELO = """#version 330
 uniform sampler2D u_tex;
 uniform float u_tex_on;              // 1 = pieza con textura
 uniform vec3 u_luz;                  // hacia el sol, en el espacio de la escena
+uniform vec3 u_cam;                  // posicion de la camara, idem
+uniform vec3 u_cielo;                // color del cielo (ambiente por arriba)
+uniform vec3 u_suelo;                // color del suelo (ambiente por abajo)
+in vec3 v_pos;
 in vec3 v_nrm;
 in vec2 v_uv;
 in vec4 v_col;
 out vec4 f_col;
+vec3 lineal(vec3 c) { return pow(c, vec3(2.2)); }
 void main() {
-    vec3 base = mix(v_col.rgb, texture(u_tex, v_uv).rgb, u_tex_on);
+    vec3 base = lineal(mix(v_col.rgb, texture(u_tex, v_uv).rgb, u_tex_on));
     vec3 n = normalize(v_nrm);
+    vec3 v = normalize(u_cam - v_pos);
+    if (dot(n, v) < 0.0) n = -n;         // caras de dos lados
+    // el cielo y el suelo, DESATURADOS: la luz ambiente real es mucho mas
+    // neutra que el azul del cenit (tal cual, un coche blanco salia celeste)
+    vec3 cielo = lineal(u_cielo);
+    vec3 suelo = lineal(u_suelo);
+    cielo = mix(cielo, vec3(dot(cielo, vec3(0.3, 0.59, 0.11))), 0.7);
+    suelo = mix(suelo, vec3(dot(suelo, vec3(0.3, 0.59, 0.11))), 0.7);
+    // ambiente hemisferica: cuanto mira hacia arriba, cielo; hacia abajo, suelo
+    float arriba = 0.5 + 0.5 * n.y;
+    vec3 ambiente = mix(suelo * 0.45, cielo * 0.75, arriba);
     float difusa = max(dot(n, u_luz), 0.0);
-    // ambiente algo mas claro por arriba (cielo) que por abajo (suelo)
-    float ambiente = 0.38 + 0.10 * (0.5 + 0.5 * n.y);
-    f_col = vec4(base * (ambiente + 0.62 * difusa), 1.0);
+    vec3 sol = vec3(1.0, 0.97, 0.90);
+    vec3 col = base * (ambiente + sol * 1.05 * difusa);
+    // brillo del sol sobre la chapa (Blinn-Phong) y reflejo del cielo de
+    // refilon (Fresnel): sin ellos el coche parece de carton
+    vec3 h = normalize(u_luz + v);
+    float espec = pow(max(dot(n, h), 0.0), 48.0) * 0.6 * step(0.001, difusa);
+    float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
+    col += sol * espec + cielo * fres * 0.18;
+    f_col = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
 }
 """
 
@@ -155,14 +186,20 @@ class ModeloGpu:
             if abs(w) < self.OMEGA_VISIBLE:
                 self.ang[i] = (self.ang[i] + w * dt) % (2.0 * np.pi)
 
-    def dibujar(self, vista, proy, matrices, luz):
+    def dibujar(self, vista, proy, matrices, luz, cam=(0.0, 1.0, -6.0),
+                cielo=(0.45, 0.65, 0.95), suelo=(0.25, 0.45, 0.2)):
         """Pinta todas las piezas. ``matrices``: lista de 5 matrices 4x4
         (carroceria, DI, DD, TI, TD) modelo -> escena. ``luz``: vector
-        unitario hacia el sol en el espacio de la escena."""
+        unitario hacia el sol en el espacio de la escena; ``cam`` la
+        posicion de la camara; ``cielo`` y ``suelo`` los colores (0..1)
+        de la luz ambiente por arriba y por abajo."""
         p = self.prog
         p["u_view"].write(vista.T.astype("f4").tobytes())
         p["u_proj"].write(proy.T.astype("f4").tobytes())
         p["u_luz"].value = tuple(float(v) for v in luz)
+        p["u_cam"].value = tuple(float(v) for v in cam)
+        p["u_cielo"].value = tuple(float(v) for v in cielo)
+        p["u_suelo"].value = tuple(float(v) for v in suelo)
         ultima = None
         for pieza, tex, primero, n in self.grupos:
             if pieza != ultima:

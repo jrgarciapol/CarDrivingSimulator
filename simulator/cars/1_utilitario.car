@@ -2,6 +2,7 @@
 NAME = "UTILITARIO"               # nombre que aparece en el menu
 DESC = "900 KG - 75 CV - FWD - FACIL Y LENTO" # descripcion en el menu
 CAR_COLOR = (70, 130, 200)        # color RGB de la carroceria
+CAR_MODEL_3D = "2cv"              # modelo 3D (Citroen 2CV Charleston)
 CAR_MASS = 900.0                  # kg, masa total del vehiculo
 CAR_INERTIA_Z = 1150.0            # kg*m2, inercia de giro: mas = reacciones lentas
 CAR_INERTIA_PITCH = 1300.0        # kg*m2, inercia de cabeceo (frenar/acelerar)

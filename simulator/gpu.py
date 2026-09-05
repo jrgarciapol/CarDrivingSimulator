@@ -196,6 +196,14 @@ void main() {
 
 _VERTICE = np.dtype([("pos", "f4", 3), ("col", "u1", 4)])
 
+#: huellas de neumatico: puntos que se guardan (anillo: las mas viejas se
+#: borran), separacion minima entre puntos de un trazo, semiancho de la
+#: huella y opacidad maxima sobre el asfalto
+HUELLAS_MAX = 24000
+HUELLA_PASO = 0.12
+HUELLA_SEMIANCHO = 0.11
+HUELLA_OPACIDAD = 0.6
+
 
 class _CargadorSDL:
     """Cargador de funciones de OpenGL para moderngl a traves de SDL: asi
@@ -365,6 +373,14 @@ class GpuScene:
         self._modelo_gpu = None
         self._vao_sombra = None
         self.coche_dibujado = False
+        # huellas de neumatico sobre el asfalto (ver marcar_huella): anillo
+        # de puntos (s, n, opacidad, trazo) y el ultimo punto de cada rueda
+        self._huellas = np.zeros((HUELLAS_MAX, 4), dtype=np.float64)
+        self._huellas_n = 0            # puntos guardados (hasta HUELLAS_MAX)
+        self._huellas_i = 0            # siguiente hueco del anillo
+        self._huella_ultimo = [None] * 4   # (s, n, trazo) por rueda
+        self._huella_trazo = 0
+        self.huellas_dibujadas = 0     # (pruebas) cuadrilateros del fotograma
         if sin_gl:
             # solo la geometria (pruebas): ni contexto ni textura
             self.motivo = "sin GL a proposito"
@@ -626,6 +642,8 @@ class GpuScene:
         # cambio de circuito: el fotograma pendiente era del anterior
         self._pendiente = None
         self._arboles_track = self._plantar(track)
+        self._huellas_n = self._huellas_i = 0
+        self._huella_ultimo = [None] * 4
 
     def _rels(self):
         """Estaciones de las secciones relativas al coche: malla adaptativa
@@ -834,6 +852,10 @@ class GpuScene:
             v["col"][:, :, 3] = 255
         idx = self._indices(len(bandas), n_q)
 
+        # --- huellas de neumatico sobre el asfalto ---------------------------
+        hue = self._huellas_geo(track, s0, rels, x, z, hx, hz, elev, cb, sb)
+        self.huellas_dibujadas = 0 if hue is None else len(hue[1]) // 6
+
         # --- arboles en la hierba: geometria en el espacio de la escena -----
         arb = self._arboles(track, s0, rels, x, z, hx, hz, elev, cb, sb, hw,
                             kw, float(self.rumbo[int(s0 / L) % N]))
@@ -899,6 +921,23 @@ class GpuScene:
             self.vbo.write(datos)
             self.ibo.write(idx.tobytes())
             self.vao.render(moderngl.TRIANGLES, vertices=len(idx))
+            # huellas: translucidas sobre el asfalto, con profundidad pero
+            # empujadas hacia la camara para que no peleen con el
+            if hue is not None:
+                vh, ih = hue
+                dh = vh.reshape(-1).tobytes()
+                if len(dh) > self.vbo.size:
+                    self.vbo.orphan(len(dh) * 2)
+                if ih.nbytes > self.ibo.size:
+                    self.ibo.orphan(ih.nbytes * 2)
+                self.vbo.write(dh)
+                self.ibo.write(ih.tobytes())
+                ctx.enable(moderngl.BLEND)
+                ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+                ctx.polygon_offset = (-1.0, -2.0)
+                self.vao.render(moderngl.TRIANGLES, vertices=len(ih))
+                ctx.polygon_offset = (0.0, 0.0)
+                ctx.disable(moderngl.BLEND)
             # arboles: misma vista que la carretera, con profundidad
             if arb is not None:
                 va, ia = arb
@@ -1186,6 +1225,97 @@ class GpuScene:
         vb["col"][:, :3] = np.clip(col, 0, 255).astype(np.uint8)
         vb["col"][:, 3] = 255
         return vb, np.arange(len(pos), dtype=np.int32)
+
+    # -- huellas de neumatico -----------------------------------------------
+    def marcar_huella(self, rueda, s, n, intensidad, largo_pista):
+        """Anota que la rueda ``rueda`` (0..3) esta dejando goma en
+        (``s``, ``n``) con ``intensidad`` 0..1 (0 = nada). Un trazo son los
+        puntos seguidos de una misma rueda; se corta al dejar de derrapar o
+        al saltar mas de 3 m. Solo se guarda un punto cada HUELLA_PASO m."""
+        if intensidad <= 0.0:
+            self._huella_ultimo[rueda] = None
+            return
+        L = float(largo_pista)
+        s = float(s) % L
+        ult = self._huella_ultimo[rueda]
+        if ult is None or abs((s - ult[0] + L / 2.0) % L - L / 2.0) > 3.0:
+            self._huella_trazo += 1
+            trazo = self._huella_trazo
+        else:
+            trazo = ult[2]
+            if math.hypot((s - ult[0] + L / 2.0) % L - L / 2.0,
+                          float(n) - ult[1]) < HUELLA_PASO:
+                return
+        a = min(1.0, float(intensidad)) * HUELLA_OPACIDAD
+        self._huellas[self._huellas_i] = (s, float(n), a, trazo)
+        self._huellas_i = (self._huellas_i + 1) % HUELLAS_MAX
+        self._huellas_n = min(self._huellas_n + 1, HUELLAS_MAX)
+        self._huella_ultimo[rueda] = (s, float(n), trazo)
+
+    def _huellas_geo(self, track, s0, rels, x, z, hx, hz, elev, cb, sb):
+        """Las huellas a la vista este fotograma como cuadrilateros pegados
+        al asfalto en el espacio de la escena (misma vista que la
+        carretera): (vertices, indices) o None."""
+        n = self._huellas_n
+        if n == 0 or not getattr(cfg, "TRACK_SKID_MARKS", True):
+            return None
+        # el anillo, en el orden en que se anotaron (asi los puntos seguidos
+        # de un trazo son vecinos en la lista)
+        if n < HUELLAS_MAX:
+            h = self._huellas[:n]
+        else:
+            h = np.concatenate([self._huellas[self._huellas_i:],
+                                self._huellas[:self._huellas_i]])
+        L = float(track.length)
+        ds = (h[:, 0] - s0 + L / 2.0) % L - L / 2.0
+        vis = (ds > max(rels[0], -40.0)) & (ds < min(rels[-1], 450.0))
+        if vis.sum() < 2:
+            return None
+        # las cuatro ruedas se anotan entrelazadas: agrupar por trazo (orden
+        # estable: dentro de cada trazo siguen en el orden en que se anotaron)
+        h, ds = h[vis], ds[vis]
+        orden = np.argsort(h[:, 3], kind="stable")
+        h, ds = h[orden], ds[orden]
+        # pares de puntos seguidos del mismo trazo
+        par = (h[:-1, 3] == h[1:, 3]) & (np.abs(ds[1:] - ds[:-1]) < 3.0)
+        i0 = np.nonzero(par)[0]
+        if len(i0) == 0:
+            return None
+        i1 = i0 + 1
+        ii = np.concatenate([i0, i1])
+        d, lat = ds[ii], h[ii, 1]
+        xi, zi = np.interp(d, rels, x), np.interp(d, rels, z)
+        hxi, hzi = np.interp(d, rels, hx), np.interp(d, rels, hz)
+        ei = np.interp(d, rels, elev)
+        cbi, sbi = np.interp(d, rels, cb), np.interp(d, rels, sb)
+        # 1 cm sobre el asfalto (mas el polygon offset al pintar)
+        p = np.stack([xi + hxi * lat * cbi, ei - lat * sbi + 0.01,
+                      zi + hzi * lat * cbi], axis=1)
+        m = len(i0)
+        p0, p1 = p[:m], p[m:]
+        # normal del asfalto en cada punto y perpendicular al trazo dentro
+        # del plano del asfalto: asi la huella tiene su ancho aunque el coche
+        # vaya cruzado
+        lat_v = np.stack([hxi[:m] * cbi[:m], -sbi[:m], hzi[:m] * cbi[:m]], axis=1)
+        tg = np.stack([-hzi[:m], np.zeros(m), hxi[:m]], axis=1)
+        nrm = np.cross(lat_v, tg)
+        nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-9)[:, None]
+        dv = p1 - p0
+        w = np.cross(nrm, dv)
+        w /= np.maximum(np.linalg.norm(w, axis=1), 1e-9)[:, None]
+        w *= HUELLA_SEMIANCHO
+        v = np.empty((m, 4), dtype=_VERTICE)
+        v["pos"][:, 0] = p0 - w
+        v["pos"][:, 1] = p0 + w
+        v["pos"][:, 2] = p1 - w
+        v["pos"][:, 3] = p1 + w
+        v["col"][:, :, :3] = 12
+        v["col"][:, 0, 3] = v["col"][:, 1, 3] = (h[i0, 2] * 255).astype(np.uint8)
+        v["col"][:, 2, 3] = v["col"][:, 3, 3] = (h[i1, 2] * 255).astype(np.uint8)
+        base = np.arange(m, dtype=np.int32) * 4
+        idx = np.stack([base, base + 1, base + 2, base + 1, base + 3, base + 2],
+                       axis=1).reshape(-1)
+        return v, idx
 
     def _balizas(self, vista, x, z, hx, hz, elev, cb, sb, hw, rels, seg_idx,
                  sm, kw):

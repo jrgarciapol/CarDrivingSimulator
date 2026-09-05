@@ -315,6 +315,77 @@ def main():
                            f"pasos {np.round(pasos[:6], 2)}, "
                            f"{int(amarillas.sum())} balizas (esperadas {n_esperado})"))
 
+        # --- huellas de neumatico en el asfalto ------------------------------
+        # anotadas como en main: cada rueda con su (s, n) e intensidad; se
+        # guardan cada HUELLA_PASO m y un trazo se corta al dejar de derrapar
+        st.s, st.vx = 3000.0, 25.0
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        sin_hue = leer().astype(int)
+        L = c90.length
+        for k in range(300):                       # 30 m de frenada a 0,1 m
+            for i, dn in enumerate((0.8, -0.8, 0.8, -0.8)):
+                escena.marcar_huella(i, 3004.0 + k * 0.1 + (1.3 if i < 2 else -1.3),
+                                     dn, 1.0, L)
+        n1 = escena._huellas_n
+        r.append(check("las huellas se guardan como minimo cada 12 cm por rueda, "
+                       "no cada fotograma (con muestras a 0,1 m queda una de "
+                       "cada dos: 4 x 30 m / 0,2 = 600 puntos de 1200)",
+                       580 <= n1 <= 620, f"{n1} puntos"))
+        for i in range(4):
+            escena.marcar_huella(i, 3040.0, 0.0, 0.0, L)      # deja de derrapar
+        escena.marcar_huella(0, 3050.0, 0.8, 0.7, L)
+        r.append(check("...y al dejar de derrapar el siguiente punto abre un "
+                       "trazo nuevo (no se une con una linea al anterior)",
+                       escena._huellas[escena._huellas_n - 1, 3]
+                       != escena._huellas[0, 3]))
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        con_hue = leer().astype(int)
+        dif_hue = (np.abs(con_hue - sin_hue).sum(axis=2) > 12)
+        ys, xs = np.nonzero(dif_hue)
+        r.append(check("con huellas cambian pixeles del asfalto por delante "
+                       "(oscurecido, no en la hierba ni el cielo)",
+                       escena.huellas_dibujadas > 500 and dif_hue.sum() > 200
+                       and (con_hue[dif_hue][:, :3].mean()
+                            < sin_hue[dif_hue][:, :3].mean())
+                       and ys.min() > H * 0.45,
+                       f"{escena.huellas_dibujadas} cuadrilateros, "
+                       f"{dif_hue.sum()} px, filas {ys.min() if len(ys) else -1}.."))
+        e = escena.eje(c90, st.s)
+        geo = escena._huellas_geo(c90, st.s, e["rels"], e["x"], e["z"], e["hx"],
+                                  e["hz"], e["elev"], e["cb"], e["sb"])
+        v, _ = geo
+        anchos = np.linalg.norm(v["pos"][:, 1] - v["pos"][:, 0], axis=1)
+        cerca = v["pos"][:, 0, 2] < 6.0            # a menos de 6 m: eje ~ recto
+        lat = 0.5 * (v["pos"][cerca, 0, 0] + v["pos"][cerca, 1, 0])   # x = lateral
+        r.append(check("...cada cuadrilatero tiene el ancho del neumatico y "
+                       "va a la posicion lateral de su rueda (+-0,8 m)",
+                       np.allclose(anchos, 2 * gpu.HUELLA_SEMIANCHO, atol=1e-3)
+                       and len(lat) > 4 and np.abs(np.abs(lat) - 0.8).max() < 0.25,
+                       f"ancho {anchos.mean():.3f} m, |lat| "
+                       f"{np.abs(lat).min():.2f}..{np.abs(lat).max():.2f}"))
+        cfg.TRACK_SKID_MARKS = False
+        escena.dibujar(c90, st, cam, True, pal)
+        r.append(check("con TRACK_SKID_MARKS apagado no se pintan",
+                       escena.huellas_dibujadas == 0))
+        cfg.TRACK_SKID_MARKS = True
+        # el anillo: al llenarse se olvidan las mas viejas, sin fallar
+        viejo = gpu.HUELLAS_MAX
+        gpu.HUELLAS_MAX = 64
+        esc_h = gpu.GpuScene(None, W, H, sin_gl=True)
+        for k in range(100):
+            esc_h.marcar_huella(0, 3010.0 + k * 0.5, 0.5, 1.0, L)
+        geo_h = esc_h._huellas_geo(c90, st.s, e["rels"], e["x"], e["z"], e["hx"],
+                                   e["hz"], e["elev"], e["cb"], e["sb"])
+        gpu.HUELLAS_MAX = viejo
+        r.append(check("el anillo de huellas se llena y sigue: quedan las 64 "
+                       "ultimas (63 tramos)",
+                       esc_h._huellas_n == 64 and geo_h is not None
+                       and len(geo_h[1]) // 6 == 63,
+                       f"{esc_h._huellas_n} puntos, "
+                       f"{0 if geo_h is None else len(geo_h[1]) // 6} tramos"))
+
         # --- peralte: el suelo bajo el coche queda a la altura del coche ---
         # Se reporto que en el ovalo "la pista se queda arriba y el coche
         # sigue a la misma cota": la camara iba a la cota del EJE, y con el
@@ -352,6 +423,8 @@ def main():
         sdl2.SDL_RenderClear(ren)
         escena.dibujar(c50, st, cam, True, pal)
         sdl2.SDL_RenderPresent(ren)
+        r.append(check("cambiar de circuito borra las huellas de neumatico",
+                       escena._huellas_n == 0))
         img = leer().astype(int)
         amarillo = ((img[:, :, 0] > 200) & (img[:, :, 1] > 170)
                     & (img[:, :, 2] < 90)).sum()

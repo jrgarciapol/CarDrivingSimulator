@@ -273,6 +273,12 @@ class Renderer(_Dibujo):
         self.coche_gpu = False      # el ultimo fotograma pinto el modelo 3D
 
     # ------------------------------------------------------------------
+    def marcar_huella(self, rueda, s, n, intensidad, largo_pista):
+        """Huella de neumatico en el asfalto (solo la escena de la GPU las
+        pinta; sin GPU no se guarda nada)."""
+        if self.gpu is not None:
+            self.gpu.marcar_huella(rueda, s, n, intensidad, largo_pista)
+
     def modelo_coche(self, steering, dt):
         """Lo que hace falta para pintar el modelo 3D del coche dentro de la
         escena de la GPU (vista de coche completo), o None si no hay GPU o

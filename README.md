@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **421 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **428 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -393,7 +393,13 @@ En la franja de hierba hay **árboles** (`TRACK_TREES`, uno cada
 al azar con semilla fija (siempre los mismos en cada circuito), sombreados
 por el sol y con la bruma de la distancia; cuestan unos 1.500 triángulos por
 fotograma. Las balizas de borde van a estaciones fijas cada 6 m, sea cual
-sea el paso de la malla.
+sea el paso de la malla. Al derrapar o bloquear sobre asfalto las ruedas
+dejan **huellas de goma** (`TRACK_SKID_MARKS`): cada rueda anota su
+posición (estación y desplazamiento) mientras va pasada del límite, más
+oscura cuanto más pasada y más cargada, y las huellas se pintan como cintas
+translúcidas pegadas al asfalto (con el ancho del neumático aunque el coche
+vaya cruzado) que se quedan en la pista; se recuerdan las últimas 24.000
+marcas y se borran al cambiar de circuito.
 Lo que se mueve viene de la física: el giro de cada rueda es su velocidad
 angular real (patina y se bloquea con ella), la dirección es el ángulo de
 las ruedas delanteras, y la carrocería bota, cabecea y balancea con la

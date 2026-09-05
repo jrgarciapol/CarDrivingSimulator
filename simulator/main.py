@@ -628,12 +628,25 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                 for i in range(4):
                     over_i = max(abs(st.slip_ratio[i]) / cfg.TIRE_PEAK_SLIP_RATIO,
                                  abs(st.slip_angle[i]) / peak_a)
-                    if over_i > 0.9 and st.fz[i] > 100.0:
+                    goma = over_i > 0.9 and st.fz[i] > 100.0
+                    if goma:
                         kind = {"road": "smoke", "kerb": "spark",
                                 "grass": "dust"}[st.wheel_surface[i]]
                         particles.emit(kind,
                                        (st.s + car.X_POS[i]) % track.length,
                                        st.n + car.Y_POS[i], abs(st.vx))
+                    # huella de goma en el asfalto: mas oscura cuanto mas
+                    # pasado del limite y mas cargada va la rueda
+                    huella = 0.0
+                    if goma and st.wheel_surface[i] == "road":
+                        huella = min(1.0, (over_i - 0.9) * 1.5) * min(
+                            1.0, st.fz[i] / (cfg.CAR_MASS * 9.81 / 4.0))
+                    scene.marcar_huella(i, st.s + car.X_POS[i],
+                                        st.n + car.Y_POS[i], huella,
+                                        track.length)
+            else:
+                for i in range(4):
+                    scene.marcar_huella(i, st.s, st.n, 0.0, track.length)
             particles.update(frame_dt * time_scale)
             particles.draw(renderer, scene, track)
         # sin modelo 3D (render de SDL o coche sin modelo): el coche de

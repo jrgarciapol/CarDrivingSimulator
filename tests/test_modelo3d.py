@@ -126,6 +126,16 @@ def main():
     garage.load_car(os.path.join(garage.CARS_DIR, "3_deportivo.car"))
     r.append(check("...y al cambiar de coche la camara vuelve a la de serie",
                    cfg.CAMERA_BACK_CHASE == 6.5 and cfg.CAR_MODEL_3D == "bugatti"))
+    # la tecla C pasa por tres camaras sobre la misma escena; las dos
+    # exteriores tienen altura y distancia propias, y son claves del coche
+    r.append(check("la camara trasera cercana tiene altura y distancia propias",
+                   0.0 < cfg.CAMERA_HEIGHT_REAR < cfg.CAMERA_HEIGHT_CHASE
+                   and 0.0 < cfg.CAMERA_BACK_REAR < cfg.CAMERA_BACK_CHASE,
+                   f"trasera {cfg.CAMERA_HEIGHT_REAR}/{cfg.CAMERA_BACK_REAR} m, "
+                   f"exterior {cfg.CAMERA_HEIGHT_CHASE}/{cfg.CAMERA_BACK_CHASE} m"))
+    r.append(check("...y las cuatro son ajustes del coche (se guardan en el .car)",
+                   {"CAMERA_HEIGHT_REAR", "CAMERA_BACK_REAR", "CAMERA_HEIGHT_CHASE",
+                    "CAMERA_BACK_CHASE"} <= garage.CAR_KEYS))
 
     # --- carga ----------------------------------------------------------------
     f1 = modelo3d.cargar("f1")

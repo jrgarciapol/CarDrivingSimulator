@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **415 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **417 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -134,11 +134,15 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
   activas en modo manual.
 - **Cuentavueltas grande** arriba centrado, con zonas verde/ámbar/roja,
   marca del corte y la marcha en grande — siempre a la vista.
-- **Tres vistas** (tecla `C` o botón 3, en ciclo): **sin coche** (cámara
-  interior, por defecto), trasera cercana con la carrocería viva, y **coche
-  completo en 3D** con cámara de persecución: el coche gira visiblemente
-  hacia donde se dirige, con las ruedas delanteras siguiendo la dirección.
-  La inicial se elige con `VIEW_MODE`.
+- **Tres cámaras sobre la misma escena** (tecla `C` o botón 3, en ciclo):
+  **interior** (ojo del conductor, sin coche, por defecto), **trasera
+  cercana** (el modelo 3D pegado por detrás, `CAMERA_HEIGHT_REAR` /
+  `CAMERA_BACK_REAR`) y **exterior lejana** (cámara de persecución,
+  `CAMERA_HEIGHT_CHASE` / `CAMERA_BACK_CHASE`). Las alturas y distancias
+  son parámetros del coche (se ajustan en AJUSTES y se guardan con
+  «GUARDAR EN ESTE COCHE»); el coche gira visiblemente hacia donde se
+  dirige, con las ruedas delanteras siguiendo la dirección. La inicial se
+  elige con `VIEW_MODE`.
 - **Plano del circuito** (tecla `M`): minimapa arriba a la izquierda con el
   trazado completo, los próximos 600 m resaltados en ámbar, la meta y el
   coche como punto rojo — para leer la siguiente curva con antelación.
@@ -233,7 +237,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `F3` | Grabar / parar el **registro de rendimiento** (ms por fase + lo que hay en pantalla) |
 | `L` | Mostrar/ocultar la trazada ideal |
 | `G` | Alternar cambio automático / manual |
-| `C` | Cambiar vista: interior / trasera / coche completo |
+| `C` | Cambiar la cámara: interior / trasera cercana / exterior lejana (misma escena, tres configuraciones de cámara ajustables por coche) |
 | `E` | Arrancar / parar el motor |
 | `T` | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
 | `M` | Mostrar/ocultar el plano del circuito **completo** (visión de conjunto) |

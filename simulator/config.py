@@ -586,9 +586,11 @@ CAMERA_FORWARD = 0.5         # m que el ojo del conductor va por DELANTE del
                              # conducción y no en el centro del coche; cada
                              # coche lo redefine (autobus muy adelante sobre
                              # el eje, formula casi centrado) [0 .. 3]
-CAMERA_HEIGHT_REAR = 2.5     # m, altura de la cámara de la vista trasera
-                             # cercana (con el coche visto desde atrás)
-                             # [1.5 .. 3.5]
+CAMERA_HEIGHT_REAR = 2.0     # m, altura de la cámara de la vista trasera
+                             # CERCANA (el coche visto desde atrás, pegado)
+                             # [0.8 .. 3.5]
+CAMERA_BACK_REAR = 4.0       # m que la cámara de la vista trasera cercana
+                             # va por detrás del coche [1.5 .. 8.0]
 CAMERA_HEIGHT_CHASE = 2.5    # m, altura de la cámara de la vista EXTERIOR
                              # (coche completo, cámara de persecución)
                              # [1.0 .. 5.0]

@@ -91,12 +91,19 @@ void main() {
     float difusa = max(dot(n, u_luz), 0.0);
     vec3 sol = vec3(1.0, 0.97, 0.90);
     vec3 col = base * (ambiente + sol * 1.05 * difusa);
-    // brillo del sol sobre la chapa (Blinn-Phong) y reflejo del cielo de
-    // refilon (Fresnel): sin ellos el coche parece de carton
+    // brillo del sol sobre la chapa (Blinn-Phong) y REFLEJO DEL ENTORNO:
+    // un mapa de entorno procedural (cielo arriba, calima en el horizonte,
+    // suelo abajo) muestreado con el vector reflejado y pesado por Fresnel,
+    // que es lo que da a la pintura su aspecto de espejo curvo
     vec3 h = normalize(u_luz + v);
     float espec = pow(max(dot(n, h), 0.0), 48.0) * 0.6 * step(0.001, difusa);
-    float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
-    col += sol * espec + cielo * fres * 0.18;
+    vec3 r = reflect(-v, n);
+    vec3 calima = lineal(mix(u_cielo, vec3(0.93, 0.95, 0.98), 0.55));
+    vec3 entorno = (r.y >= 0.0)
+        ? mix(calima, lineal(u_cielo), smoothstep(0.0, 0.45, r.y))
+        : mix(calima, lineal(u_suelo) * 0.8, smoothstep(0.0, 0.25, -r.y));
+    float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
+    col = mix(col, entorno, fres * 0.55) + sol * espec;
     f_col = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
 }
 """

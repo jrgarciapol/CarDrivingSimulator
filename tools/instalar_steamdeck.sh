@@ -92,6 +92,14 @@ echo "Instalando dependencias del juego (pysdl2, pysdl2-dll, numpy)..."
 "$VENV/bin/python" -m pip install --quiet \
     "pysdl2>=0.9.16" "pysdl2-dll>=2.28.0" "numpy>=1.24"
 
+# moderngl (escena 3D en la GPU) es OPCIONAL: si no hubiera rueda para este
+# Python el juego sigue con el render de SDL, asi que su fallo no debe tumbar
+# la instalacion entera
+echo "Instalando moderngl (escena en la GPU; opcional)..."
+if ! "$VENV/bin/python" -m pip install --quiet "moderngl>=5.10"; then
+    echo "  (sin moderngl: el juego usara el renderizador de SDL)"
+fi
+
 # --- 4. comprobacion -------------------------------------------------------
 echo
 echo "Comprobando la instalacion..."

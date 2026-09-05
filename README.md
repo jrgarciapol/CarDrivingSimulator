@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **285 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **314 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -82,10 +82,16 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   [`docs/FISICA.md`](docs/FISICA.md); la última tanda de mejoras, en
   [`docs/EVOLUCION_v3.3.md`](docs/EVOLUCION_v3.3.md).
 
-**Entorno:** renderizador **3D real** (proyección en perspectiva de la malla
-de la carretera por triángulos, con malla adaptativa, peralte inclinando la
-calzada y cámara solidaria al chasis: cabecea al frenar y sube y baja con la
-suspensión), cronómetro de vueltas y sonido de motor y chirrido de
+**Entorno:** escena 3D **en la GPU** (moderngl): la malla de la carretera se
+construye cada fotograma en el sistema local del coche —malla adaptativa,
+peralte inclinando la calzada, cámara solidaria al chasis que cabecea al
+frenar y sube y baja con la suspensión— y la GPU la proyecta con **búfer de
+profundidad**, **antialiasing multimuestra** y **bruma por píxel**; el cielo,
+el sol, los montes lejanos y el suelo hasta el horizonte son un sombreador
+fijo al mundo, así que giran con la cámara y en una curva peraltada el
+horizonte se inclina. Si no hay OpenGL 3.3 (o falta `moderngl`), el juego
+vuelve solo al renderizador de SDL, que dibuja la misma geometría con el
+algoritmo del pintor. Cronómetro de vueltas y sonido de motor y chirrido de
 neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
 
 - **Spa-Francorchamps** (7,0 km) con **geometría y rasante REALES**: el eje
@@ -517,6 +523,7 @@ simulator/
   track.py    circuito: curvas, rasantes, peralte, superficies, baches y
               trazada ideal con envolvente de frenada
   render.py   renderizador 3D de la carretera, coche, HUD y telemetría
+  gpu.py      escena 3D en la GPU (moderngl): carretera, cielo y balizas
   audio.py    sonido de motor, neumaticos, viento y turbo sintetizados
   audio_lab.py laboratorio de sonido: afinarlo oyendolo en directo
   font.py     fuente bitmap del HUD
@@ -545,6 +552,7 @@ tests/
   test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
   test_audio.py             sintetizador y laboratorio de sonido
+  test_gpu.py               proyeccion, geometria y fotogramas reales de la GPU
 ```
 
 Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,

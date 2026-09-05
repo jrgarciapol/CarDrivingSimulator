@@ -684,6 +684,12 @@ GFX_SUN_SHADE = 0.16         # intensidad del sombreado del relieve por el
                              # según su orientación). 0 = plano [0 .. 0.4]
 GFX_SUN = True               # dibujar el sol y su halo en el cielo (se
                              # oculta solo con LLUVIA)
+GFX_GPU = True               # escena 3D en la GPU (moderngl): búfer de
+                             # profundidad, antialiasing, bruma por píxel y
+                             # cielo fijo al mundo. Si falta moderngl o no
+                             # hay OpenGL 3.3 vuelve solo al render de SDL
+GFX_MSAA = 4                 # muestras de antialiasing de la GPU: 0, 2, 4
+                             # u 8. Cuesta poco en cualquier GPU [0 .. 8]
 
 # ===========================================================================
 # SONIDO

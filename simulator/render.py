@@ -13,8 +13,11 @@ import math
 import numpy as np
 import sdl2
 
+from types import SimpleNamespace
+
 from . import config as cfg
 from . import font
+from . import gpu
 
 # Paleta (mutable: set_condition() la ajusta al estado del asfalto)
 SKY_TOP = (78, 154, 219)
@@ -46,6 +49,17 @@ def set_condition(cond):
     elif cond == "HORMIGON":
         ROAD = [(150, 150, 148), (141, 141, 139)]
         LINE = (250, 210, 60)
+
+
+def paleta():
+    """La paleta vigente, en vectores numpy, para la escena de GPU."""
+    a = np.asarray
+    return {"sky_top": a(SKY_TOP, float), "sky_bottom": a(SKY_BOTTOM, float),
+            "haze": a(HAZE, float), "line": a(LINE, float),
+            "mountain": a(HORIZON_MOUNTAIN, float), "sun": SUN_VISIBLE,
+            "grass": [a(GRASS[0], float), a(GRASS[1], float)],
+            "road": [a(ROAD[0], float), a(ROAD[1], float)],
+            "kerb": [a(KERB[0], float), a(KERB[1], float)]}
 
 
 def camera_pitch_px(car_state):
@@ -164,6 +178,106 @@ class Renderer(_Dibujo):
     def __init__(self, renderer):
         self.r = renderer
         self._rect = sdl2.SDL_Rect()
+        # escena 3D en la GPU (None si GFX_GPU esta apagado o no hay OpenGL):
+        # entonces todo se dibuja con SDL como siempre
+        self.gpu = gpu.obtener(renderer)
+        self._gpu_frame = False
+
+    # ------------------------------------------------------------------
+    def draw_scene(self, track, car_state, show_line=True, cam_height=None,
+                   cam_back=0.0, yaw_gain=None, cam_forward=0.0,
+                   horizon_y=None, bg_heading=0.0):
+        """Fondo + carretera del fotograma, por la GPU si esta disponible y
+        por SDL si no. Es el UNICO punto de entrada que usa el juego, para
+        que el resto no tenga que saber cual de los dos esta activo."""
+        if self.gpu is not None:
+            cam = self._camara(car_state, cam_height, cam_back, yaw_gain,
+                               cam_forward)
+            self.gpu.dibujar(track, car_state, cam, show_line, paleta())
+            self._gpu_frame = True
+            return cfg.WINDOW_HEIGHT // 2
+        self._gpu_frame = False
+        if horizon_y is None:
+            horizon_y = cfg.WINDOW_HEIGHT // 2
+        self.draw_background(horizon_y, bg_heading)
+        return self.draw_road(track, car_state, show_line, cam_height,
+                              cam_back, yaw_gain, cam_forward)
+
+    def _camara(self, car_state, cam_height, cam_back, yaw_gain, cam_forward):
+        """Estado de la camara del fotograma, comun a los dos renderizadores:
+        focal (con el efecto de velocidad), altura sobre el asfalto (con
+        suspension y temblor), cabeceo como desplazamiento de pantalla,
+        guinada (con el mirar-a-la-curva) y desplazamiento lateral (balanceo
+        de la cabeza y temblor). Los filtros de suavizado viven en el
+        Renderer, asi que el cambio de vista no da tirones."""
+        speed = abs(car_state.vx)
+        if cam_height is None:
+            cam_height = cfg.CAMERA_HEIGHT
+        f = cfg.CAMERA_DEPTH
+        # efectos de camara SOLO en las vistas a bordo (cam_back == 0); son
+        # puramente visuales y no tocan la fisica
+        onboard = (cam_back == 0.0)
+        if onboard and cfg.CAMERA_FOV_SPEED > 0.0:
+            # el campo de vision se abre un poco con la velocidad (bajar f =
+            # mas ancho): sensacion de vertigo al acelerar.
+            # ACOTADO: sin el suelo, un CAMERA_FOV_SPEED alto llevaba el
+            # factor a cero o a NEGATIVO al coger velocidad, y con f<0 la
+            # proyeccion se invierte: la carretera aparecia espejada en la
+            # parte de arriba y la hierba subia tapando la pantalla.
+            f *= max(0.55, 1.0 - cfg.CAMERA_FOV_SPEED * min(1.0, speed / 60.0))
+        extra_y = cam_height
+        pitch_px = 0.0
+        shake_x = 0.0
+        if onboard:
+            # camara solidaria al chasis: sube y baja con la suspension y
+            # cabecea con el coche
+            extra_y += car_state.heave
+            pitch_px = camera_pitch_px(car_state)
+            # TEMBLOR visual (solo camara). Se alimenta de lo que de verdad
+            # sacude al piloto: la FUERZA G (frenada o curva fuertes), los
+            # BACHES/pianos (velocidad vertical del chasis) y el patinaje o
+            # bloqueo de rueda. Temblor 2D (vertical + lateral) filtrado.
+            self._cam_shake_x = getattr(self, "_cam_shake_x", 0.0)
+            if cfg.CAMERA_SHAKE > 0.0:
+                bump = abs(getattr(car_state, "heave_v", 0.0))
+                slip = max(abs(sr) for sr in car_state.slip_ratio)
+                g = math.hypot(getattr(car_state, "ax", 0.0),
+                               getattr(car_state, "ay", 0.0)) / 9.81
+                rough = getattr(car_state, "road_roughness", 0.0)
+                intensity = (5.0 * bump + 2.5 * max(0.0, slip - 0.15)
+                             + 2.0 * max(0.0, g - 0.4) + 2.5 * rough)
+                amp = cfg.CAMERA_SHAKE * 0.006 * min(3.5, intensity)
+                self._cam_shake = getattr(self, "_cam_shake", 0.0) * 0.5 \
+                    + float(np.random.uniform(-amp, amp)) * 0.5
+                self._cam_shake_x = self._cam_shake_x * 0.5 \
+                    + float(np.random.uniform(-amp, amp)) * 0.5
+                extra_y += self._cam_shake
+                shake_x = self._cam_shake_x
+        if yaw_gain is None:
+            yaw_gain = cfg.CAMERA_YAW_GAIN
+        psi_c = car_state.psi * yaw_gain
+        # MIRAR A LA CURVA: la camara gira hacia donde gira el coche
+        # (guinada), anticipando el vertice. Suavizado para que no de tirones.
+        if onboard and cfg.CAMERA_LOOK_GAIN > 0.0:
+            tgt = max(-0.35, min(0.35, cfg.CAMERA_LOOK_GAIN * car_state.yaw_rate))
+            self._cam_look = getattr(self, "_cam_look", 0.0)
+            self._cam_look += (tgt - self._cam_look) * 0.15
+            psi_c += self._cam_look
+        # BALANCEO DE LA CABEZA: con fuerza g lateral la cabeza del piloto cae
+        # hacia FUERA de la curva. Se desplaza la camara en el mundo (unos cm)
+        # en sentido contrario a la aceleracion lateral. Solo visual.
+        glean = 0.0
+        if onboard and cfg.CAMERA_GLEAN > 0.0:
+            self._cam_lean = getattr(self, "_cam_lean", 0.0)
+            self._cam_lean += (car_state.ay - self._cam_lean) * 0.20
+            glean = cfg.CAMERA_GLEAN * 0.006 * self._cam_lean
+        # desplazamiento que se aplica a la MALLA (el coche esta a +n del eje;
+        # balanceo y temblor lateral mueven la camara en sentido contrario)
+        mesh_dx = -car_state.n + glean + shake_x
+        return SimpleNamespace(f=f, extra_y=extra_y, pitch_px=pitch_px,
+                               psi_c=psi_c, mesh_dx=mesh_dx,
+                               cam_forward=cam_forward, cam_back=cam_back,
+                               onboard=onboard)
 
     def _fill(self, x, y, w, h, color):
         if w <= 0 or h <= 0:
@@ -247,72 +361,26 @@ class Renderer(_Dibujo):
         ordenados de lejos a cerca (algoritmo del pintor)."""
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         speed = abs(car_state.vx)
-        if cam_height is None:
-            cam_height = cfg.CAMERA_HEIGHT
+        self._gpu_frame = False
+        cam = self._camara(car_state, cam_height, cam_back, yaw_gain,
+                           cam_forward)
         segs = track.segments
         n_segs = len(segs)
         L = cfg.SEGMENT_LENGTH
-        f = cfg.CAMERA_DEPTH
-        # efectos de cámara SOLO en las vistas a bordo (cam_back == 0); son
-        # puramente visuales y no tocan la física
-        onboard = (cam_back == 0.0)
-        if onboard and cfg.CAMERA_FOV_SPEED > 0.0:
-            # el campo de visión se abre un poco con la velocidad (bajar f =
-            # más ancho): sensación de vértigo al acelerar.
-            # ACOTADO: sin el suelo, un CAMERA_FOV_SPEED alto llevaba el
-            # factor a cero o a NEGATIVO al coger velocidad, y con f<0 la
-            # proyección se invierte: la carretera aparecía espejada en la
-            # parte de arriba y la hierba subía tapando la pantalla.
-            f *= max(0.55, 1.0 - cfg.CAMERA_FOV_SPEED * min(1.0, speed / 60.0))
+        f = cam.f
+        onboard = cam.onboard
         half_w = getattr(track, "half_w", cfg.ROAD_HALF_WIDTH)
         kerb_w = cfg.KERB_WIDTH
 
         base_i = int(car_state.s / L)
-        frac = (car_state.s - base_i * L) / L
         # la cámara es solidaria al plano local del asfalto: el peralte se
         # dibuja RELATIVO al del punto donde está el coche (como la cabeza
         # del piloto, que rueda con el coche). En plena curva peraltada la
         # calzada se ve normal; al entrar y salir se ve la rampa formarse.
         bank_cam = segs[base_i % n_segs].bank
-        cam_y = segs[base_i % n_segs].y + cam_height
-        # en las vistas a bordo, la cámara es solidaria al chasis: sube y
-        # baja con la suspensión y cabecea con el coche
-        if cam_back == 0.0:
-            cam_y += car_state.heave
-            pitch_px = camera_pitch_px(car_state)
-            # TEMBLOR visual (solo cámara). Se alimenta de lo que de verdad
-            # sacude al piloto: la FUERZA G (frenada o curva fuertes), los
-            # BACHES/pianos (velocidad vertical del chasis) y el patinaje o
-            # bloqueo de rueda. Antes usaba solo heave_v, que frenando es
-            # casi cero, por eso no se notaba ni cambiaba con el parámetro.
-            # Temblor 2D (vertical + lateral) filtrado para no ser ruido.
-            self._cam_shake_x = getattr(self, "_cam_shake_x", 0.0)
-            if cfg.CAMERA_SHAKE > 0.0:
-                bump = abs(getattr(car_state, "heave_v", 0.0))
-                slip = max(abs(sr) for sr in car_state.slip_ratio)
-                g = math.hypot(getattr(car_state, "ax", 0.0),
-                               getattr(car_state, "ay", 0.0)) / 9.81
-                rough = getattr(car_state, "road_roughness", 0.0)
-                intensity = (5.0 * bump + 2.5 * max(0.0, slip - 0.15)
-                             + 2.0 * max(0.0, g - 0.4) + 2.5 * rough)
-                amp = cfg.CAMERA_SHAKE * 0.006 * min(3.5, intensity)
-                self._cam_shake = getattr(self, "_cam_shake", 0.0) * 0.5 \
-                    + float(np.random.uniform(-amp, amp)) * 0.5
-                self._cam_shake_x = self._cam_shake_x * 0.5 \
-                    + float(np.random.uniform(-amp, amp)) * 0.5
-                cam_y += self._cam_shake
-        else:
-            pitch_px = 0.0
-        if yaw_gain is None:
-            yaw_gain = cfg.CAMERA_YAW_GAIN
-        psi_c = car_state.psi * yaw_gain
-        # MIRAR A LA CURVA: la cámara gira hacia donde gira el coche
-        # (guiñada), anticipando el vértice. Suavizado para que no dé tirones.
-        if onboard and cfg.CAMERA_LOOK_GAIN > 0.0:
-            tgt = max(-0.35, min(0.35, cfg.CAMERA_LOOK_GAIN * car_state.yaw_rate))
-            self._cam_look = getattr(self, "_cam_look", 0.0)
-            self._cam_look += (tgt - self._cam_look) * 0.15
-            psi_c += self._cam_look
+        cam_y = segs[base_i % n_segs].y + cam.extra_y
+        pitch_px = cam.pitch_px
+        psi_c = cam.psi_c
         cp, sp = math.cos(psi_c), math.sin(psi_c)
 
         # --- centro de la carretera en el plano local del coche ---------
@@ -404,18 +472,9 @@ class Renderer(_Dibujo):
                 z += math.cos(h_half) * step
                 h += kmid * step
 
-        # desplazar al coche (está a +n del centro) y girar por el rumbo
-        cx = cx - car_state.n
-        # BALANCEO DE LA CABEZA: con fuerza g lateral la cabeza del piloto cae
-        # hacia FUERA de la curva. Se desplaza la cámara en el mundo (unos cm)
-        # en sentido contrario a la aceleración lateral. Solo visual.
-        if onboard and cfg.CAMERA_GLEAN > 0.0:
-            self._cam_lean = getattr(self, "_cam_lean", 0.0)
-            self._cam_lean += (car_state.ay - self._cam_lean) * 0.20
-            cx = cx + cfg.CAMERA_GLEAN * 0.006 * self._cam_lean
-        # componente LATERAL del temblor (la vertical va en cam_y)
-        if onboard and cfg.CAMERA_SHAKE > 0.0:
-            cx = cx + getattr(self, "_cam_shake_x", 0.0)
+        # desplazar al coche (está a +n del centro), con el balanceo de la
+        # cabeza y el temblor lateral (ver _camara), y girar por el rumbo
+        cx = cx + cam.mesh_dx
         # ojo del conductor: la cámara interior va cam_forward metros por
         # delante del punto del coche, a lo largo del eje de la carretera
         # (el puesto de conducción, no el centro del vehículo)
@@ -756,6 +815,8 @@ class Renderer(_Dibujo):
         (s, desplazamiento lateral n, altura sobre el asfalto) usando la
         malla del draw_road del frame actual: sigue las curvas, rasantes
         y peralte reales. Devuelve (sx, sy, px_por_m) o None."""
+        if self._gpu_frame and self.gpu is not None:
+            return self.gpu.world_to_screen(track, s_world, n, z_up)
         c = getattr(self, "_w2s", None)
         if c is None:
             return None
@@ -1242,11 +1303,16 @@ class Hud(_Dibujo):
             font.draw_text(self.r, "SUBVIRAJE", W / 2 - 54, y_warn, 2,
                            (255, 220, 80, 255))
 
-    def draw_debug(self, wheel, car_state, surface):
+    def draw_debug(self, wheel, car_state, surface, gpu=None):
         """Superposición F1: ejes y botones en crudo para configurar el mapeo,
-        más telemetría por rueda."""
-        self._fill(20, 60, 540, 330, (0, 0, 0, 190))
+        más telemetría por rueda y el coste del render de GPU."""
+        self._fill(20, 60, 540, 350, (0, 0, 0, 190))
         font.draw_text(self.r, "F1: DIAGNOSTICO DE EJES/BOTONES", 32, 70, 2)
+        if gpu is not None:
+            font.draw_text(self.r,
+                           f"GPU: MALLA {gpu.ms_malla:4.1f}  GL {gpu.ms_gl:4.1f}"
+                           f"  SUBIDA {gpu.ms_subida:4.1f} MS", 32, 370, 2,
+                           (150, 220, 255, 255))
         axes = wheel.raw_axes()
         y = 96
         for i, v in enumerate(axes[:8]):

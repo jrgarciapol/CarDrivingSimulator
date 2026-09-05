@@ -1,5 +1,7 @@
 """Fuente bitmap 5x7 mínima para el HUD (sin dependencias externas)."""
 
+import ctypes
+
 import sdl2
 
 GLYPHS = {
@@ -49,9 +51,78 @@ GLYPHS = {
 }
 
 
+#: Orden fijo de los glifos dentro del atlas.
+_ORDEN = {ch: i for i, ch in enumerate(GLYPHS)}
+#: Atlas por renderizador: {direccion del renderer: textura}
+_ATLAS = {}
+
+
+def _clave(renderer):
+    return ctypes.cast(renderer, ctypes.c_void_p).value
+
+
+def _atlas(renderer):
+    """La fuente entera en UNA textura, hecha una sola vez por renderizador.
+
+    Antes cada letra se pintaba pixel a pixel con SDL_RenderFillRect: hasta
+    35 llamadas por letra, ~2.500 por fotograma con la telemetria abierta,
+    y cada una cruza de Python a C. Con el atlas una letra es UNA copia de
+    textura, escalada por SDL con vecino mas proximo (asi los pixeles de la
+    fuente siguen siendo bloques nitidos). El color se aplica con la
+    modulacion de la textura, sin tocar el atlas."""
+    k = _clave(renderer)
+    tex = _ATLAS.get(k)
+    if tex is not None:
+        return tex
+    n = len(_ORDEN)
+    w, h = 6 * n, 7
+    surf = sdl2.SDL_CreateRGBSurfaceWithFormat(0, w, h, 32,
+                                               sdl2.SDL_PIXELFORMAT_RGBA32)
+    if not surf:
+        _ATLAS[k] = False
+        return False
+    pitch = surf.contents.pitch
+    buf = (ctypes.c_uint8 * (pitch * h)).from_address(surf.contents.pixels)
+    for ch, i in _ORDEN.items():
+        for row, bits in enumerate(GLYPHS[ch]):
+            for col, bit in enumerate(bits):
+                if bit == "1":
+                    o = row * pitch + (i * 6 + col) * 4
+                    buf[o] = buf[o + 1] = buf[o + 2] = buf[o + 3] = 255
+    sdl2.SDL_SetHint(sdl2.SDL_HINT_RENDER_SCALE_QUALITY, b"0")   # nitido
+    tex = sdl2.SDL_CreateTextureFromSurface(renderer, surf)
+    sdl2.SDL_FreeSurface(surf)
+    if not tex:
+        _ATLAS[k] = False
+        return False
+    sdl2.SDL_SetTextureBlendMode(tex, sdl2.SDL_BLENDMODE_BLEND)
+    _ATLAS[k] = tex
+    return tex
+
+
 def draw_text(renderer, text, x, y, scale=2, color=(255, 255, 255, 255)):
     # SDL_Rect exige enteros: aceptar coordenadas con decimales
     x, y, scale = int(x), int(y), int(scale)
+    tex = _atlas(renderer)
+    if not tex:
+        return _draw_text_lento(renderer, text, x, y, scale, color)
+    sdl2.SDL_SetTextureColorMod(tex, color[0], color[1], color[2])
+    sdl2.SDL_SetTextureAlphaMod(tex, color[3] if len(color) > 3 else 255)
+    src = sdl2.SDL_Rect(0, 0, 5, 7)
+    dst = sdl2.SDL_Rect(0, y, 5 * scale, 7 * scale)
+    cx = x
+    for ch in text.upper():
+        i = _ORDEN.get(ch)
+        if i is not None and ch != " ":
+            src.x = i * 6
+            dst.x = cx
+            sdl2.SDL_RenderCopy(renderer, tex, src, dst)
+        cx += 6 * scale
+    return cx
+
+
+def _draw_text_lento(renderer, text, x, y, scale, color):
+    """Pixel a pixel: solo si no se pudo crear el atlas."""
     sdl2.SDL_SetRenderDrawColor(renderer, *color)
     cx = x
     rect = sdl2.SDL_Rect()

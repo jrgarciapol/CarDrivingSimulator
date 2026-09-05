@@ -118,6 +118,25 @@ def main():
                 break
         r.append(check("20 s de conduccion variada sin divergir", estable,
                        f"v={c.state.speed_kmh:.0f} km/h rpm={c.state.rpm:.0f}"))
+        # --- el AUTOBUS tambien acelera (regresion) ---------------------
+        # El embrague tenia un tope FIJO de 400 Nm: con 1450 Nm de motor
+        # patinaba sin fin, el motor se embalaba hasta el corte, el cambio
+        # automatico subia marchas y el autobus no pasaba de 25 km/h. Ahora
+        # el embrague se dimensiona con el motor de cada coche.
+        from simulator import garage
+        garage.load_car(os.path.join(os.path.dirname(__file__), "..",
+                                     "simulator", "cars", "8_autobus.car"))
+        cfg.ENGINE_MODEL = "inertia"
+        c = Car()
+        for _ in range(500):
+            c.step(DT, 0.0, 0.0, 0.0, flat)
+        for _ in range(int(20.0 / DT)):
+            c.auto_shift(1.0)
+            c.step(DT, 0.0, 1.0, 0.0, flat)
+        r.append(check("el AUTOBUS (1450 Nm, ralenti 550) pasa de 60 km/h en "
+                       "20 s con el motor de inercia",
+                       c.state.speed_kmh > 60.0,
+                       f"v={c.state.speed_kmh:.0f} km/h marcha {c.state.gear}"))
     finally:
         cfg.ENGINE_MODEL = prev
 

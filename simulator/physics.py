@@ -365,7 +365,12 @@ class Car:
         # hacía que el motor flarease hasta el corte o que el embrague
         # frenara las ruedas en wheelspin. La inercia del motor la carga la
         # rueda (reflejada), por eso clutch_slipping=False.
-        if ratio != 0.0 and rpm_wheels >= cfg.CLUTCH_LOCK_RPM:
+        # Umbral de engrane RELATIVO al motor: un diesel que ralentiza a 550
+        # rpm no puede tener el embrague patinando hasta las 1200 (iria
+        # patinando en toda la conduccion tranquila). Para los turismos
+        # (ralenti >= 800) el valor no cambia.
+        lock_rpm = min(cfg.CLUTCH_LOCK_RPM, 1.5 * cfg.ENGINE_IDLE_RPM)
+        if ratio != 0.0 and rpm_wheels >= lock_rpm:
             rpm = max(cfg.ENGINE_IDLE_RPM, rpm_wheels)
             if rpm >= cfg.ENGINE_LIMITER_RPM:
                 self._limiter_cut = True
@@ -405,8 +410,13 @@ class Car:
             t_clutch = 0.0                         # punto muerto: motor libre
         else:
             omega_ws = om_mean * ratio             # vel. lado motor de las ruedas
-            eng = min(1.0, max(1.5 * throttle, rpm_wheels / cfg.CLUTCH_LOCK_RPM))
-            cap = eng * cfg.CLUTCH_CAPACITY        # par limitado: patina en la salida
+            eng = min(1.0, max(1.5 * throttle, rpm_wheels / lock_rpm))
+            # El embrague se DIMENSIONA con el motor: siempre aguanta su par
+            # maximo con margen. Con un tope fijo de 400 Nm, el autobus (1450
+            # Nm) y el GT (690 Nm) lo hacian patinar sin fin: el motor se
+            # embalaba hasta el corte, el cambio automatico subia marchas y
+            # las ruedas se quedaban sin par (el autobus no pasaba de 25 km/h)
+            cap = eng * max(cfg.CLUTCH_CAPACITY, 1.5 * cfg.ENGINE_MAX_TORQUE_NM)
             t_clutch = max(-cap, min(cap, cfg.CLUTCH_STIFFNESS * (we - omega_ws)))
         we += (t_int - t_clutch) / cfg.ENGINE_INERTIA * dt
         if st.engine_on:

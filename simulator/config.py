@@ -324,8 +324,10 @@ ENGINE_MODEL = "legacy"          # opciones {legacy | inertia}.
                                  # punto muerto, el patinaje del embrague en la
                                  # salida y un régimen que ya no va pegado a
                                  # las ruedas. Solo afecta si vale "inertia".
-CLUTCH_CAPACITY = 400.0          # Nm, par máximo que el embrague transmite
-                                 # (por encima del par motor) [200 .. 800]
+CLUTCH_CAPACITY = 400.0          # Nm, par mínimo que el embrague transmite;
+                                 # el efectivo es al menos 1.5 veces el par
+                                 # máximo del motor (un embrague se dimensiona
+                                 # con su motor) [200 .. 800]
 CLUTCH_STIFFNESS = 60.0          # Nm por rad/s de deslizamiento: rigidez del
                                  # acoplamiento. Alto = engrana firme (poco
                                  # deslizamiento en régimen) [20 .. 120]

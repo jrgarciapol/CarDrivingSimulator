@@ -570,11 +570,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             g = ghost_sample(ghost_best, timer.lap_time, track.length)
             if g is not None:
                 scene.draw_ghost(track, g[0], g[1], g[2])
-        if view_mode == 1:
-            scene.draw_car(car.state, wheel.steering)
-        elif view_mode == 2:
-            scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
-        # partículas: humo (asfalto), chispas (piano), polvo (hierba)
+        # partículas: humo (asfalto), chispas (piano), polvo (hierba). Van
+        # ANTES del coche: nacen en las ruedas y quedan detras de la
+        # carroceria; pintadas despues lo atravesaban
         if cfg.PARTICLES_ENABLED:
             st = car.state
             if abs(st.vx) > 3.0:
@@ -590,6 +588,10 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                                        st.n + car.Y_POS[i], abs(st.vx))
             particles.update(frame_dt * time_scale)
             particles.draw(renderer, scene, track)
+        if view_mode == 1:
+            scene.draw_car(car.state, wheel.steering)
+        elif view_mode == 2:
+            scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
         if show_minimap:
             hud.draw_minimap(track, car.state)
         if show_plan:

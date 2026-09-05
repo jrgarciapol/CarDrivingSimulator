@@ -331,9 +331,16 @@ def clasificar(piezas, patron_ruedas=None):
             salida = [(0, p) for p in piezas if not any(p is q for q in elegidas.values())]
             salida += [(k, elegidas[k]) for k in sorted(elegidas)]
             return salida, "ruedas sueltas"
-    # 2) una malla con las CUATRO ruedas: casi tan ancha como el coche,
-    #    casi tan larga como la batalla, baja, y NO la pieza principal
-    #    (un autobus de una sola malla cumplia lo demas y salia troceado)
+    # 2) EJES: las dos ruedas de un eje en una malla (el F1 y el Lamborghini
+    #    del mismo autor vienen asi)
+    salida = _por_ejes(piezas, ancho, largo, y_suelo, zc)
+    if salida is not None:
+        return salida, "ejes partidos en izquierda/derecha"
+    # 3) una malla con las CUATRO ruedas: casi tan ancha como el coche,
+    #    casi tan larga como la batalla, baja, NO la pieza principal (un
+    #    autobus de una sola malla cumplia lo demas y salia troceado) y con
+    #    los vertices en las cuatro ESQUINAS, no repartidos (un fondo plano
+    #    del Lamborghini cumplia las medidas y salia partido en cuartos)
     mayor = max(len(p["idx"]) for p in piezas)
     for p in piezas:
         a, b, c, tam = _bbox(p)
@@ -341,6 +348,10 @@ def clasificar(piezas, patron_ruedas=None):
                 and abs((c[1] - y_suelo) - tam[1] / 2) < 0.3 * tam[1]
                 and 100 < len(p["idx"]) < mayor):
             m = p["pos"]
+            centro_x = np.abs(m[:, 0] - c[0]) < 0.25 * tam[0]
+            centro_z = np.abs(m[:, 2] - c[2]) < 0.2 * tam[2]
+            if (centro_x | centro_z).mean() > 0.12:
+                continue                 # hay vertices en medio: no son ruedas
             cuartos = {}
             for k, mask in ((1, (m[:, 0] < c[0]) & (m[:, 2] >= c[2])),
                             (2, (m[:, 0] >= c[0]) & (m[:, 2] >= c[2])),
@@ -353,7 +364,13 @@ def clasificar(piezas, patron_ruedas=None):
                 salida = [(0, q) for q in piezas if q is not p]
                 salida += [(k, cuartos[k]) for k in sorted(cuartos)]
                 return salida, "malla de cuatro ruedas partida en cuartos"
-    # 3) ejes (las dos ruedas de un eje en una malla)
+    return [(0, p) for p in piezas], "sin ruedas reconocidas (coche entero)"
+
+
+def _por_ejes(piezas, ancho, largo, y_suelo, zc):
+    """Ejes: mallas casi tan anchas como el coche, redondas vistas de lado,
+    cortas, apartadas del centro y a la altura de su radio. Hace falta un
+    eje delante y otro detras; cada uno se parte por x. None si no hay."""
     ejes = []
     for p in piezas:
         a, b, c, tam = _bbox(p)
@@ -362,23 +379,25 @@ def clasificar(piezas, patron_ruedas=None):
                 and abs(c[2] - zc) > 0.15 * largo
                 and abs((c[1] - y_suelo) - tam[1] / 2) < 0.3 * tam[1]):
             ejes.append((c[2], p))
-    if len(ejes) >= 2:
-        delante = max(z for z, _ in ejes)
-        detras = min(z for z, _ in ejes)
-        salida = []
-        for p in piezas:
-            z_eje = next((z for z, q in ejes if q is p), None)
-            if z_eje is None:
-                salida.append((0, p))
-                continue
-            frontal = abs(z_eje - delante) < abs(z_eje - detras)
-            for k, mask in (((1 if frontal else 3), p["pos"][:, 0] < 0),
-                            ((2 if frontal else 4), p["pos"][:, 0] >= 0)):
-                q = _recortar(p, mask)
-                if q is not None:
-                    salida.append((k, q))
-        return salida, "ejes partidos en izquierda/derecha"
-    return [(0, p) for p in piezas], "sin ruedas reconocidas (coche entero)"
+    if len(ejes) < 2:
+        return None
+    delante = max(z for z, _ in ejes)
+    detras = min(z for z, _ in ejes)
+    if delante - detras < 0.3 * largo:
+        return None                      # los dos en el mismo sitio
+    salida = []
+    for p in piezas:
+        z_eje = next((z for z, q in ejes if q is p), None)
+        if z_eje is None:
+            salida.append((0, p))
+            continue
+        frontal = abs(z_eje - delante) < abs(z_eje - detras)
+        for k, mask in (((1 if frontal else 3), p["pos"][:, 0] < 0),
+                        ((2 if frontal else 4), p["pos"][:, 0] >= 0)):
+            q = _recortar(p, mask)
+            if q is not None:
+                salida.append((k, q))
+    return salida
 
 
 # ------------------------------------------------------------- simplificar

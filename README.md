@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **403 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **405 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -371,9 +371,9 @@ Qué modelo usa cada coche lo dice `CAR_MODEL_3D` en su `.car` (o en
 cámara exterior también se ajusta por coche (`CAMERA_HEIGHT_CHASE`,
 `CAMERA_BACK_CHASE`: el autobús la lleva a 16 m y 5 m de alto). Incluidos
 los ocho: Citroën 2CV (utilitario), Rolls-Royce Ghost (berlina), Bugatti
-57SC Atlantic (deportivo), Alfa Romeo 33 Stradale (GT), Fórmula 1, Toyota GR
+57SC Atlantic (deportivo), Lamborghini Centenario (GT), Fórmula 1, Toyota GR
 Yaris WRC (rally), Beijing BJ212 (todoterreno) y un autobús urbano de
-Nagoya. La iluminación trabaja en espacio lineal con luz ambiente
+Nagoya (también hay un Alfa Romeo 33 Stradale, `alfa`, sin asignar). La iluminación trabaja en espacio lineal con luz ambiente
 hemisférica, brillo del sol y reflejo del cielo de refilón, que es lo que
 hace que la chapa parezca chapa.
 

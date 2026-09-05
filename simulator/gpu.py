@@ -426,6 +426,15 @@ class GpuScene:
         fn["glBindBuffer"](_GL_ELEMENT_ARRAY_BUFFER, 0)
         fn["glBindRenderbuffer"](_GL_RENDERBUFFER, 0)
         fn["glBindFramebuffer"](_GL_FRAMEBUFFER, 0)
+        # TEXTURAS: SDL recuerda cual dejo enlazada y no la vuelve a enlazar
+        # si cree que sigue puesta. Tras pintar el modelo del coche (con sus
+        # texturas) SDL copiaba el fondo con la textura de la RUEDA a pantalla
+        # completa. SDL_GL_BindTexture/UnbindTexture le hacen olvidar lo que
+        # tenia ("we trash this state"), asi que en el siguiente dibujo
+        # enlaza la suya de nuevo.
+        if self.tex:
+            sdl2.SDL_GL_BindTexture(self.tex, None, None)
+            sdl2.SDL_GL_UnbindTexture(self.tex)
 
     # -- contexto ---------------------------------------------------------
     @staticmethod

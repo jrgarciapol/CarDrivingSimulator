@@ -1,6 +1,6 @@
 # Formula: monoplaza de competicion; sin ABS, downforce enorme
 NAME = "FORMULA"                  # nombre que aparece en el menu
-DESC = "750 KG - 780 CV - SIN ABS - PARA EXPERTOS" # descripcion en el menu
+DESC = "750 KG - 730 CV - SIN ABS - PARA EXPERTOS" # descripcion en el menu
 CAR_COLOR = (230, 120, 20)        # color RGB de la carroceria
 CAR_MASS = 750.0                  # kg, masa total del vehiculo
 CAR_INERTIA_Z = 900.0             # kg*m2, inercia de giro: mas = reacciones lentas
@@ -24,13 +24,16 @@ STEER_TRAIL_OFFSET = -0.032       # m, eje adelantado: recorta el avance mecanic
 DRIVE_TYPE = "RWD"                # traccion: FWD delantera, RWD trasera, AWD total
 DIFF_TYPE = "lsd"                 # diferencial: open, lsd (autoblocante) o locked
 DIFF_LSD_COEFF = 32.0             # Nm*s, dureza del autoblocante
-ENGINE_MAX_TORQUE_NM = 520.0      # Nm, par maximo del motor
-ENGINE_TORQUE_PEAK_RPM = 8500.0   # rpm a las que se da el par maximo
+ENGINE_MAX_TORQUE_NM = 560.0      # Nm, par maximo del motor (~730 CV)
+ENGINE_TORQUE_PEAK_RPM = 9000.0   # rpm a las que se da el par maximo
 ENGINE_IDLE_RPM = 2000.0          # rpm de ralenti
 ENGINE_REDLINE_RPM = 11800.0      # rpm de zona roja
 ENGINE_LIMITER_RPM = 12000.0      # rpm del corte de inyeccion
 ENGINE_BRAKE_COEFF = 90.0         # Nm, freno motor al levantar el pie
-GEAR_RATIOS = [2.9, 2.3, 1.9, 1.6, 1.4, 1.22] # desarrollos de cada marcha (cortos = acelera mas)
+GEAR_RATIOS = [4.19, 3.40, 2.78, 2.28, 1.88, 1.56] # desarrollos de cada marcha (cortos = acelera mas).
+                                  # 1a hasta ~80 km/h y 6a hasta ~300 al corte: antes
+                                  # (2.9 .. 1.22) la 1a llegaba a 150 y el coche se
+                                  # quedaba en 4a a 250 km/h sin poder subir mas
 FINAL_DRIVE = 3.1                 # desmultiplicacion del grupo final
 TIRE_MU = 1.55                    # agarre en asfalto seco (calle ~0.9, slick >1.2)
 TIRE_PEAK_SLIP_ANGLE_DEG = 6.0    # grados de deriva del maximo agarre
@@ -52,7 +55,9 @@ DIFF_RAMP_POWER = 0.7          # bloqueo acelerando
 DIFF_RAMP_COAST = 0.45         # bloqueo reteniendo
 ARB_FRONT = 40000.0               # N/m, barra estabilizadora delantera
 ARB_REAR = 30000.0                # N/m, barra estabilizadora trasera
-CD = 1.319                     # coef. de arrastre aerodinamico (turismo ~0.30)
+CD = 0.9                       # coef. de arrastre aerodinamico (turismo ~0.30; un
+                               # formula real ~0.9 con sus alerones; con 1.319 no
+                               # pasaba de 250 km/h)
 FRONTAL_AREA = 1.30             # m2, area frontal del coche
 CL = 5.651                     # coef. de carga aerodinamica (0 = sin apendices)
 AERO_DF_FRONT_SHARE = 0.44        # fraccion de carga aero en el eje delantero

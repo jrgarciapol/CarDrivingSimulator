@@ -119,7 +119,7 @@ _FS_SOMBRA = """#version 330
 uniform sampler2D u_tex;
 in vec2 v_uv;
 out vec4 f_col;
-void main() { f_col = vec4(0.0, 0.0, 0.0, texture(u_tex, v_uv).r); }
+void main() { f_col = vec4(0.0, 0.0, 0.0, texture(u_tex, v_uv).a); }
 """
 
 
@@ -227,8 +227,11 @@ class ModeloGpu:
         # sombra de contacto: un rectangulo a ras de suelo con el mapa de
         # opacidad de mapa_sombra como textura de un canal
         mapa, sx, sz = mapa_sombra(self.medidas, self.centros, self.radios)
-        self.tex_sombra = ctx.texture(mapa.shape[::-1], 1,
-                                      (mapa * 255).astype(np.uint8).tobytes())
+        # RGBA (negro con el mapa en el alfa): una textura de un solo canal
+        # salia como una manta opaca en un Intel bajo Windows
+        rgba = np.zeros(mapa.shape + (4,), dtype=np.uint8)
+        rgba[:, :, 3] = (mapa * 255).astype(np.uint8)
+        self.tex_sombra = ctx.texture(mapa.shape[::-1], 4, rgba.tobytes())
         self.tex_sombra.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.tex_sombra.repeat_x = self.tex_sombra.repeat_y = False
         self.prog_sombra = ctx.program(vertex_shader=_VS_SOMBRA,

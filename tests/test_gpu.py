@@ -272,6 +272,49 @@ def main():
                        f"peralte {math.degrees(bancos[i_max]):.1f} grados, "
                        f"horizonte izq fila {izq}, der fila {der}"))
 
+        # --- arboles en la hierba y balizas a estaciones fijas --------------
+        st.s, st.vx = 3000.0, 25.0
+        cfg.TRACK_TREES = False
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        sin_arb = leer().astype(int)
+        cfg.TRACK_TREES = True
+        escena.dibujar(c90, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        con_arb = leer().astype(int)
+        dif_arb = (np.abs(con_arb - sin_arb).sum(axis=2) > 30)
+        r.append(check("con TRACK_TREES hay arboles a la vista (cambian pixeles "
+                       "sobre la hierba y contra el cielo)", dif_arb.sum() > 300,
+                       f"{dif_arb.sum()} px"))
+        arb = escena._arboles_track
+        r.append(check("...plantados con semilla fija: los mismos cada vez",
+                       arb is not None and len(arb["s"]) > 50
+                       and np.allclose(arb["s"], escena._plantar(c90)["s"])))
+        cfg.TRACK_POLES = True
+        cfg.CHEVRON_MAX_RADIUS = 0.0          # solo balizas en esta prueba
+        e = escena.eje(c90, st.s)
+        rels = e["rels"]
+        # balizas: una cada 6 m exactos aunque la malla vaya a 1, 2 o 4 m
+        escena._frame_s0 = st.s
+        bill = escena._balizas(np.eye(4), e["x"], e["z"], e["hx"], e["hz"],
+                               e["elev"], e["cb"], e["sb"], e["hw"], rels,
+                               e["seg_idx"], e["sm"], cfg.KERB_WIDTH)
+        r.append(check("las balizas se generan", bill is not None))
+        if bill is not None:
+            vb, _ = bill
+            amarillas = (vb["col"][:, 0, 0] == 255) & (vb["col"][:, 0, 1] == 215)
+            pts = vb["pos"][amarillas][:, 0, :]        # pie de cada baliza
+            pts = np.unique(np.round(pts[:, [0, 2]], 2), axis=0)
+            pts = pts[np.argsort(pts[:, 1])][:14]       # las 14 mas cercanas
+            pasos = np.hypot(np.diff(pts[:, 0]), np.diff(pts[:, 1]))
+            n_esperado = int(700.0 / 6.0)
+            r.append(check("...a estaciones equiespaciadas (6 m de cuerda), "
+                           "sin grupos, y una cada 6 m hasta 700 m",
+                           len(pasos) >= 12 and np.abs(pasos - 6.0).max() < 0.35
+                           and abs(int(amarillas.sum()) - n_esperado) <= 2,
+                           f"pasos {np.round(pasos[:6], 2)}, "
+                           f"{int(amarillas.sum())} balizas (esperadas {n_esperado})"))
+
         # --- peralte: el suelo bajo el coche queda a la altura del coche ---
         # Se reporto que en el ovalo "la pista se queda arriba y el coche
         # sigue a la misma cota": la camara iba a la cota del EJE, y con el

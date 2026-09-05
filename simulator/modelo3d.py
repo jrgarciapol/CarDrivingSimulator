@@ -255,10 +255,17 @@ class ModeloGpu:
         p["u_model"].write(base.T.astype("f4").tobytes())
         self.tex_sombra.use(location=0)
         p["u_tex"].value = 0
+        # SIN test de profundidad: el cuadrado es plano y la calzada bajo el
+        # coche no lo es (rasantes, peralte que cambia, la trazada
+        # levantada): con el test, al girar el coche un trozo de la sombra
+        # quedaba bajo el asfalto y desaparecia. Va justo despues de la
+        # carretera y antes del coche, asi que encima solo esta el coche.
+        ctx.disable(moderngl.DEPTH_TEST)
         ctx.enable(moderngl.BLEND)
         ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.vao_sombra.render(moderngl.TRIANGLES, vertices=6)
         ctx.disable(moderngl.BLEND)
+        ctx.enable(moderngl.DEPTH_TEST)
 
     #: rad/s por encima de los cuales la rueda deja de girar en pantalla.
     #: Se probo congelarla a partir de 14 rad/s para evitar el efecto

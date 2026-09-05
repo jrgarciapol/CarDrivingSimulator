@@ -144,6 +144,39 @@ def slug(nombre):
     return ("".join(ok) or "COCHE")[:40]
 
 
+def guardar_en_este_coche():
+    """Escribe el reglaje vivo EN EL ARCHIVO del coche actual: cada
+    parametro cambiado sustituye su linea (conservando el comentario) o se
+    anade al final si el coche no lo declaraba. Devuelve la ruta relativa,
+    o None si no hay coche o nada que guardar."""
+    if not _car_path or not car_overrides:
+        return None
+    ruta = os.path.join(garage.CARS_DIR, os.path.basename(_car_path))
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            lineas = f.read().splitlines()
+    except OSError:
+        return None
+    pendientes = dict(car_overrides)
+    salida = []
+    for linea in lineas:
+        clave = linea.split("=", 1)[0].strip() if "=" in linea else ""
+        if clave in pendientes and not linea.lstrip().startswith("#"):
+            resto = linea.split("=", 1)[1]
+            comentario = ("  #" + resto.split("#", 1)[1]) if "#" in resto else ""
+            salida.append(f"{clave} = {pendientes.pop(clave)!r}{comentario}")
+        else:
+            salida.append(linea)
+    if pendientes:
+        salida.append("# Ajustes guardados desde el menu")
+        for k in sorted(pendientes):
+            salida.append(f"{k} = {pendientes[k]!r}")
+    with open(ruta, "w", encoding="utf-8") as f:
+        f.write("\n".join(salida) + "\n")
+    clear_car()                    # consolidado en el archivo del coche
+    return "cars/" + os.path.basename(ruta)
+
+
 def guardar_coche(nombre):
     """Escribe el coche actual (los valores de cfg de todos los parametros
     de coche, incluido el reglaje ya aplicado) en un .car nuevo, para poder

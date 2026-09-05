@@ -122,6 +122,43 @@ def main():
         os.remove(nuevo)
 
     _limpiar()
+    # --- GUARDAR EN ESTE COCHE: el reglaje va al archivo del coche -----
+    _limpiar()
+    prueba = os.path.join(garage.CARS_DIR, "zz_prueba_guardar.car")
+    with open(DEPORTIVO, encoding="utf-8") as f:
+        original = f.read()
+    with open(prueba, "w", encoding="utf-8") as f:
+        f.write(original.replace('NAME = "DEPORTIVO"', 'NAME = "ZZ PRUEBA"'))
+    try:
+        garage.load_car(prueba)
+        settings.set_car_path("cars/zz_prueba_guardar.car")
+        settings.record("CASTER_ANGLE_DEG", 9.25)         # linea existente
+        settings.record("CAMERA_BACK_CHASE", 11.0)        # no estaba en el .car
+        ruta = settings.guardar_en_este_coche()
+        with open(prueba, encoding="utf-8") as f:
+            txt = f.read()
+        lineas = [l for l in txt.splitlines() if l.startswith("CASTER_ANGLE_DEG")]
+        r.append(check("GUARDAR EN ESTE COCHE reescribe el archivo del coche",
+                       ruta == "cars/zz_prueba_guardar.car"))
+        r.append(check("...sustituye la linea existente conservando el comentario",
+                       len(lineas) == 1 and lineas[0].startswith("CASTER_ANGLE_DEG = 9.25")
+                       and "#" in lineas[0], lineas[0] if lineas else "sin linea"))
+        r.append(check("...anade al final lo que el coche no declaraba",
+                       "CAMERA_BACK_CHASE = 11.0" in txt))
+        r.append(check("...y el reglaje vivo queda consolidado (vacio)",
+                       not settings.car_overrides))
+        garage.load_car(prueba)
+        r.append(check("...y al recargar el coche trae los valores guardados",
+                       abs(cfg.CASTER_ANGLE_DEG - 9.25) < 1e-9
+                       and cfg.CAMERA_BACK_CHASE == 11.0))
+        r.append(check("sin reglaje vivo no hay nada que guardar (None)",
+                       settings.guardar_en_este_coche() is None))
+    finally:
+        if os.path.exists(prueba):
+            os.remove(prueba)
+        garage.load_car(DEPORTIVO)
+        _limpiar()
+
     n_ok = sum(1 for x in r if x)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")
     return 0 if n_ok == len(r) else 1

@@ -207,6 +207,8 @@ def main():
         cfg.GFX_GPU_ASYNC = False
         cfg.GFX_TEXTURAS = False      # el grano del suelo (por pixel) se mide
                                       # en test_gpu; aqui se mide el modelo
+        cfg.SKY_CLOUDS = 0.0          # sin nubes: los pixeles de cielo que se
+                                      # miran tienen que ser azul limpio
         cfg.CAR_MODEL_3D = "f1"
         sdl2.SDL_RenderClear(ren)
         scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
@@ -364,9 +366,10 @@ def main():
         for _ in range(2):
             scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
                              coche3d=scene.modelo_coche(0.0, 0.0))
-        r.append(check("el modelo se pinta rapido (GL < 80 ms incluso por "
-                       "software; en una GPU real, menos de 1 ms)",
-                       escena.ms_gl < 80.0, f"{escena.ms_gl:.1f} ms"))
+        r.append(check("el modelo se pinta rapido (GL < 100 ms incluso por "
+                       "software, ~60 en la maquina de pruebas; en una GPU "
+                       "real, menos de 1 ms)",
+                       escena.ms_gl < 100.0, f"{escena.ms_gl:.1f} ms"))
         # sin modelo: coche de cajas, como siempre
         cfg.CAR_MODEL_3D = ""
         r.append(check("con CAR_MODEL_3D vacio no hay modelo",

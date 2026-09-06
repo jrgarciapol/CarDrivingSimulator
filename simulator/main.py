@@ -401,6 +401,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     show_telemetry = False
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
+    orbita_cam = 0.0            # orbita suavizada de la camara elevada (rad)
     view_mode = int(cfg.VIEW_MODE) % 5   # ver cfg.VIEW_MODE: 0 interior, 1
                                          # cabina, 2 trasera, 3 exterior, 4 elevada
     time_idx = 0                # indice en TIME_SCALES (camara lenta)
@@ -596,6 +597,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         # es el modelo 3D dentro de la escena; los parametros de cada
         # camara son del coche (.car) y de AJUSTES.
         cam_fwd, cam_side, cam_pitch, cam_near = 0.0, 0.0, 0.0, None
+        cam_orbit = 0.0
         if view_mode == 0:
             cam_h, cam_back, ygain = cfg.CAMERA_HEIGHT, 0.0, None
             cam_fwd = cfg.CAMERA_FORWARD
@@ -618,6 +620,14 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             cam_back = float(getattr(cfg, "CAMERA_BACK_HIGH", 12.0))
             ygain = 0.35
             cam_pitch = math.radians(float(getattr(cfg, "CAMERA_PITCH_HIGH", 28.0)))
+            # la camara se va al lado INTERIOR de la curva que viene (media
+            # de la curvatura de los proximos 90 m) y mira al coche desde
+            # ahi, de modo que se ve la trayectoria de lado sin perder la
+            # carretera de delante; suavizado para no dar tirones
+            objetivo = render_mod.orbita_elevada(
+                track, car.state.s, getattr(cfg, "CAMERA_ORBIT_HIGH", 45.0))
+            orbita_cam += (objetivo - orbita_cam) * min(1.0, 2.5 * frame_dt)
+            cam_orbit = orbita_cam
         # fondo + carretera: por la GPU si esta disponible, por SDL si no.
         # Con coche, el modelo 3D va dentro de la escena
         coche3d = None
@@ -630,7 +640,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                          car.state.psi * cfg.CAMERA_YAW_GAIN
                          + base_seg.kappa * 40.0, coche3d=coche3d,
                          cam_side=cam_side, cam_pitch=cam_pitch,
-                         cam_near=cam_near)
+                         cam_near=cam_near, cam_orbit=cam_orbit)
         registro.marca("escena")
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:

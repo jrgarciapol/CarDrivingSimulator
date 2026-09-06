@@ -370,7 +370,23 @@ class Car:
         # patinando en toda la conduccion tranquila). Para los turismos
         # (ralenti >= 800) el valor no cambia.
         lock_rpm = min(cfg.CLUTCH_LOCK_RPM, 1.5 * cfg.ENGINE_IDLE_RPM)
-        if ratio != 0.0 and rpm_wheels >= lock_rpm:
+        # ENGRANE CON HISTERESIS y con el motor ya sincronizado: pasar a
+        # rigido en cuanto las ruedas tocaban las rpm de engrane, con el
+        # motor todavia 300 rpm por debajo, hacia que la inercia reflejada
+        # del motor entrara y saliera de la rueda cada paso (la velocidad
+        # de la rueda oscilaba entre 400 y 1300 rpm-equivalentes durante
+        # 0,15 s: un tiron y las ruedas "patinando" en la salida). Ahora se
+        # engrana cuando el embrague ya casi no desliza y se suelta solo si
+        # las ruedas caen claramente por debajo.
+        engranado = getattr(self, "_engranado", False)
+        if ratio == 0.0:
+            engranado = False
+        elif engranado:
+            engranado = rpm_wheels >= lock_rpm - 150.0
+        else:
+            engranado = rpm_wheels >= lock_rpm
+        self._engranado = engranado
+        if engranado:
             rpm = max(cfg.ENGINE_IDLE_RPM, rpm_wheels)
             if rpm >= cfg.ENGINE_LIMITER_RPM:
                 self._limiter_cut = True
@@ -417,7 +433,30 @@ class Car:
             # embalaba hasta el corte, el cambio automatico subia marchas y
             # las ruedas se quedaban sin par (el autobus no pasaba de 25 km/h)
             cap = eng * max(cfg.CLUTCH_CAPACITY, 1.5 * cfg.ENGINE_MAX_TORQUE_NM)
-            t_clutch = max(-cap, min(cap, cfg.CLUTCH_STIFFNESS * (we - omega_ws)))
+            # ESTABILIDAD: la rigidez del embrague vista desde la rueda es
+            # CLUTCH_STIFFNESS x ratio^2 (10.000 Nm por rad/s en 1a) y con
+            # Euler explicito a 500 Hz eso oscila (la rueda saltaba entre
+            # 400 y 1300 rpm cada paso al salir el motor del ralenti). El
+            # par no puede pasar del que igualaria las dos velocidades en
+            # un paso, contando las dos inercias: asi sincroniza sin
+            # rebasarse.
+            i_wd = sum(self.I_w[i] for i in self._driven_wheels()) or self.I_w[0]
+            t_sync = abs(we - omega_ws) / (dt * (1.0 / cfg.ENGINE_INERTIA
+                                                  + ratio * ratio / i_wd))
+            tope = min(cap, t_sync)
+            t_clutch = max(-tope, min(tope, cfg.CLUTCH_STIFFNESS * (we - omega_ws)))
+            # El motor NO es una fuente infinita: abajo se le impide calar
+            # (we >= ralenti), y sin este tope el embrague sacaba de ese
+            # suelo hasta 288 Nm con el gas al 40 % (mas del doble de lo que
+            # da el motor a esas vueltas). El deportivo salia con las ruedas
+            # patinando y el motor clavado en 900 rpm: "le patina el
+            # embrague". Con el motor en el suelo del ralenti, el embrague
+            # transmite lo que da el motor mas la reserva del regulador de
+            # ralenti; el resto, como en la realidad, lo pone el conductor
+            # subiendo de vueltas.
+            if we <= idle_w * 1.02 and t_clutch > 0.0:
+                reserva = 0.25 * cfg.ENGINE_MAX_TORQUE_NM
+                t_clutch = min(t_clutch, max(t_int, 0.0) + reserva)
         we += (t_int - t_clutch) / cfg.ENGINE_INERTIA * dt
         if st.engine_on:
             we = max(idle_w, min(lim_w, we))       # ni cala ni pasa del corte

@@ -137,6 +137,32 @@ def main():
                        "20 s con el motor de inercia",
                        c.state.speed_kmh > 60.0,
                        f"v={c.state.speed_kmh:.0f} km/h marcha {c.state.gear}"))
+        # --- salida con el gas a medias: el embrague no saca par de la nada
+        # El suelo del ralenti (el motor no cala) hacia de fuente infinita:
+        # con el gas al 40 % el embrague transmitia 288 Nm (el motor da
+        # ~100 a esas vueltas), el DEPORTIVO salia con las ruedas patinando
+        # y el motor clavado en 900 rpm ("le patina el embrague").
+        garage.load_car(os.path.join(os.path.dirname(__file__), "..",
+                                     "simulator", "cars", "3_deportivo.car"))
+        cfg.ENGINE_MODEL = "inertia"
+        c = Car()
+        for _ in range(500):
+            c.step(DT, 0.0, 0.0, 0.0, flat)
+        t, peor, rpm_1s = 0.0, 0.0, 0.0
+        while t < 3.0:
+            c.auto_shift(0.4)
+            c.step(DT, 0.0, 0.4, 0.0, flat)
+            t += DT
+            if 0.3 < t < 2.0:
+                peor = max(peor, abs(c.state.slip_ratio[RL]), abs(c.state.slip_ratio[RR]))
+            if abs(t - 1.0) < DT / 2:
+                rpm_1s = c.state.rpm
+        r.append(check("DEPORTIVO con el gas al 40 %: sale sin patinar (deslizamiento "
+                       "trasero < 0,1 entre 0,3 y 2 s), el motor ya sube de "
+                       "vueltas al segundo y a los 3 s va a mas de 15 km/h",
+                       peor < 0.1 and rpm_1s > 950.0 and c.state.speed_kmh > 15.0,
+                       f"slip max {peor:.2f}, rpm(1 s)={rpm_1s:.0f}, "
+                       f"v={c.state.speed_kmh:.0f} km/h"))
         # --- el FORMULA usa las 6 marchas (regresion) --------------------
         # Con desarrollos de 2.9..1.22 y un Cd de 1.32 se quedaba en 4a a
         # 250 km/h: la 1a llegaba a 150 km/h y el arrastre no dejaba subir

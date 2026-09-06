@@ -63,6 +63,21 @@ def paleta():
             "kerb": [a(KERB[0], float), a(KERB[1], float)]}
 
 
+def orbita_elevada(track, s, orb_max_deg, n_metros=90.0):
+    """Angulo (rad) al que se va la camara ELEVADA respecto a la trasera
+    del coche: al lado INTERIOR de la curva que viene (media de la
+    curvatura de los proximos ``n_metros``), a lo sumo ``orb_max_deg``
+    grados (negativo en config = lado exterior). Con la convencion de la
+    vista, un angulo negativo pone la camara a la izquierda del coche."""
+    segs = track.segments
+    n = len(segs)
+    i0 = int(s / cfg.SEGMENT_LENGTH)
+    n_del = max(1, int(n_metros / cfg.SEGMENT_LENGTH))
+    k_del = sum(segs[(i0 + 2 + j) % n].kappa for j in range(n_del)) / n_del
+    orb_max = math.radians(float(orb_max_deg))
+    return -orb_max * max(-1.0, min(1.0, k_del * 160.0))
+
+
 def camera_pitch_px(car_state):
     """Desplazamiento vertical de la escena por el cabeceo del chasis
     (cámara solidaria al coche): frenando, el morro baja y el mundo SUBE
@@ -294,7 +309,7 @@ class Renderer(_Dibujo):
     def draw_scene(self, track, car_state, show_line=True, cam_height=None,
                    cam_back=0.0, yaw_gain=None, cam_forward=0.0,
                    horizon_y=None, bg_heading=0.0, coche3d=None,
-                   cam_side=0.0, cam_pitch=0.0, cam_near=None):
+                   cam_side=0.0, cam_pitch=0.0, cam_near=None, cam_orbit=0.0):
         """Fondo + carretera del fotograma, por la GPU si esta disponible y
         por SDL si no. Es el UNICO punto de entrada que usa el juego, para
         que el resto no tenga que saber cual de los dos esta activo.
@@ -307,7 +322,8 @@ class Renderer(_Dibujo):
         self.coche_gpu = False
         if self.gpu is not None:
             cam = self._camara(car_state, cam_height, cam_back, yaw_gain,
-                               cam_forward, cam_side, cam_pitch, cam_near)
+                               cam_forward, cam_side, cam_pitch, cam_near,
+                               cam_orbit)
             self.gpu.dibujar(track, car_state, cam, show_line, paleta(),
                              coche=coche3d)
             self._gpu_frame = True
@@ -321,7 +337,7 @@ class Renderer(_Dibujo):
                               cam_back, yaw_gain, cam_forward)
 
     def _camara(self, car_state, cam_height, cam_back, yaw_gain, cam_forward,
-                cam_side=0.0, cam_pitch=0.0, cam_near=None):
+                cam_side=0.0, cam_pitch=0.0, cam_near=None, cam_orbit=0.0):
         """Estado de la camara del fotograma, comun a los dos renderizadores:
         focal (con el efecto de velocidad), altura sobre el asfalto (con
         suspension y temblor), cabeceo como desplazamiento de pantalla,
@@ -374,6 +390,11 @@ class Renderer(_Dibujo):
         if yaw_gain is None:
             yaw_gain = cfg.CAMERA_YAW_GAIN
         psi_c = car_state.psi * yaw_gain
+        # ORBITA (vista elevada): la camara se va al lado interior de la
+        # curva que viene y mira al coche desde ahi; girar la guinada de la
+        # vista la desplaza sobre el arco de radio cam_back y la deja
+        # apuntando al coche, que sigue centrado
+        psi_c += float(cam_orbit)
         # MIRAR A LA CURVA: la camara gira hacia donde gira el coche
         # (guinada), anticipando el vertice. Suavizado para que no de tirones.
         if onboard and cfg.CAMERA_LOOK_GAIN > 0.0:

@@ -309,7 +309,8 @@ class Renderer(_Dibujo):
     def draw_scene(self, track, car_state, show_line=True, cam_height=None,
                    cam_back=0.0, yaw_gain=None, cam_forward=0.0,
                    horizon_y=None, bg_heading=0.0, coche3d=None,
-                   cam_side=0.0, cam_pitch=0.0, cam_near=None, cam_orbit=0.0):
+                   cam_side=0.0, cam_pitch=0.0, cam_near=None, cam_orbit=0.0,
+                   cam_orto=None):
         """Fondo + carretera del fotograma, por la GPU si esta disponible y
         por SDL si no. Es el UNICO punto de entrada que usa el juego, para
         que el resto no tenga que saber cual de los dos esta activo.
@@ -323,7 +324,7 @@ class Renderer(_Dibujo):
         if self.gpu is not None:
             cam = self._camara(car_state, cam_height, cam_back, yaw_gain,
                                cam_forward, cam_side, cam_pitch, cam_near,
-                               cam_orbit)
+                               cam_orbit, cam_orto)
             self.gpu.dibujar(track, car_state, cam, show_line, paleta(),
                              coche=coche3d)
             self._gpu_frame = True
@@ -337,7 +338,8 @@ class Renderer(_Dibujo):
                               cam_back, yaw_gain, cam_forward)
 
     def _camara(self, car_state, cam_height, cam_back, yaw_gain, cam_forward,
-                cam_side=0.0, cam_pitch=0.0, cam_near=None, cam_orbit=0.0):
+                cam_side=0.0, cam_pitch=0.0, cam_near=None, cam_orbit=0.0,
+                cam_orto=None):
         """Estado de la camara del fotograma, comun a los dos renderizadores:
         focal (con el efecto de velocidad), altura sobre el asfalto (con
         suspension y temblor), cabeceo como desplazamiento de pantalla,
@@ -419,7 +421,7 @@ class Renderer(_Dibujo):
                                psi_c=psi_c, mesh_dx=mesh_dx,
                                cam_forward=cam_forward, cam_back=cam_back,
                                onboard=onboard, cam_pitch=float(cam_pitch),
-                               cam_near=cam_near)
+                               cam_near=cam_near, cam_orto=cam_orto)
 
     def _fill(self, x, y, w, h, color):
         if w <= 0 or h <= 0:

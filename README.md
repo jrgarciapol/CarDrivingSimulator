@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **437 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **448 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -141,15 +141,23 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
   activas en modo manual.
 - **Cuentavueltas grande** arriba centrado, con zonas verde/ámbar/roja,
   marca del corte y la marcha en grande — siempre a la vista.
-- **Tres cámaras sobre la misma escena** (tecla `C` o botón 3, en ciclo):
-  **interior** (ojo del conductor, sin coche, por defecto), **trasera
-  cercana** (el modelo 3D pegado por detrás, `CAMERA_HEIGHT_REAR` /
-  `CAMERA_BACK_REAR`) y **exterior lejana** (cámara de persecución,
-  `CAMERA_HEIGHT_CHASE` / `CAMERA_BACK_CHASE`). Las alturas y distancias
-  son parámetros del coche (se ajustan en AJUSTES y se guardan con
-  «GUARDAR EN ESTE COCHE»); el coche gira visiblemente hacia donde se
-  dirige, con las ruedas delanteras siguiendo la dirección. La inicial se
-  elige con `VIEW_MODE`.
+- **Cinco cámaras sobre la misma escena** (tecla `C` o botón 3, en ciclo):
+  **interior** (ojo del conductor, sin coche, por defecto); **cabina** (el
+  mismo ojo dentro del modelo 3D: volante, salpicadero y la carretera a
+  través del parabrisas, `CAMERA_HEIGHT_COCKPIT` / `CAMERA_FORWARD_COCKPIT`
+  / `CAMERA_SIDE_COCKPIT`, el puesto de conducción de cada coche; los
+  cristales se acotan al 30 % de opacidad y un modelo sin cristales, como
+  el autobús, no pinta la carrocería desde dentro); **trasera cercana**
+  (`CAMERA_HEIGHT_REAR` / `CAMERA_BACK_REAR`); **exterior lejana** (cámara
+  de persecución, `CAMERA_HEIGHT_CHASE` / `CAMERA_BACK_CHASE`); y
+  **elevada** (`CAMERA_HEIGHT_HIGH` / `CAMERA_BACK_HIGH` /
+  `CAMERA_PITCH_HIGH`): una vista de pájaro baja, con la cámara inclinada
+  de verdad hacia abajo (no un desplazamiento del horizonte), que da la
+  distancia a la curva siguiente sin perder el detalle del coche. Todas las
+  alturas, distancias y ángulos son parámetros del coche (se ajustan en
+  AJUSTES y se guardan con «GUARDAR EN ESTE COCHE»); el coche gira
+  visiblemente hacia donde se dirige, con las ruedas delanteras siguiendo la
+  dirección. La inicial se elige con `VIEW_MODE`.
 - **Plano del circuito** (tecla `M`): minimapa arriba a la izquierda con el
   trazado completo, los próximos 600 m resaltados en ámbar, la meta y el
   coche como punto rojo — para leer la siguiente curva con antelación.
@@ -244,7 +252,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `F3` | Grabar / parar el **registro de rendimiento** (ms por fase + lo que hay en pantalla) |
 | `L` | Mostrar/ocultar la trazada ideal |
 | `G` | Alternar cambio automático / manual |
-| `C` | Cambiar la cámara: interior / trasera cercana / exterior lejana (misma escena, tres configuraciones de cámara ajustables por coche) |
+| `C` | Cambiar la cámara: interior / cabina / trasera cercana / exterior lejana / elevada (misma escena, cinco configuraciones de cámara ajustables por coche) |
 | `E` | Arrancar / parar el motor |
 | `T` | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
 | `M` | Mostrar/ocultar el plano del circuito **completo** (visión de conjunto) |
@@ -375,7 +383,11 @@ menor, a la altura de su radio, y se elige el juego con la batalla más
 larga, que los pasos de rueda y los tambores también parecen ruedas), una
 malla con las cuatro (se parte en cuartos) o ejes (se parten en izquierda y
 derecha); si a un modelo le falta una, se fabrica en espejo de la del otro
-lado. Si no hay forma, el coche va entero y las ruedas no giran.
+lado. Si no hay forma, el coche va entero y las ruedas no giran. Las
+piezas **concéntricas** con una rueda (llanta, disco de freno, tapacubos:
+redondas, con el mismo centro y dentro de su ancho) pasan a esa rueda para
+girar y rodar con ella; en el Rolls la cubierta era la rueda y la llanta se
+quedaba quieta.
 Los **cristales** se conservan: el alfa efectivo de cada pieza es el factor
 del material por el alfa medio de su textura (en Sketchfab la
 transparencia suele ir en la textura), se guarda en el color del vértice y

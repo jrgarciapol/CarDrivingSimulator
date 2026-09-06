@@ -296,6 +296,37 @@ def _recortar(p, mask):
     return q
 
 
+def _adjuntar_concentricas(partes):
+    """Las piezas CONCENTRICAS con una rueda (llanta, disco de freno,
+    tapacubos: redondas, con el mismo centro en y/z y dentro de su ancho)
+    pasan a esa rueda para girar y rodar con ella. En el Rolls la cubierta
+    era la rueda y la llanta se quedaba quieta en la carroceria."""
+    ruedas = {k: _bbox(p) for k, p in partes if k > 0}
+    if len(ruedas) < 4:
+        return partes, 0
+    salida, n = [], 0
+    for k, p in partes:
+        if k > 0:
+            salida.append((k, p))
+            continue
+        a, b, c, t = _bbox(p)
+        destino = 0
+        for kr, (ra, rb, rc, rt) in ruedas.items():
+            redonda = abs(t[1] - t[2]) < 0.15 * max(t[1], t[2], 1e-6)
+            if (redonda and t[1] <= rt[1] * 1.02 and t[1] > 0.05 * rt[1]
+                    and abs(c[1] - rc[1]) < 0.06 * rt[1] + 0.01
+                    and abs(c[2] - rc[2]) < 0.06 * rt[1] + 0.01
+                    and a[0] >= ra[0] - 0.06 and b[0] <= rb[0] + 0.06):
+                destino = kr
+                break
+        if destino:
+            n += 1
+        salida.append((destino, p))
+    # las ruedas al final, en orden, como devuelve clasificar
+    salida.sort(key=lambda kp: kp[0])
+    return salida, n
+
+
 def clasificar(piezas, patron_ruedas=None):
     """Lista de (parte, pieza): 0 carroceria, 1..4 ruedas (DI, DD, TI, TD).
     Devuelve tambien el metodo usado."""
@@ -553,6 +584,11 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
         else:
             c[3] = 1.0
         p["color"] = tuple(c)
+    # cuantas piezas de cristal trae el modelo (incluidas las invisibles
+    # que se tiran): con cero, desde la cabina el coche es una pared (el
+    # autobus trae las ventanas pintadas en la chapa) y el juego no pinta
+    # la carroceria en esa vista
+    n_cristales = sum(1 for p in piezas if p.get("modo") == "BLEND")
     visibles = [p for p in piezas if p["color"][3] >= 0.05]
     if visibles:
         piezas = visibles
@@ -566,6 +602,9 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
         for p in piezas:
             p["pos"] = p["pos"] * float(escala)
     partes, metodo = clasificar(piezas, ruedas)
+    partes, n_adj = _adjuntar_concentricas(partes)
+    if n_adj:
+        metodo += f" (+{n_adj} piezas concentricas: llantas, discos, tapacubos)"
     giros = _enderezar_ruedas(partes)
     # centrar en x/z y apoyar en el suelo (con las ruedas, que son lo que
     # toca el asfalto, si se han reconocido)
@@ -634,6 +673,7 @@ def convertir(ruta_glb, nombre, frente="+z", arriba="y", escala=None,
     carpeta = carpeta or os.path.join(os.path.dirname(__file__), "..",
                                       "simulator", "models")
     ruta = os.path.join(carpeta, f"{nombre}.npz")
+    datos["cristales"] = np.int32(n_cristales)
     np.savez_compressed(ruta, **datos)
     datos["metodo_ruedas"] = metodo
     datos["celda"] = celda

@@ -53,10 +53,11 @@ class _Circuito:
 
 
 def _camara(f=1.2, pitch_px=0.0, psi=0.0, extra_y=1.35, mesh_dx=0.0,
-            cam_forward=0.0, cam_back=0.0):
+            cam_forward=0.0, cam_back=0.0, cam_pitch=0.0):
     return SimpleNamespace(f=f, extra_y=extra_y, pitch_px=pitch_px, psi_c=psi,
                            mesh_dx=mesh_dx, cam_forward=cam_forward,
-                           cam_back=cam_back, onboard=(cam_back == 0.0))
+                           cam_back=cam_back, onboard=(cam_back == 0.0),
+                           cam_pitch=cam_pitch, cam_near=None)
 
 
 def main():
@@ -369,6 +370,41 @@ def main():
                        f"{rojos} franjas rojas, {blancos} hitos blancos"))
         cfg.TRACK_POLES = True
         cfg.CHEVRON_MAX_RADIUS = 200.0
+
+        # --- vista ELEVADA: inclinacion real de la camara --------------------
+        # con la camara a 9 m, 12 m atras y 28 grados hacia abajo, el
+        # horizonte sube en pantalla y el cielo (sombreador) y la calzada
+        # (malla) tienen que coincidir: la fila donde el cielo se vuelve
+        # suelo en una columna sin carretera es la misma que la del punto
+        # del eje a 600 m proyectado con la matriz de vista
+        st.s, st.vx = 3000.0, 25.0
+        cfg.SKY_CLOUDS = 0.0
+        cam_e = _camara(extra_y=9.0, cam_back=12.0, psi=0.0,
+                        cam_pitch=math.radians(28.0))
+        escena.dibujar(c90, st, cam_e, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        alta = leer().astype(int)
+        # horizonte del sombreador del cielo con la camara inclinada theta:
+        # el rayo (ny/f) deshecha la inclinacion queda horizontal cuando
+        # ny = f*tan(theta)  ->  fila = H/2 - ny*H/2
+        fila_h = H / 2 - 1.2 * math.tan(math.radians(28.0)) * H / 2
+        p_lejos = escena.world_to_screen(c90, st.s + 600.0, 0.0, 0.0)
+        arriba = alta[int(fila_h) - 40, W // 2, :3]
+        abajo = alta[int(fila_h) + 60, 30, :3]
+        r.append(check("vista elevada: el horizonte sube (por encima del 40 % "
+                       "de la pantalla), el eje a 600 m se proyecta junto a el "
+                       "(+-8 px) y encima hay cielo y debajo suelo",
+                       0 < fila_h < H * 0.4 and p_lejos is not None
+                       and abs(p_lejos[1] - fila_h) < 8
+                       and arriba[2] > arriba[1] + 20 and abajo[1] > abajo[2] + 20,
+                       f"horizonte en la fila {fila_h:.0f}, eje a 600 m en "
+                       f"{None if p_lejos is None else round(p_lejos[1])}, "
+                       f"arriba {arriba} abajo {abajo}"))
+        p_coche = escena.world_to_screen(c90, st.s, 0.0, 0.0)
+        r.append(check("...y el coche queda algo por debajo del centro, con "
+                       "carretera por delante",
+                       p_coche is not None and H * 0.5 < p_coche[1] < H * 0.8,
+                       str(p_coche)))
 
         # --- cielo con nubes y montes con laderas ----------------------------
         st.s, st.vx = 3000.0, 25.0

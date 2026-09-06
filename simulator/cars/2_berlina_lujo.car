@@ -54,3 +54,6 @@ SUSP_CAMBER_GAIN = 0.30            # rad/m: confort antes que apoyo
 STATIC_CAMBER_FRONT_DEG = -0.8      # grados de caida estatica delante
 STATIC_CAMBER_REAR_DEG = -1.2      # grados detras: algo de caida sin castigar el neumatico
 CAMERA_FORWARD = 0.45             # m, ojo del conductor a media cabina
+CAMERA_HEIGHT_COCKPIT = 1.25      # m, ojo en la vista de cabina (dentro del modelo 3D)
+CAMERA_FORWARD_COCKPIT = -0.05     # m por delante del centro, vista de cabina
+CAMERA_SIDE_COCKPIT = -0.40       # m a la izquierda (negativo) del eje: puesto de conduccion

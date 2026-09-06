@@ -109,8 +109,11 @@ PAD_RUMBLE_SLIP = 1.4        # cuánta vibración por unidad de derrape: es el
                              # [0 .. 3]
 
 AUTO_GEAR = True         # True = arrancar con cambio automático
-VIEW_MODE = 0            # vista inicial: 0 = sin coche (cámara interior),
-                         # 1 = trasera cercana, 2 = coche completo
+VIEW_MODE = 0            # vista inicial (la tecla C pasa de una a otra):
+                         # 0 = interior sin coche, 1 = cabina (dentro del
+                         # modelo 3D), 2 = trasera cercana, 3 = exterior,
+                         # 4 = elevada (mas alta e inclinada, para leer la
+                         # distancia a la curva) [0 .. 4]
 
 # ===========================================================================
 # FORCE FEEDBACK
@@ -586,6 +589,15 @@ CAMERA_FORWARD = 0.5         # m que el ojo del conductor va por DELANTE del
                              # conducción y no en el centro del coche; cada
                              # coche lo redefine (autobus muy adelante sobre
                              # el eje, formula casi centrado) [0 .. 3]
+CAMERA_HEIGHT_COCKPIT = 1.1  # m, altura del ojo en la vista de CABINA (dentro
+                             # del modelo 3D: se ve el salpicadero y la
+                             # carretera a través del parabrisas); cada
+                             # coche la redefine [0.4 .. 2.6]
+CAMERA_FORWARD_COCKPIT = 0.4 # m que el ojo va por delante del centro del
+                             # coche en la vista de cabina [-1.0 .. 5.0]
+CAMERA_SIDE_COCKPIT = -0.38  # m del ojo a la IZQUIERDA (negativo) o derecha
+                             # del eje del coche en la vista de cabina: el
+                             # puesto de conducción [-1.2 .. 1.2]
 CAMERA_HEIGHT_REAR = 2.0     # m, altura de la cámara de la vista trasera
                              # CERCANA (el coche visto desde atrás, pegado)
                              # [0.8 .. 3.5]
@@ -598,6 +610,14 @@ CAMERA_BACK_CHASE = 6.5      # m que la cámara de la vista exterior va por
                              # DETRÁS del coche. Es la distancia real; el
                              # FOV (CAMERA_DEPTH) solo cambia cuánto ocupa
                              # en pantalla [3.0 .. 15.0]
+CAMERA_HEIGHT_HIGH = 9.0     # m, altura de la cámara de la vista ELEVADA
+                             # (vista de pájaro baja: da la distancia a la
+                             # curva sin perder el detalle) [3.0 .. 30.0]
+CAMERA_BACK_HIGH = 12.0      # m que la cámara elevada va por detrás del
+                             # coche [4.0 .. 40.0]
+CAMERA_PITCH_HIGH = 28.0     # grados que la cámara elevada mira hacia
+                             # ABAJO (inclinación real, no un desplazamiento
+                             # del horizonte): más = más cenital [0 .. 70]
 CAMERA_DEPTH = 1.2           # proyección (1/tan(fov/2)); subir acerca el
                              # coche a la parte baja de la pantalla, como
                              # los juegos comerciales [0.7 .. 1.6]

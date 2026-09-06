@@ -293,16 +293,21 @@ class Renderer(_Dibujo):
 
     def draw_scene(self, track, car_state, show_line=True, cam_height=None,
                    cam_back=0.0, yaw_gain=None, cam_forward=0.0,
-                   horizon_y=None, bg_heading=0.0, coche3d=None):
+                   horizon_y=None, bg_heading=0.0, coche3d=None,
+                   cam_side=0.0, cam_pitch=0.0, cam_near=None):
         """Fondo + carretera del fotograma, por la GPU si esta disponible y
         por SDL si no. Es el UNICO punto de entrada que usa el juego, para
         que el resto no tenga que saber cual de los dos esta activo.
         ``coche3d`` (de ``modelo_coche``) pinta ademas el modelo 3D del
-        coche; ``coche_gpu`` dice si se ha pintado."""
+        coche; ``coche_gpu`` dice si se ha pintado. ``cam_side`` desplaza
+        la camara lateralmente (puesto de conduccion), ``cam_pitch`` la
+        inclina hacia abajo (rad, vista elevada) y ``cam_near`` es el plano
+        cercano (dentro de la cabina hace falta uno muy corto); los tres
+        solo los aplica la escena de la GPU."""
         self.coche_gpu = False
         if self.gpu is not None:
             cam = self._camara(car_state, cam_height, cam_back, yaw_gain,
-                               cam_forward)
+                               cam_forward, cam_side, cam_pitch, cam_near)
             self.gpu.dibujar(track, car_state, cam, show_line, paleta(),
                              coche=coche3d)
             self._gpu_frame = True
@@ -315,7 +320,8 @@ class Renderer(_Dibujo):
         return self.draw_road(track, car_state, show_line, cam_height,
                               cam_back, yaw_gain, cam_forward)
 
-    def _camara(self, car_state, cam_height, cam_back, yaw_gain, cam_forward):
+    def _camara(self, car_state, cam_height, cam_back, yaw_gain, cam_forward,
+                cam_side=0.0, cam_pitch=0.0, cam_near=None):
         """Estado de la camara del fotograma, comun a los dos renderizadores:
         focal (con el efecto de velocidad), altura sobre el asfalto (con
         suspension y temblor), cabeceo como desplazamiento de pantalla,
@@ -385,11 +391,14 @@ class Renderer(_Dibujo):
             glean = cfg.CAMERA_GLEAN * 0.006 * self._cam_lean
         # desplazamiento que se aplica a la MALLA (el coche esta a +n del eje;
         # balanceo y temblor lateral mueven la camara en sentido contrario)
-        mesh_dx = -car_state.n + glean + shake_x
+        # (cam_side: el ojo en el puesto de conduccion, a la izquierda del
+        # eje del coche en la vista de cabina)
+        mesh_dx = -(car_state.n + cam_side) + glean + shake_x
         return SimpleNamespace(f=f, extra_y=extra_y, pitch_px=pitch_px,
                                psi_c=psi_c, mesh_dx=mesh_dx,
                                cam_forward=cam_forward, cam_back=cam_back,
-                               onboard=onboard)
+                               onboard=onboard, cam_pitch=float(cam_pitch),
+                               cam_near=cam_near)
 
     def _fill(self, x, y, w, h, color):
         if w <= 0 or h <= 0:

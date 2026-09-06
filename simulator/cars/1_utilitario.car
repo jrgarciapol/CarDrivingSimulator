@@ -51,3 +51,6 @@ SUSP_CAMBER_GAIN = 0.25            # rad/m: McPherson sencillo
 STATIC_CAMBER_FRONT_DEG = -0.5      # grados de caida estatica delante
 STATIC_CAMBER_REAR_DEG = -0.8      # grados detras: confort y desgaste parejo antes que apoyo
 CAMERA_FORWARD = 0.55             # m, ojo del conductor adelantado (coche corto)
+CAMERA_HEIGHT_COCKPIT = 1.25      # m, ojo en la vista de cabina (dentro del modelo 3D)
+CAMERA_FORWARD_COCKPIT = -0.10     # m por delante del centro, vista de cabina
+CAMERA_SIDE_COCKPIT = 0.35       # m: este modelo lleva el volante a la DERECHA

@@ -75,6 +75,7 @@ uniform float u_tex_on;              // 1 = pieza con textura
 uniform vec3 u_luz;                  // hacia el sol, en el espacio de la escena
 uniform vec3 u_cam;                  // posicion de la camara, idem
 uniform vec3 u_cielo;                // color del cielo (ambiente por arriba)
+uniform float u_alfa_max;            // tope de opacidad de los cristales (cabina)
 uniform vec3 u_suelo;                // color del suelo (ambiente por abajo)
 in vec3 v_pos;
 in vec3 v_nrm;
@@ -113,7 +114,7 @@ void main() {
         : mix(calima, lineal(u_suelo) * 0.8, smoothstep(0.0, 0.25, -r.y));
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
     col = mix(col, entorno, fres * 0.55) + sol * espec;
-    f_col = vec4(pow(col, vec3(1.0 / 2.2)), v_col.a);
+    f_col = vec4(pow(col, vec3(1.0 / 2.2)), min(v_col.a, u_alfa_max));
 }
 """
 
@@ -258,16 +259,23 @@ class ModeloGpu:
         # pintaba dos tercios de la carroceria con la matriz de una rueda,
         # y las puertas y el capo giraban con la direccion
         M = _MAX_TEXTURAS
-        clave = parte * M + (tex + 1)
+        # ...y los cristales aparte: una pieza translucida puede compartir
+        # textura con chapa opaca (el Lamborghini) y en el mismo grupo el
+        # cristal se pintaria opaco
+        alfa_tri = datos["col"][tri[:, 0], 3].astype(float) / 255.0
+        clave = (parte * M + (tex + 1)) * 2 + (alfa_tri < 0.95)
         orden = np.argsort(clave, kind="stable")
-        tri, clave = tri[orden], clave[orden]
-        alfa = datos["col"][tri[:, 0], 3].astype(float) / 255.0
+        tri, clave, alfa_tri = tri[orden], clave[orden], alfa_tri[orden]
         self.grupos = []       # (pieza, textura, primer indice, n, alfa)
         for c in np.unique(clave):
             sel = np.nonzero(clave == c)[0]
-            self.grupos.append((int(c // M), int(c % M) - 1,
+            self.grupos.append((int(c // 2 // M), int(c // 2 % M) - 1,
                                 int(sel[0]) * 3, len(sel) * 3,
-                                float(alfa[sel].mean())))
+                                float(alfa_tri[sel].mean())))
+        #: piezas de cristal que traia el modelo (0 = ventanas pintadas en
+        #: la chapa: desde la cabina es una pared). Sin el dato, se supone
+        #: que las hay.
+        self.cristales = int(datos.get("cristales", 1))
         self.ibo = ctx.buffer(tri.astype("u4").tobytes())
         self.vao = ctx.vertex_array(
             self.prog, [(self.vbo, "3f 3f 2f 4f1", "in_pos", "in_nrm",
@@ -361,6 +369,8 @@ class ModeloGpu:
         p = self.prog_silueta
         ultima = None
         for pieza, _tex, primero, n, _alfa in self.grupos:
+            if matrices[pieza] is None:
+                continue
             if pieza != ultima:
                 mvp = orto @ apl @ inv_base @ matrices[pieza]
                 p["u_mvp"].write(mvp.T.astype("f4").tobytes())
@@ -428,13 +438,17 @@ class ModeloGpu:
                 self.ang[i] = (self.ang[i] + w * dt) % (2.0 * np.pi)
 
     def dibujar(self, vista, proy, matrices, luz, cam=(0.0, 1.0, -6.0),
-                cielo=(0.45, 0.65, 0.95), suelo=(0.25, 0.45, 0.2)):
+                cielo=(0.45, 0.65, 0.95), suelo=(0.25, 0.45, 0.2),
+                alfa_max=1.0):
         """Pinta todas las piezas. ``matrices``: lista de 5 matrices 4x4
         (carroceria, DI, DD, TI, TD) modelo -> escena. ``luz``: vector
         unitario hacia el sol en el espacio de la escena; ``cam`` la
         posicion de la camara; ``cielo`` y ``suelo`` los colores (0..1)
-        de la luz ambiente por arriba y por abajo."""
+        de la luz ambiente por arriba y por abajo. ``alfa_max`` acota la
+        opacidad de los cristales: desde la cabina un parabrisas tintado al
+        85 % (lo que traen los modelos) no dejaria ver la carretera."""
         p = self.prog
+        p["u_alfa_max"].value = float(alfa_max)
         p["u_view"].write(vista.T.astype("f4").tobytes())
         p["u_proj"].write(proy.T.astype("f4").tobytes())
         p["u_luz"].value = tuple(float(v) for v in luz)
@@ -452,7 +466,7 @@ class ModeloGpu:
                 ctx.depth_mask = False
             ultima = None
             for pieza, tex, primero, n, alfa in self.grupos:
-                if (alfa < 0.95) != translucido:
+                if (alfa < 0.95) != translucido or matrices[pieza] is None:
                     continue
                 if pieza != ultima:
                     p["u_model"].write(matrices[pieza].T.astype("f4").tobytes())

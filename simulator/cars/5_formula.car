@@ -75,3 +75,6 @@ STATIC_CAMBER_FRONT_DEG = -3.5      # grados de caida estatica delante
 STATIC_CAMBER_REAR_DEG = -1.8      # grados detras: maximo apoyo; el eje motriz menos, por traccion
 TIRE_TEMP_OPT = 95.0              # slick: fria no agarra NADA
 CAMERA_FORWARD = 0.15             # m, piloto casi centrado en el coche
+CAMERA_HEIGHT_COCKPIT = 0.75      # m, ojo en la vista de cabina (dentro del modelo 3D)
+CAMERA_FORWARD_COCKPIT = -0.35     # m por delante del centro, vista de cabina
+CAMERA_SIDE_COCKPIT = 0.00       # m a la izquierda (negativo) del eje: puesto de conduccion

@@ -96,7 +96,7 @@ def main():
                            len(d["idx"]) // 3 <= 150000, f"{len(d['idx']) // 3}"))
             r.append(check("...las 4 ruedas del mismo radio (0,34 m), la cuarta "
                            "en espejo, y no los tambores de freno (0,22)",
-                           d["metodo_ruedas"] == "ruedas sueltas"
+                           d["metodo_ruedas"].startswith("ruedas sueltas")
                            and all(abs(rad[k] - 0.34) < 0.03 for k in range(1, 5))
                            and abs(c[1][0] + c[2][0]) < 0.02,
                            f"r {rad[1:].round(2)}"))
@@ -136,6 +136,36 @@ def main():
     r.append(check("...y las cuatro son ajustes del coche (se guardan en el .car)",
                    {"CAMERA_HEIGHT_REAR", "CAMERA_BACK_REAR", "CAMERA_HEIGHT_CHASE",
                     "CAMERA_BACK_CHASE"} <= garage.CAR_KEYS))
+    r.append(check("las camaras de cabina y elevada tambien son del coche",
+                   {"CAMERA_HEIGHT_COCKPIT", "CAMERA_FORWARD_COCKPIT",
+                    "CAMERA_SIDE_COCKPIT", "CAMERA_HEIGHT_HIGH", "CAMERA_BACK_HIGH",
+                    "CAMERA_PITCH_HIGH"} <= garage.CAR_KEYS))
+    garage.load_car(os.path.join(garage.CARS_DIR, "8_autobus.car"))
+    r.append(check("el autobus lleva la trasera cercana por encima del techo "
+                   "(antes la camara quedaba dentro) y el ojo de cabina al frente",
+                   cfg.CAMERA_HEIGHT_REAR > 3.11 and cfg.CAMERA_BACK_REAR >= 8.0
+                   and cfg.CAMERA_FORWARD_COCKPIT > 3.5,
+                   f"{cfg.CAMERA_HEIGHT_REAR}/{cfg.CAMERA_BACK_REAR}/{cfg.CAMERA_FORWARD_COCKPIT}"))
+    garage.load_car(os.path.join(garage.CARS_DIR, "1_utilitario.car"))
+    r.append(check("el 2CV del modelo lleva el volante a la derecha: el ojo de "
+                   "cabina va a la derecha", cfg.CAMERA_SIDE_COCKPIT > 0.0))
+    # llantas, discos y tapacubos van CON la rueda (en el Rolls la cubierta
+    # giraba y la llanta se quedaba quieta en la carroceria)
+    rolls_d = modelo3d.cargar("rolls")
+    if rolls_d is not None:
+        por_rueda = [int((rolls_d["parte"] == k).sum()) for k in range(1, 5)]
+        r.append(check("el Rolls lleva la llanta y el disco en cada rueda (mas de "
+                       "1.500 vertices por rueda; solo la cubierta eran 711)",
+                       min(por_rueda) > 1500, str(por_rueda)))
+        rx = rolls_d["pos"][rolls_d["parte"] == 1]
+        r.append(check("...y todo queda dentro de la caja de la rueda",
+                       rx[:, 1].min() > -0.02 and rx[:, 1].max() < 0.80
+                       and abs(rx[:, 0].mean() + 0.83) < 0.08))
+    bus_d = modelo3d.cargar("autobus")
+    r.append(check("el autobus declara 0 cristales (ventanas pintadas en la "
+                   "chapa); el F1, sin el dato, se supone con hueco",
+                   bus_d is not None and int(bus_d.get("cristales", 1)) == 0
+                   and int(modelo3d.cargar("f1").get("cristales", 1)) >= 1))
 
     # --- carga ----------------------------------------------------------------
     f1 = modelo3d.cargar("f1")
@@ -296,6 +326,37 @@ def main():
         r.append(check("sin sol (lluvia) queda solo la sombra de contacto",
                        np.allclose(mg.rect_sombra, (-sx, -sz, sx, sz))))
         render_mod.SUN_VISIBLE = True
+        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                         coche3d=scene.modelo_coche(0.0, 0.0))
+        # --- vista de CABINA: dentro del modelo, cristales acotados --------
+        sdl2.SDL_RenderClear(ren)
+        scene.draw_scene(pista, st, True, 1.25, 0.0, None, -0.05, None, 0.0,
+                         coche3d=dict(scene.modelo_coche(0.0, 0.0), cabina=True),
+                         cam_side=-0.4, cam_near=0.06)
+        sdl2.SDL_RenderPresent(ren)
+        cab = leer()
+        arriba = cab[8, W // 2]
+        r.append(check("desde la cabina (F1, cabina abierta) se sigue viendo el "
+                       "cielo arriba y el coche se pinta",
+                       arriba[2] > arriba[0] + 30 and scene.coche_gpu
+                       and escena.coche_dibujado, str(arriba[:3])))
+        cuerpo = np.linalg.inv(escena._base_coche) @ escena._mats_coche[0]
+        r.append(check("...con la carroceria rigida con la camara (sin bote ni "
+                       "cabeceo propios)", abs(cuerpo[1, 3]) < 1e-9
+                       and np.allclose(cuerpo[:3, :3], np.eye(3), atol=1e-9)))
+        # el autobus (0 cristales): desde la cabina no se pinta la carroceria
+        cfg.CAR_MODEL_3D = "autobus"
+        scene.draw_scene(pista, st, True, 2.3, 0.0, None, 4.3, None, 0.0,
+                         coche3d=dict(scene.modelo_coche(0.0, 0.0), cabina=True),
+                         cam_side=-0.85, cam_near=0.06)
+        sdl2.SDL_RenderPresent(ren)
+        cab_bus = leer()
+        centro = cab_bus[int(H * 0.7), W // 2]
+        r.append(check("desde la cabina del autobus (sin cristales) se ve la "
+                       "carretera, no la pared de la carroceria",
+                       int(centro[0]) < 110 and abs(int(centro[0]) - int(centro[2])) < 25
+                       and escena.coche_dibujado, str(centro[:3])))
+        cfg.CAR_MODEL_3D = "f1"
         scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
                          coche3d=scene.modelo_coche(0.0, 0.0))
         r.append(check("el modelo se pinta rapido (GL < 80 ms incluso por "

@@ -120,6 +120,7 @@ uniform vec2 u_tam;          // ancho y alto del framebuffer en pixeles
 uniform float u_f;           // CAMERA_DEPTH efectivo (1/tan(fov/2))
 uniform float u_pitch;       // cabeceo como desplazamiento vertical en NDC
 uniform float u_roll;        // balanceo de la camara = peralte bajo el coche
+uniform float u_cabeceo;     // inclinacion real de la camara hacia abajo (rad)
 uniform float u_rumbo;       // rumbo absoluto de la camara en el mundo
 uniform float u_alt_cam;     // altura de la camara sobre el suelo (m)
 uniform vec3 u_cielo_alto;
@@ -199,6 +200,10 @@ void main() {
     float ny = 1.0 - 2.0 * gl_FragCoord.y / u_tam.y;
     // rayo de vista, invirtiendo la misma proyeccion que usa la carretera
     vec3 d = normalize(vec3(nx / u_f, (ny + u_pitch) / u_f, 1.0));
+    // deshacer la inclinacion de la camara (vista elevada): giro inverso
+    // sobre x al de _mat_cabeceo(u_cabeceo) en la matriz de vista
+    float cp = cos(u_cabeceo), sp = sin(u_cabeceo);
+    d = vec3(d.x, d.y * cp - d.z * sp, d.y * sp + d.z * cp);
     // deshacer el balanceo de la camara: el horizonte se inclina con el peralte
     float cr = cos(u_roll), sr = sin(u_roll);
     d = vec3(d.x * cr + d.y * sr, -d.x * sr + d.y * cr, d.z);
@@ -355,7 +360,7 @@ def _mat_cabeceo(theta):
     return m
 
 
-def _mat_proyeccion(f, pitch_ndc):
+def _mat_proyeccion(f, pitch_ndc, cerca=None):
     """Reproduce EXACTAMENTE la proyección del render de SDL:
 
         sx = W/2 + f·x/z·W/2        sy = H/2 − f·y/z·H/2 + pitch_px
@@ -364,7 +369,7 @@ def _mat_proyeccion(f, pitch_ndc):
     con el cabeceo como desplazamiento de pantalla. La fila de y va NEGADA:
     OpenGL guarda el framebuffer de abajo arriba y así la lectura sale ya con
     la primera fila arriba, sin darle la vuelta a 4 MB por fotograma."""
-    n, fa = Z_CERCA, Z_LEJOS
+    n, fa = (cerca if cerca else Z_CERCA), Z_LEJOS
     m = np.zeros((4, 4))
     m[0, 0] = f
     m[1, 1] = -f
@@ -842,14 +847,19 @@ class GpuScene:
         # coche iba a la cota del eje y la pista se quedaba por encima (o
         # por debajo) de el segun el lado en que rodase.
         cam_y = elev_cam - cam_x * math.tan(bank_cam) + cam.extra_y
-        vista = (_mat_traslacion(0.0, 0.0, cam.cam_back)
+        # INCLINACION real de la camara (vista elevada): giro sobre su eje x
+        # despues de colocarla, asi mira hacia abajo sin moverse
+        cabeceo_cam = float(getattr(cam, "cam_pitch", 0.0))
+        vista = (_mat_cabeceo(cabeceo_cam)
+                 @ _mat_traslacion(0.0, 0.0, cam.cam_back)
                  @ _mat_balanceo(bank_cam)
                  @ _mat_guinada(cam.psi_c)
                  @ _mat_traslacion(-cam_x, -cam_y, -cam.cam_forward))
         pitch_ndc = cam.pitch_px / (H / 2.0)
-        proy = _mat_proyeccion(cam.f, pitch_ndc)
+        proy = _mat_proyeccion(cam.f, pitch_ndc, getattr(cam, "cam_near", None))
         rumbo = float(self.rumbo[int(s0 / L) % N]) + cam.psi_c
-        sol_px = self._sol_en_pantalla(rumbo, bank_cam, cam.f, cam.pitch_px)
+        sol_px = self._sol_en_pantalla(rumbo, bank_cam, cam.f, cam.pitch_px,
+                                       cabeceo_cam)
         self._sol_px = sol_px               # (pruebas) donde se pinto el sol
 
         # --- colores por sección (misma receta que el render de SDL) --------
@@ -993,6 +1003,7 @@ class GpuScene:
             pc["u_f"].value = float(cam.f)
             pc["u_pitch"].value = float(pitch_ndc)
             pc["u_roll"].value = float(bank_cam)
+            pc["u_cabeceo"].value = float(cabeceo_cam)
             pc["u_rumbo"].value = float(rumbo)
             pc["u_alt_cam"].value = float(max(0.3, cam.extra_y))
             pc["u_cielo_alto"].value = tuple(np.asarray(pal["sky_top"], float) / 255.0)
@@ -1160,6 +1171,11 @@ class GpuScene:
         # en el coche de cajas: con las ruedas fijas al suelo, un balanceo
         # de 7 grados hacia que pareciesen las ruedas las que se tumbaban
         ex = float(getattr(cfg, "CAR_BODY_MOTION_EXAG", 1.0)) * 0.35
+        if coche.get("cabina"):
+            # vista de cabina: la camara ya sube, baja y cabecea con la
+            # carroceria (efectos de camara a bordo), asi que la carroceria
+            # va rigida con ella y el salpicadero no baila en pantalla
+            ex = 0.0
         heave = max(-0.07, min(0.07, float(getattr(st, "heave", 0.0)) * ex))
         pitch = max(-0.05, min(0.05, float(getattr(st, "pitch", 0.0)) * ex))
         roll = max(-0.05, min(0.05, float(getattr(st, "roll", 0.0)) * ex))
@@ -1224,7 +1240,18 @@ class GpuScene:
         cam_pos = np.linalg.inv(vista)[:3, 3]
         cielo = np.asarray(pal["sky_top"], float) / 255.0
         suelo = np.asarray(pal["grass"][0], float) / 255.0
-        m.dibujar(vista, proy, mats, luz, cam_pos, cielo, suelo)
+        cabina = bool(coche.get("cabina"))
+        if cabina:
+            # dentro del coche la luz que sube del suelo es la del asfalto,
+            # no la de la hierba: sin esto el salpicadero salia verdoso
+            suelo = np.array([0.30, 0.30, 0.29])
+            # un modelo sin cristales (el autobus trae las ventanas pintadas
+            # en la chapa) desde dentro es una pared: se pintan solo las
+            # ruedas y queda la vista interior de siempre
+            if m.cristales == 0:
+                mats = [None] + mats[1:]
+        m.dibujar(vista, proy, mats, luz, cam_pos, cielo, suelo,
+                  alfa_max=0.3 if cabina else 1.0)
 
     def _bloquear_textura(self):
         """Bloquea la textura de la escena y devuelve (bufer ctypes sobre sus
@@ -1241,7 +1268,7 @@ class GpuScene:
         buf = (ctypes.c_ubyte * (self.W * self.H * 4)).from_address(pix.value)
         return (buf, paso.value)
 
-    def _sol_en_pantalla(self, rumbo, bank_cam, f, pitch_px):
+    def _sol_en_pantalla(self, rumbo, bank_cam, f, pitch_px, cabeceo=0.0):
         """Centro del sol en píxeles del framebuffer (origen abajo a la
         izquierda, como gl_FragCoord), o None si queda a la espalda."""
         a = SOL_AZIMUT - rumbo
@@ -1249,6 +1276,9 @@ class GpuScene:
         px, py, pz = math.sin(a) * ce, math.sin(SOL_ELEVACION), math.cos(a) * ce
         cb, sb = math.cos(bank_cam), math.sin(bank_cam)
         vx, vy = px * cb - py * sb, px * sb + py * cb
+        # la inclinacion de la camara (misma matriz que la vista)
+        cp, sp = math.cos(cabeceo), math.sin(cabeceo)
+        vy, pz = vy * cp + pz * sp, -vy * sp + pz * cp
         if pz < 0.05:
             return None
         W, H = self.W, self.H

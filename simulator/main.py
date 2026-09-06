@@ -401,7 +401,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     show_telemetry = False
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
-    view_mode = cfg.VIEW_MODE   # 0 sin coche, 1 trasera, 2 coche completo
+    view_mode = int(cfg.VIEW_MODE) % 5   # ver cfg.VIEW_MODE: 0 interior, 1
+                                         # cabina, 2 trasera, 3 exterior, 4 elevada
     time_idx = 0                # indice en TIME_SCALES (camara lenta)
     show_minimap = cfg.MINIMAP
     show_plan = cfg.MAP_AHEAD      # planta del tramo que viene (tecla N)
@@ -434,7 +435,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                 elif sym == sdl2.SDLK_g:
                     auto_gear = not auto_gear
                 elif sym == sdl2.SDLK_c:
-                    view_mode = (view_mode + 1) % 3
+                    view_mode = (view_mode + 1) % 5
                 elif sym == sdl2.SDLK_e:
                     car.toggle_engine()
                 elif sym == sdl2.SDLK_t:
@@ -471,7 +472,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         if wheel.action_edge("toggle_auto"):
             auto_gear = not auto_gear
         if wheel.action_edge("toggle_view"):
-            view_mode = (view_mode + 1) % 3
+            view_mode = (view_mode + 1) % 5
         if wheel.action_edge("engine"):
             car.toggle_engine()
         if wheel.action_edge("slowmo"):
@@ -586,32 +587,50 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         horizon_px = cfg.WINDOW_HEIGHT // 2
         if view_mode < 2:
             horizon_px += int(render_mod.camera_pitch_px(car.state))
-        # VISTAS: la misma escena con tres configuraciones de camara (la
-        # tecla C pasa de una a otra). 0 = interior (ojo del conductor,
-        # sin coche), 1 = trasera cercana, 2 = exterior lejana. En las dos
-        # exteriores el coche es el modelo 3D dentro de la escena; los
-        # parametros de cada camara son del coche (.car) y de AJUSTES.
-        cam_fwd = 0.0
+        # VISTAS: la misma escena con cinco configuraciones de camara (la
+        # tecla C pasa de una a otra). 0 = interior (ojo del conductor, sin
+        # coche), 1 = cabina (el mismo ojo dentro del modelo 3D, con el
+        # salpicadero y el parabrisas), 2 = trasera cercana, 3 = exterior
+        # lejana, 4 = elevada (mas alta, mas atras y mirando hacia abajo,
+        # para leer la distancia a la curva). De la 1 en adelante el coche
+        # es el modelo 3D dentro de la escena; los parametros de cada
+        # camara son del coche (.car) y de AJUSTES.
+        cam_fwd, cam_side, cam_pitch, cam_near = 0.0, 0.0, 0.0, None
         if view_mode == 0:
             cam_h, cam_back, ygain = cfg.CAMERA_HEIGHT, 0.0, None
             cam_fwd = cfg.CAMERA_FORWARD
         elif view_mode == 1:
+            cam_h = float(getattr(cfg, "CAMERA_HEIGHT_COCKPIT", 1.1))
+            cam_back, ygain = 0.0, None
+            cam_fwd = float(getattr(cfg, "CAMERA_FORWARD_COCKPIT", 0.4))
+            cam_side = float(getattr(cfg, "CAMERA_SIDE_COCKPIT", -0.38))
+            cam_near = 0.06                  # el salpicadero esta a un palmo
+        elif view_mode == 2:
             cam_h = float(getattr(cfg, "CAMERA_HEIGHT_REAR", 2.0))
             cam_back = float(getattr(cfg, "CAMERA_BACK_REAR", 4.0))
             ygain = 0.35
-        else:
+        elif view_mode == 3:
             cam_h = float(getattr(cfg, "CAMERA_HEIGHT_CHASE", 2.5))
             cam_back = float(getattr(cfg, "CAMERA_BACK_CHASE", 6.5))
             ygain = 0.35
+        else:
+            cam_h = float(getattr(cfg, "CAMERA_HEIGHT_HIGH", 9.0))
+            cam_back = float(getattr(cfg, "CAMERA_BACK_HIGH", 12.0))
+            ygain = 0.35
+            cam_pitch = math.radians(float(getattr(cfg, "CAMERA_PITCH_HIGH", 28.0)))
         # fondo + carretera: por la GPU si esta disponible, por SDL si no.
-        # En las vistas exteriores, el modelo 3D va dentro de la escena
+        # Con coche, el modelo 3D va dentro de la escena
         coche3d = None
         if view_mode > 0:
             coche3d = scene.modelo_coche(wheel.steering, frame_dt * time_scale)
+            if coche3d is not None and view_mode == 1:
+                coche3d["cabina"] = True
         scene.draw_scene(track, car.state, show_line, cam_h, cam_back, ygain,
                          cam_fwd, horizon_px,
                          car.state.psi * cfg.CAMERA_YAW_GAIN
-                         + base_seg.kappa * 40.0, coche3d=coche3d)
+                         + base_seg.kappa * 40.0, coche3d=coche3d,
+                         cam_side=cam_side, cam_pitch=cam_pitch,
+                         cam_near=cam_near)
         registro.marca("escena")
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
@@ -651,9 +670,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             particles.draw(renderer, scene, track)
         # sin modelo 3D (render de SDL o coche sin modelo): el coche de
         # antes, sprite en la trasera cercana y cajas en la exterior
-        if view_mode == 1 and not scene.coche_gpu:
+        if view_mode == 2 and not scene.coche_gpu:
             scene.draw_car(car.state, wheel.steering)
-        elif view_mode == 2 and not scene.coche_gpu:
+        elif view_mode in (3, 4) and not scene.coche_gpu:
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
         registro.marca("coche")
         if show_minimap:

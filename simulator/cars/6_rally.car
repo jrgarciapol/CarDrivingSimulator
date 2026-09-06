@@ -55,3 +55,6 @@ SUSP_CAMBER_GAIN = 0.40            # rad/m: recorrido largo bien guiado
 STATIC_CAMBER_FRONT_DEG = -2.0      # grados de caida estatica delante
 STATIC_CAMBER_REAR_DEG = -1.5      # grados detras: apoyo con recorrido largo de suspension
 CAMERA_FORWARD = 0.50             # m, ojo del conductor
+CAMERA_HEIGHT_COCKPIT = 1.15      # m, ojo en la vista de cabina (dentro del modelo 3D)
+CAMERA_FORWARD_COCKPIT = -0.35     # m por delante del centro, vista de cabina
+CAMERA_SIDE_COCKPIT = -0.38       # m a la izquierda (negativo) del eje: puesto de conduccion

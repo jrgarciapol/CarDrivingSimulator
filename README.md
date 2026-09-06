@@ -72,7 +72,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **448 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **452 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -95,7 +95,15 @@ mundo y a la deriva con el viento, iluminadas por el lado del sol y con la
 base gris, que tapan el disco del sol al pasar por delante y se funden con
 la calima hacia el horizonte (con lluvia, cielo cubierto). Los montes son
 dos cadenas, lejana y cercana, con **laderas claras u oscuras** según miren
-al sol, grano de roca y nieve en las cumbres altas. La escena se pinta
+al sol, grano de roca y nieve en las cumbres altas. El suelo lleva
+**grano procedural** (`GFX_TEXTURAS`), fijo al mundo por la estación y el
+desplazamiento de cada vértice: en el asfalto, árido fino, manchas de tono,
+**rodadas** más oscuras y pulidas por carril donde pasan las ruedas y un
+borde sucio; en la hierba, matas, calvas de un verde seco y una franja de
+tierra pegada a la calzada. El grano fino se funde con la distancia (a 120
+fotogramas chispearía) y las manchas grandes aguantan hasta 500 m. Es lo que
+da escala y sensación de velocidad, y el gradiente de textura es una de las
+pistas de profundidad más fuertes que tiene el ojo. La escena se pinta
 **dentro del contexto OpenGL de
 SDL** (`GFX_GPU_COMPARTIDO`: el renderizador de SDL pasa a ser el de OpenGL
 también en Windows y la GPU escribe directamente en la textura de fondo),

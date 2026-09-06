@@ -371,6 +371,48 @@ def main():
         cfg.TRACK_POLES = True
         cfg.CHEVRON_MAX_RADIUS = 200.0
 
+        # --- grano procedural en asfalto y hierba (GFX_TEXTURAS) -------------
+        st.s, st.vx = 3000.0, 25.0
+        cfg.SKY_CLOUDS = 0.0
+        cfg.GFX_TEXTURAS = False
+        escena.dibujar(c90, st, cam, False, pal)       # sin trazada: solo suelo
+        sdl2.SDL_RenderPresent(ren)
+        liso = leer().astype(float)
+        cfg.GFX_TEXTURAS = True
+        escena.dibujar(c90, st, cam, False, pal)
+        sdl2.SDL_RenderPresent(ren)
+        con_grano = leer().astype(float)
+        # asfalto cerca (mitad baja, centro) y hierba cerca (mitad baja, borde)
+        za = (slice(int(H * 0.75), int(H * 0.95)), slice(int(W * 0.4), int(W * 0.6)))
+        zh = (slice(int(H * 0.50), int(H * 0.60)), slice(0, int(W * 0.08)))
+        sd_a0, sd_a1 = liso[za][:, :, 0].std(), con_grano[za][:, :, 0].std()
+        sd_h0, sd_h1 = liso[zh][:, :, 1].std(), con_grano[zh][:, :, 1].std()
+        dif = np.abs(con_grano - liso).mean(axis=2)[H // 2:].mean()
+        r.append(check("con GFX_TEXTURAS el asfalto cercano tiene grano (liso "
+                       "es plano, dispersion 0) y la hierba tambien, y la mitad "
+                       "baja de la pantalla cambia",
+                       sd_a1 > sd_a0 + 1.0 and sd_h1 > sd_h0 + 1.0 and dif > 1.0,
+                       f"asfalto {sd_a0:.1f} -> {sd_a1:.1f}, hierba {sd_h0:.1f} -> "
+                       f"{sd_h1:.1f}, dif {dif:.2f}"))
+        r.append(check("...sin cambiar el tono medio (el grano modula, no tine)",
+                       abs(con_grano[za].mean() - liso[za].mean()) < 6.0,
+                       f"{liso[za].mean():.1f} -> {con_grano[za].mean():.1f}"))
+        v = escena._vertices
+        tipos = np.unique(v["col"][:, :, :, 3])
+        r.append(check("las bandas llevan su tipo en el alfa: asfalto (254), "
+                       "hierba (253) y liso (255: pianos y trazada)",
+                       set(tipos.tolist()) == {253, 254, 255}, str(tipos)))
+        # la estacion de cada vertice es la ABSOLUTA (modulo el periodo), asi
+        # el grano queda fijo al mundo y no a la pantalla
+        e = escena.eje(c90, st.s)
+        s_esp = np.mod(np.mod(st.s + e["rels"], c90.length), gpu.PERIODO_TEX)
+        r.append(check("...y la estacion absoluta modulo 1024 m en uv.x (grano "
+                       "fijo al mundo), con el semiancho en uv.z",
+                       np.allclose(v["uv"][4, :, 0, 0], s_esp[:-1], atol=1e-3)
+                       and np.allclose(v["uv"][4, :, 0, 2], e["hw"][:-1], atol=1e-3)
+                       and np.allclose(v["uv"][4, :, 0, 1], -e["hw"][:-1] + 0.42, atol=1e-3),
+                       f"uv[0] {v['uv'][4, 0, 0]} esperado s {s_esp[0]:.2f}"))
+
         # --- vista ELEVADA: inclinacion real de la camara --------------------
         # con la camara a 9 m, 12 m atras y 28 grados hacia abajo, el
         # horizonte sube en pantalla y el cielo (sombreador) y la calzada
@@ -544,6 +586,10 @@ def main():
         sdl2.SDL_RenderPresent(ren)
         r.append(check("cambiar de circuito borra las huellas de neumatico",
                        escena._huellas_n == 0))
+        # (el primer fotograma de un circuito incluye su precalculo: arboles,
+        # biondas, senales; el coste por fotograma es el del segundo)
+        escena.dibujar(c50, st, cam, True, pal)
+        sdl2.SDL_RenderPresent(ren)
         img = leer().astype(int)
         amarillo = ((img[:, :, 0] > 200) & (img[:, :, 1] > 170)
                     & (img[:, :, 2] < 90)).sum()

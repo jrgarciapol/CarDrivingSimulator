@@ -748,6 +748,12 @@ TRACK_SIGNS = True           # senal de curva peligrosa 120 m antes de cada
                              # curva de radio menor que TRACK_SIGN_RADIUS
 TRACK_SIGN_RADIUS = 200.0    # m: radio por debajo del cual una curva lleva
                              # senal de curva peligrosa [0 .. 600]
+GFX_TEXTURAS = True          # grano procedural en el asfalto (árido, manchas,
+                             # rodadas por carril, borde sucio) y en la
+                             # hierba (matas, calvas secas, tierra junto a
+                             # la calzada), fijo al mundo: da escala,
+                             # profundidad y sensación de velocidad. Solo
+                             # con la escena en la GPU
 SKY_CLOUDS = 0.45            # cobertura de nubes en el cielo (solo con la
                              # escena en la GPU): 0 = cielo limpio, 1 =
                              # cubierto; con lluvia se suma 0,5 [0 .. 1]

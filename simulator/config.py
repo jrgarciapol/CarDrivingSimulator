@@ -618,6 +618,12 @@ CAMERA_BACK_HIGH = 12.0      # m que la cámara elevada va por detrás del
 CAMERA_PITCH_HIGH = 28.0     # grados que la cámara elevada mira hacia
                              # ABAJO (inclinación real, no un desplazamiento
                              # del horizonte): más = más cenital [0 .. 70]
+CAMERA_ORBIT_HIGH = 45.0     # grados, como máximo, que la cámara elevada se
+                             # va al lado INTERIOR de la curva que viene
+                             # (según su radio, todo a partir de 160 m)
+                             # para ver la trayectoria de lado sin perder la
+                             # carretera de delante; 0 = siempre detrás,
+                             # negativo = lado EXTERIOR [-80 .. 80]
 CAMERA_DEPTH = 1.2           # proyección (1/tan(fov/2)); subir acerca el
                              # coche a la parte baja de la pantalla, como
                              # los juegos comerciales [0.7 .. 1.6]

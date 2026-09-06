@@ -447,6 +447,38 @@ def main():
                        "carretera por delante",
                        p_coche is not None and H * 0.5 < p_coche[1] < H * 0.8,
                        str(p_coche)))
+        # ORBITA: en una curva a la izquierda la camara se va al lado
+        # interior (izquierda) y mira al coche, que sigue centrado; la
+        # carretera de delante queda entonces a la DERECHA en pantalla
+        segs = c90.segments
+        s_izq = next(i for i in range(len(segs))
+                     if sum(segs[(i + 2 + j) % len(segs)].kappa
+                            for j in range(22)) / 22 > 1.0 / 150.0) * cfg.SEGMENT_LENGTH
+        orb = render_mod.orbita_elevada(c90, s_izq, 45.0)
+        r.append(check("orbita_elevada: curva a la izquierda -> angulo negativo "
+                       "(camara a la izquierda) y como mucho 45 grados",
+                       -math.radians(45.0) - 1e-9 <= orb < -math.radians(10.0),
+                       f"{math.degrees(orb):.1f} grados en s={s_izq:.0f}"))
+        kap = np.array([sg.kappa for sg in segs])
+        k_del = np.array([abs(np.roll(kap, -(i + 2))[:22].mean()) for i in range(0, len(segs), 10)])
+        s_recta = int(np.argmin(k_del)) * 10 * cfg.SEGMENT_LENGTH
+        r.append(check("...y en la recta se queda detras (menos de 2 grados)",
+                       abs(render_mod.orbita_elevada(c90, s_recta, 45.0)) < math.radians(2.0),
+                       f"{math.degrees(render_mod.orbita_elevada(c90, s_recta, 45.0)):.1f} "
+                       f"grados en s={s_recta:.0f}"))
+        st.s = s_izq
+        cam_o = _camara(extra_y=9.0, cam_back=12.0, psi=orb,
+                        cam_pitch=math.radians(28.0))
+        escena.dibujar(c90, st, cam_o, True, pal)
+        p_c = escena.world_to_screen(c90, st.s, 0.0, 0.0)
+        p_a = escena.world_to_screen(c90, st.s + 40.0, 0.0, 0.0)
+        r.append(check("con la orbita el coche sigue centrado y el eje 40 m por "
+                       "delante cae a la derecha de la pantalla",
+                       p_c is not None and abs(p_c[0] - W / 2) < 3
+                       and p_a is not None and p_a[0] > W * 0.6,
+                       f"coche x={None if p_c is None else round(p_c[0])}, "
+                       f"delante x={None if p_a is None else round(p_a[0])}"))
+        st.s = 3000.0
 
         # --- cielo con nubes y montes con laderas ----------------------------
         st.s, st.vx = 3000.0, 25.0

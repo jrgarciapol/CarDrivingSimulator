@@ -50,8 +50,11 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   siente la retención del volante motor). El motor es **seleccionable**
   (`ENGINE_MODEL`): `legacy` (régimen filtrado) o `inertia` (el cigüeñal como
   grado de libertad propio: acelerón libre en punto muerto y patinaje del
-  embrague en la arrancada). El cambio da un **tirón de corte de par** real
-  (`SHIFT_CUT_TIME`).
+  embrague en la arrancada; con el motor en el suelo del ralentí el
+  embrague solo transmite lo que da el motor más la reserva del regulador,
+  y el par se acota al que sincroniza las dos inercias en un paso, así la
+  salida con el gas a medias no patina ni da tirones). El cambio da un
+  **tirón de corte de par** real (`SHIFT_CUT_TIME`).
 - **Camber thrust**: al tumbarse la carrocería en el apoyo las ruedas se
   inclinan y pierden agarre — los coches altos y blandos subviran más.
 - **Peralte** con física completa: la gravedad empuja hacia el vértice, la
@@ -72,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **452 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **456 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -161,7 +164,11 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
   **elevada** (`CAMERA_HEIGHT_HIGH` / `CAMERA_BACK_HIGH` /
   `CAMERA_PITCH_HIGH`): una vista de pájaro baja, con la cámara inclinada
   de verdad hacia abajo (no un desplazamiento del horizonte), que da la
-  distancia a la curva siguiente sin perder el detalle del coche. Todas las
+  distancia a la curva siguiente sin perder el detalle del coche; al llegar
+  una curva la cámara **orbita al lado interior** (hasta
+  `CAMERA_ORBIT_HIGH` grados según el radio de los próximos 90 m, negativo
+  = lado exterior) y mira al coche desde ahí, así se ve la trayectoria de
+  lado sin perder la carretera de delante. Todas las
   alturas, distancias y ángulos son parámetros del coche (se ajustan en
   AJUSTES y se guardan con «GUARDAR EN ESTE COCHE»); el coche gira
   visiblemente hacia donde se dirige, con las ruedas delanteras siguiendo la

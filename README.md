@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **456 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **461 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -729,6 +729,7 @@ tests/
   test_motor_inercia.py     cigueñal con inercia + embrague (ENGINE_MODEL)
   test_transmision.py       corte de par al cambiar + diferenciales
   test_settings.py          persistencia de reglajes y guardado de coches
+  test_ajustes.py           menu de AJUSTES: pasos redondos de las flechas
   test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
   test_audio.py             sintetizador y laboratorio de sonido
@@ -745,8 +746,11 @@ Los modelos seleccionables (`TIRE_MODEL`, `ENGINE_MODEL`, `DRIVE_TYPE`,
 exageración de la carrocería) se guardan con **GUARDAR EN ESTE COCHE**, que
 reescribe el `.car` del coche elegido conservando sus comentarios, o con
 **GUARDAR COCHE COMO...**, que crea uno nuevo. Las flechas mueven cada valor
-por una rejilla de pasos que pasa siempre por 0 y por los valores redondos,
-para que un parámetro que se apaga en 0 se pueda apagar. Todo sin editar
+por una rejilla de pasos **redondos** (la serie 1, 2, 5 × 10ⁿ más cercana a
+rango/40, o rango/8 con MAYÚS: el giro del volante va de 20 en 20 grados y
+de 100 en 100) que pasa siempre por 0 y por los valores redondos, para que
+un parámetro que se apaga en 0 se pueda apagar y el volante vuelva a 900.
+`D` devuelve el seleccionado a su valor por defecto. Todo sin editar
 `config.py`.
 
 ## Solución de problemas

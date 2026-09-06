@@ -49,6 +49,7 @@ from . import font as font_mod
 from . import garage
 from . import perf_log
 from . import render as render_mod
+from . import gpu as gpu_mod
 from .audio import EngineSound
 from .menu import run_menu
 from . import settings
@@ -402,8 +403,9 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
     orbita_cam = 0.0            # orbita suavizada de la camara elevada (rad)
-    view_mode = int(cfg.VIEW_MODE) % 5   # ver cfg.VIEW_MODE: 0 interior, 1
-                                         # cabina, 2 trasera, 3 exterior, 4 elevada
+    view_mode = int(cfg.VIEW_MODE) % 7   # ver cfg.VIEW_MODE: 0 interior, 1
+                                         # cabina, 2 trasera, 3 exterior, 4
+                                         # elevada, 5 planta, 6 isometrica
     time_idx = 0                # indice en TIME_SCALES (camara lenta)
     show_minimap = cfg.MINIMAP
     show_plan = cfg.MAP_AHEAD      # planta del tramo que viene (tecla N)
@@ -436,7 +438,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                 elif sym == sdl2.SDLK_g:
                     auto_gear = not auto_gear
                 elif sym == sdl2.SDLK_c:
-                    view_mode = (view_mode + 1) % 5
+                    view_mode = (view_mode + 1) % 7
                 elif sym == sdl2.SDLK_e:
                     car.toggle_engine()
                 elif sym == sdl2.SDLK_t:
@@ -473,7 +475,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         if wheel.action_edge("toggle_auto"):
             auto_gear = not auto_gear
         if wheel.action_edge("toggle_view"):
-            view_mode = (view_mode + 1) % 5
+            view_mode = (view_mode + 1) % 7
         if wheel.action_edge("engine"):
             car.toggle_engine()
         if wheel.action_edge("slowmo"):
@@ -597,7 +599,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         # es el modelo 3D dentro de la escena; los parametros de cada
         # camara son del coche (.car) y de AJUSTES.
         cam_fwd, cam_side, cam_pitch, cam_near = 0.0, 0.0, 0.0, None
-        cam_orbit = 0.0
+        cam_orbit, cam_orto = 0.0, None
         if view_mode == 0:
             cam_h, cam_back, ygain = cfg.CAMERA_HEIGHT, 0.0, None
             cam_fwd = cfg.CAMERA_FORWARD
@@ -615,11 +617,14 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
             cam_h = float(getattr(cfg, "CAMERA_HEIGHT_CHASE", 2.5))
             cam_back = float(getattr(cfg, "CAMERA_BACK_CHASE", 6.5))
             ygain = 0.35
-        else:
-            cam_h = float(getattr(cfg, "CAMERA_HEIGHT_HIGH", 9.0))
-            cam_back = float(getattr(cfg, "CAMERA_BACK_HIGH", 12.0))
+        elif view_mode in (4, 5):
+            # 4 = elevada, 5 = PLANTA: la misma camara inclinada, mucho mas
+            # alta y casi cenital (la vista del plano con relieve)
+            suf = "HIGH" if view_mode == 4 else "PLAN"
+            cam_h = float(getattr(cfg, f"CAMERA_HEIGHT_{suf}", 9.0))
+            cam_back = float(getattr(cfg, f"CAMERA_BACK_{suf}", 12.0))
             ygain = 0.35
-            cam_pitch = math.radians(float(getattr(cfg, "CAMERA_PITCH_HIGH", 28.0)))
+            cam_pitch = math.radians(float(getattr(cfg, f"CAMERA_PITCH_{suf}", 28.0)))
             # la camara se va al lado INTERIOR de la curva que viene (media
             # de la curvatura de los proximos 90 m) y mira al coche desde
             # ahi, de modo que se ve la trayectoria de lado sin perder la
@@ -628,6 +633,17 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                 track, car.state.s, getattr(cfg, "CAMERA_ORBIT_HIGH", 45.0))
             orbita_cam += (objetivo - orbita_cam) * min(1.0, 2.5 * frame_dt)
             cam_orbit = orbita_cam
+        else:
+            # ISOMETRICA: proyeccion ortografica (sin punto de fuga: la
+            # distancia en pantalla es proporcional a la real, como en un
+            # plano), vista desde CAMERA_ISO_YAW grados a un lado y
+            # CAMERA_ISO_PITCH de elevacion, con el punto de mira algo por
+            # delante del coche para ver lo que viene
+            cam_h, cam_back, ygain = 0.0, gpu_mod.ORTO_DISTANCIA, 0.35
+            cam_fwd = float(getattr(cfg, "CAMERA_ISO_AHEAD", 12.0))
+            cam_orbit = math.radians(float(getattr(cfg, "CAMERA_ISO_YAW", 30.0)))
+            cam_orto = dict(alto=float(getattr(cfg, "CAMERA_ISO_METROS", 60.0)),
+                            pitch=math.radians(float(getattr(cfg, "CAMERA_ISO_PITCH", 40.0))))
         # fondo + carretera: por la GPU si esta disponible, por SDL si no.
         # Con coche, el modelo 3D va dentro de la escena
         coche3d = None
@@ -640,7 +656,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                          car.state.psi * cfg.CAMERA_YAW_GAIN
                          + base_seg.kappa * 40.0, coche3d=coche3d,
                          cam_side=cam_side, cam_pitch=cam_pitch,
-                         cam_near=cam_near, cam_orbit=cam_orbit)
+                         cam_near=cam_near, cam_orbit=cam_orbit,
+                         cam_orto=cam_orto)
         registro.marca("escena")
         # fantasma de la mejor vuelta de la sesión
         if cfg.GHOST_ENABLED and ghost_best is not None:
@@ -682,7 +699,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         # antes, sprite en la trasera cercana y cajas en la exterior
         if view_mode == 2 and not scene.coche_gpu:
             scene.draw_car(car.state, wheel.steering)
-        elif view_mode in (3, 4) and not scene.coche_gpu:
+        elif view_mode >= 3 and not scene.coche_gpu:
             scene.draw_car_3d(car.state, wheel.steering, cam_h, cam_back, 0.35)
         registro.marca("coche")
         if show_minimap:

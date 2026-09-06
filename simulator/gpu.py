@@ -97,6 +97,7 @@ _FS_ESCENA = """#version 330
 uniform vec3 u_bruma_col;
 uniform float u_bruma_d;            // 0 = sin bruma
 uniform float u_texturas;           // 1 = grano procedural en asfalto y hierba
+uniform float u_lod_dist;           // > 0: distancia fija para atenuar el grano (ortografica)
 in vec4 v_col;
 in vec3 v_view;
 in vec3 v_uv;                       // estacion (m, modulo), desplazamiento, semiancho
@@ -125,7 +126,7 @@ void main() {
     } else if (u_texturas > 0.5 && tipo < 254.5) {
         // el grano fino se funde con la distancia (si no, chispea a lo
         // lejos); las manchas grandes aguantan mas
-        float d = length(v_view);
+        float d = u_lod_dist > 0.0 ? u_lod_dist : length(v_view);
         float fino = 1.0 - smoothstep(25.0, 110.0, d);
         float medio = 1.0 - smoothstep(120.0, 500.0, d);
         vec2 uv = v_uv.xy;
@@ -196,6 +197,8 @@ uniform vec2 u_sol_px;       // centro del sol en pixeles del framebuffer
 uniform float u_sol_az;      // azimut absoluto del sol (sombreado de montes y nubes)
 uniform float u_nubes;       // cobertura de nubes 0..1 (0 = cielo limpio)
 uniform float u_tiempo;      // segundos: las nubes derivan con el viento
+uniform float u_orto;        // 1 = vista ortografica: los rayos son paralelos
+                             // e inclinados, todo el fondo es suelo
 out vec4 f_col;
 
 float hash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
@@ -255,6 +258,10 @@ float ladera(float sl, float az) {
 }
 
 void main() {
+    if (u_orto > 0.5) {
+        f_col = vec4(mix(u_hierba, u_calima, 0.12), 1.0);
+        return;
+    }
     // NDC con "arriba" hacia la primera fila de la imagen (el framebuffer
     // se lee tal cual, sin darle la vuelta, gracias al signo de la proyeccion)
     float nx = 2.0 * gl_FragCoord.x / u_tam.x - 1.0;
@@ -447,6 +454,25 @@ def _mat_proyeccion(f, pitch_ndc, cerca=None):
     m[2, 3] = -2.0 * fa * n / (fa - n)
     m[3, 2] = 1.0
     return m
+
+
+def _mat_ortografica(ancho_m, alto_m, cerca, lejos):
+    """Proyeccion ORTOGRAFICA (vista isometrica): sin punto de fuga, todo al
+    mismo tamano este cerca o lejos; ``ancho_m`` x ``alto_m`` metros llenan
+    la pantalla. Misma convencion que _mat_proyeccion (y volteada, z hacia
+    delante) para que el framebuffer se lea igual."""
+    m = np.zeros((4, 4))
+    m[0, 0] = 2.0 / ancho_m
+    m[1, 1] = -2.0 / alto_m
+    m[2, 2] = 2.0 / (lejos - cerca)
+    m[2, 3] = -(lejos + cerca) / (lejos - cerca)
+    m[3, 3] = 1.0
+    return m
+
+
+#: distancia (m) a la que se coloca la camara ortografica: solo importa que
+#: toda la escena quede por delante de ella
+ORTO_DISTANCIA = 400.0
 
 
 def _plantillas_arbol():
@@ -919,16 +945,35 @@ class GpuScene:
         # INCLINACION real de la camara (vista elevada): giro sobre su eje x
         # despues de colocarla, asi mira hacia abajo sin moverse
         cabeceo_cam = float(getattr(cam, "cam_pitch", 0.0))
-        vista = (_mat_cabeceo(cabeceo_cam)
-                 @ _mat_traslacion(0.0, 0.0, cam.cam_back)
-                 @ _mat_balanceo(bank_cam)
-                 @ _mat_guinada(cam.psi_c)
-                 @ _mat_traslacion(-cam_x, -cam_y, -cam.cam_forward))
-        pitch_ndc = cam.pitch_px / (H / 2.0)
-        proy = _mat_proyeccion(cam.f, pitch_ndc, getattr(cam, "cam_near", None))
+        orto = getattr(cam, "cam_orto", None)
+        self._orto = None
+        if orto:
+            # ISOMETRICA: el mundo gira alrededor del punto de mira (la
+            # calzada bajo el coche, o algo por delante) con la guinada y la
+            # inclinacion pedidas, y la camara se aleja ORTO_DISTANCIA por
+            # su eje: proyeccion ortografica de alto_m metros de alto
+            alto_m = float(orto["alto"])
+            ancho_m = alto_m * W / H
+            cabeceo_cam = float(orto["pitch"])
+            vista = (_mat_traslacion(0.0, 0.0, ORTO_DISTANCIA)
+                     @ _mat_cabeceo(cabeceo_cam)
+                     @ _mat_balanceo(bank_cam)
+                     @ _mat_guinada(cam.psi_c)
+                     @ _mat_traslacion(-cam_x, -cam_y, -cam.cam_forward))
+            proy = _mat_ortografica(ancho_m, alto_m, 1.0, 2.0 * ORTO_DISTANCIA)
+            self._orto = (ancho_m, alto_m)
+        else:
+            vista = (_mat_cabeceo(cabeceo_cam)
+                     @ _mat_traslacion(0.0, 0.0, cam.cam_back)
+                     @ _mat_balanceo(bank_cam)
+                     @ _mat_guinada(cam.psi_c)
+                     @ _mat_traslacion(-cam_x, -cam_y, -cam.cam_forward))
+            pitch_ndc = cam.pitch_px / (H / 2.0)
+            proy = _mat_proyeccion(cam.f, pitch_ndc, getattr(cam, "cam_near", None))
+        pitch_ndc = 0.0 if orto else cam.pitch_px / (H / 2.0)
         rumbo = float(self.rumbo[int(s0 / L) % N]) + cam.psi_c
-        sol_px = self._sol_en_pantalla(rumbo, bank_cam, cam.f, cam.pitch_px,
-                                       cabeceo_cam)
+        sol_px = None if orto else self._sol_en_pantalla(
+            rumbo, bank_cam, cam.f, cam.pitch_px, cabeceo_cam)
         self._sol_px = sol_px               # (pruebas) donde se pinto el sol
 
         # --- colores por sección (misma receta que el render de SDL) --------
@@ -1057,7 +1102,7 @@ class GpuScene:
 
         # caché para world_to_screen (fantasma, partículas)
         self._frame = (s0, rels, x, z, hx, hz, elev, cb, sb, vista[:3],
-                       cam.f, cam.pitch_px, track.length)
+                       cam.f, 0.0 if orto else cam.pitch_px, track.length)
         self.ms_malla = (time.perf_counter() - t0) * 1000.0
         frame_actual = self._frame
 
@@ -1074,6 +1119,8 @@ class GpuScene:
             fbo.use()
             ctx.clear(0.0, 0.0, 0.0, 1.0, depth=1.0)
             bruma_d = float(getattr(cfg, "GFX_FOG_DIST", 0.0))
+            if orto:
+                bruma_d = 0.0        # todo esta a 400 m de la camara
             bruma_col = 0.5 * (np.asarray(pal["sky_bottom"], float)
                                + np.asarray(pal["haze"], float)) / 255.0
             # cielo, suelo, sol y montes: sin profundidad, debajo de todo
@@ -1093,6 +1140,7 @@ class GpuScene:
             pc["u_monte"].value = tuple(np.asarray(pal["mountain"], float) / 255.0)
             pc["u_bruma_col"].value = tuple(bruma_col)
             pc["u_bruma_d"].value = bruma_d
+            pc["u_orto"].value = 1.0 if orto else 0.0
             pc["u_sol"].value = 1.0 if (pal["sun"] and sol_px) else 0.0
             pc["u_sol_px"].value = sol_px or (-1e4, -1e4)
             pc["u_sol_az"].value = float(SOL_AZIMUT)
@@ -1110,6 +1158,11 @@ class GpuScene:
             self.prog["u_bruma_d"].value = bruma_d
             self.prog["u_texturas"].value = (
                 1.0 if getattr(cfg, "GFX_TEXTURAS", True) else 0.0)
+            # en la ortografica todo esta a la misma distancia: el grano se
+            # atenua como si estuviera a la distancia que da un pixel del
+            # mismo tamano en perspectiva
+            self.prog["u_lod_dist"].value = (
+                float(self._orto[1]) * cam.f / 2.0 if orto else 0.0)
             datos = vertices.reshape(-1).tobytes()
             if len(datos) > self.vbo.size:
                 self.vbo.orphan(len(datos) * 2)
@@ -1889,9 +1942,15 @@ class GpuScene:
         py = lerp(elev) - n * lerp(sb) + z_up
         pz = lerp(z) + lerp(hz) * n * lerp(cb)
         v = vista @ np.array([px, py, pz, 1.0])
+        W, H = self.W, self.H
+        orto = getattr(self, "_orto", None)
+        if orto:
+            ancho_m, alto_m = orto
+            sx = W / 2 + v[0] / (ancho_m / 2) * (W / 2)
+            sy = H / 2 - v[1] / (alto_m / 2) * (H / 2)
+            return sx, sy, W / ancho_m
         if v[2] < 0.45:
             return None
-        W, H = self.W, self.H
         sx = W / 2 + f * v[0] / v[2] * (W / 2)
         sy = H / 2 - f * v[1] / v[2] * (H / 2) + pitch_px
         return sx, sy, f / v[2] * (W / 2)

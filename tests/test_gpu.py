@@ -53,11 +53,11 @@ class _Circuito:
 
 
 def _camara(f=1.2, pitch_px=0.0, psi=0.0, extra_y=1.35, mesh_dx=0.0,
-            cam_forward=0.0, cam_back=0.0, cam_pitch=0.0):
+            cam_forward=0.0, cam_back=0.0, cam_pitch=0.0, cam_orto=None):
     return SimpleNamespace(f=f, extra_y=extra_y, pitch_px=pitch_px, psi_c=psi,
                            mesh_dx=mesh_dx, cam_forward=cam_forward,
                            cam_back=cam_back, onboard=(cam_back == 0.0),
-                           cam_pitch=cam_pitch, cam_near=None)
+                           cam_pitch=cam_pitch, cam_near=None, cam_orto=cam_orto)
 
 
 def main():
@@ -479,6 +479,54 @@ def main():
                        f"coche x={None if p_c is None else round(p_c[0])}, "
                        f"delante x={None if p_a is None else round(p_a[0])}"))
         st.s = 3000.0
+
+        # --- vista de PLANTA (perspectiva casi cenital) y vista ISOMETRICA ---
+        st.s, st.vx = 3000.0, 25.0
+        cam_p = _camara(extra_y=26.0, cam_back=12.0, cam_pitch=math.radians(60.0))
+        escena.dibujar(c90, st, cam_p, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        planta = leer().astype(int)
+        arriba = planta[4, W // 2, :3]
+        p_c = escena.world_to_screen(c90, st.s, 0.0, 0.0)
+        r.append(check("planta (26 m, 60 grados): el horizonte queda fuera por "
+                       "arriba (la primera fila ya es suelo) y el coche sigue "
+                       "en pantalla",
+                       arriba[1] > arriba[2] + 20 and p_c is not None
+                       and H * 0.4 < p_c[1] < H * 0.9, f"arriba {arriba}, coche {p_c}"))
+        # isometrica: ortografica de 60 m de alto (96 m de ancho a 640x400),
+        # mirada 30 grados a un lado y con el punto de mira 12 m por delante
+        # (en el tramo mas recto: en curva la seccion lateral gira con el
+        # eje y su proyeccion cambia aunque la escala sea la misma)
+        segs_i = c90.segments
+        kap_i = np.array([sg.kappa for sg in segs_i])
+        k_i = np.array([abs(np.roll(kap_i, -i)[:60].mean()) for i in range(0, len(segs_i), 10)])
+        st.s = int(np.argmin(k_i)) * 10 * cfg.SEGMENT_LENGTH
+        cam_i = _camara(extra_y=0.0, cam_back=gpu.ORTO_DISTANCIA, psi=math.radians(30.0),
+                        cam_forward=12.0, cam_orto=dict(alto=60.0, pitch=math.radians(40.0)))
+        escena.dibujar(c90, st, cam_i, True, pal)
+        sdl2.SDL_RenderPresent(ren)
+        iso = leer().astype(int)
+        p_c = escena.world_to_screen(c90, st.s, 0.0, 0.0)
+        p_l = escena.world_to_screen(c90, st.s, -5.0, 0.0)
+        p_r = escena.world_to_screen(c90, st.s, 5.0, 0.0)
+        p_far = escena.world_to_screen(c90, st.s + 200.0, -5.0, 0.0)
+        p_far2 = escena.world_to_screen(c90, st.s + 200.0, 5.0, 0.0)
+        d_cerca = math.hypot(p_r[0] - p_l[0], p_r[1] - p_l[1])
+        d_lejos = math.hypot(p_far2[0] - p_far[0], p_far2[1] - p_far[1])
+        r.append(check("isometrica: sin punto de fuga, 10 m miden lo mismo bajo "
+                       "el coche que 200 m mas alla (+-8 %: lo que cambia es la "
+                       "orientacion del tramo; en perspectiva seria 15 veces menos)",
+                       abs(d_cerca - d_lejos) < 0.08 * d_cerca and d_cerca > 30.0,
+                       f"{d_cerca:.1f} px cerca, {d_lejos:.1f} px lejos"))
+        r.append(check("...el coche queda por debajo del centro (la mira va 12 m "
+                       "por delante) y arriba no hay cielo, todo es suelo",
+                       p_c is not None and H * 0.5 < p_c[1] < H * 0.95
+                       and iso[4, W // 2, 1] > iso[4, W // 2, 2] + 20
+                       and iso[4, 10, 1] > iso[4, 10, 2] + 20,
+                       f"coche {p_c}, arriba {iso[4, W // 2, :3]}"))
+        # de vuelta a la perspectiva normal
+        st.s = 3000.0
+        escena.dibujar(c90, st, cam, True, pal)
 
         # --- cielo con nubes y montes con laderas ----------------------------
         st.s, st.vx = 3000.0, 25.0

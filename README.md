@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **461 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **464 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -152,7 +152,7 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
   activas en modo manual.
 - **Cuentavueltas grande** arriba centrado, con zonas verde/ámbar/roja,
   marca del corte y la marcha en grande — siempre a la vista.
-- **Cinco cámaras sobre la misma escena** (tecla `C` o botón 3, en ciclo):
+- **Siete cámaras sobre la misma escena** (tecla `C` o botón 3, en ciclo):
   **interior** (ojo del conductor, sin coche, por defecto); **cabina** (el
   mismo ojo dentro del modelo 3D: volante, salpicadero y la carretera a
   través del parabrisas, `CAMERA_HEIGHT_COCKPIT` / `CAMERA_FORWARD_COCKPIT`
@@ -168,7 +168,15 @@ neumáticos sintetizados. Cuatro circuitos, elegibles en el menú de arranque:
   una curva la cámara **orbita al lado interior** (hasta
   `CAMERA_ORBIT_HIGH` grados según el radio de los próximos 90 m, negativo
   = lado exterior) y mira al coche desde ahí, así se ve la trayectoria de
-  lado sin perder la carretera de delante. Todas las
+  lado sin perder la carretera de delante; **planta** (`CAMERA_HEIGHT_PLAN`
+  / `CAMERA_BACK_PLAN` / `CAMERA_PITCH_PLAN`): la misma cámara a 26 m y 60°,
+  el plano con relieve pero en perspectiva; e **isométrica**: proyección
+  ortográfica, sin punto de fuga, en la que la distancia en pantalla es
+  proporcional a la real (`CAMERA_ISO_METROS` metros de arriba abajo,
+  `CAMERA_ISO_PITCH` de elevación, `CAMERA_ISO_YAW` a un lado del rumbo y
+  el punto de mira `CAMERA_ISO_AHEAD` metros por delante; sin cielo, sin
+  bruma y con el grano del suelo atenuado como a la distancia equivalente).
+  Todas las
   alturas, distancias y ángulos son parámetros del coche (se ajustan en
   AJUSTES y se guardan con «GUARDAR EN ESTE COCHE»); el coche gira
   visiblemente hacia donde se dirige, con las ruedas delanteras siguiendo la
@@ -267,7 +275,7 @@ Si no hay volante conectado, el simulador funciona con teclado (flechas).
 | `F3` | Grabar / parar el **registro de rendimiento** (ms por fase + lo que hay en pantalla) |
 | `L` | Mostrar/ocultar la trazada ideal |
 | `G` | Alternar cambio automático / manual |
-| `C` | Cambiar la cámara: interior / cabina / trasera cercana / exterior lejana / elevada (misma escena, cinco configuraciones de cámara ajustables por coche) |
+| `C` | Cambiar la cámara: interior / cabina / trasera cercana / exterior lejana / elevada / planta / isométrica (misma escena, siete configuraciones de cámara ajustables por coche) |
 | `E` | Arrancar / parar el motor |
 | `T` | Cámara lenta (1× / 0,5× / 0,25× / 0,1×) |
 | `M` | Mostrar/ocultar el plano del circuito **completo** (visión de conjunto) |

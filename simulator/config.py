@@ -113,7 +113,9 @@ VIEW_MODE = 0            # vista inicial (la tecla C pasa de una a otra):
                          # 0 = interior sin coche, 1 = cabina (dentro del
                          # modelo 3D), 2 = trasera cercana, 3 = exterior,
                          # 4 = elevada (mas alta e inclinada, para leer la
-                         # distancia a la curva) [0 .. 4]
+                         # distancia a la curva), 5 = planta (casi cenital,
+                         # en perspectiva), 6 = isometrica (ortografica,
+                         # como un plano) [0 .. 6]
 
 # ===========================================================================
 # FORCE FEEDBACK
@@ -624,6 +626,25 @@ CAMERA_ORBIT_HIGH = 45.0     # grados, como máximo, que la cámara elevada se
                              # para ver la trayectoria de lado sin perder la
                              # carretera de delante; 0 = siempre detrás,
                              # negativo = lado EXTERIOR [-80 .. 80]
+CAMERA_HEIGHT_PLAN = 26.0    # m, altura de la cámara de PLANTA (casi cenital
+                             # en perspectiva: el plano con relieve)
+                             # [8.0 .. 60.0]
+CAMERA_BACK_PLAN = 12.0      # m por detrás del coche en la vista de planta
+                             # [0.0 .. 40.0]
+CAMERA_PITCH_PLAN = 60.0     # grados hacia abajo de la vista de planta
+                             # [30 .. 85]
+CAMERA_ISO_METROS = 60.0     # m de carretera que caben de arriba abajo de la
+                             # pantalla en la vista ISOMÉTRICA (ortográfica:
+                             # sin punto de fuga, la distancia en pantalla
+                             # es proporcional a la real) [20 .. 200]
+CAMERA_ISO_PITCH = 40.0      # grados de elevación de la vista isométrica
+                             # (35,3 = isométrica clásica; 90 = cenital)
+                             # [15 .. 90]
+CAMERA_ISO_YAW = 30.0        # grados a un lado del rumbo desde donde mira
+                             # la isométrica (0 = desde atrás) [-90 .. 90]
+CAMERA_ISO_AHEAD = 12.0      # m por delante del coche donde apunta el centro
+                             # de la isométrica (para ver lo que viene)
+                             # [0 .. 60]
 CAMERA_DEPTH = 1.2           # proyección (1/tan(fov/2)); subir acerca el
                              # coche a la parte baja de la pantalla, como
                              # los juegos comerciales [0.7 .. 1.6]

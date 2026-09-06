@@ -359,8 +359,11 @@ def main():
                        int(centro[0]) < 110 and abs(int(centro[0]) - int(centro[2])) < 25
                        and escena.coche_dibujado, str(centro[:3])))
         cfg.CAR_MODEL_3D = "f1"
-        scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
-                         coche3d=scene.modelo_coche(0.0, 0.0))
+        # (dos fotogramas: el primero tras cambiar de modelo incluye subir
+        # el F1 a la GPU otra vez; el coste por fotograma es el del segundo)
+        for _ in range(2):
+            scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,
+                             coche3d=scene.modelo_coche(0.0, 0.0))
         r.append(check("el modelo se pinta rapido (GL < 80 ms incluso por "
                        "software; en una GPU real, menos de 1 ms)",
                        escena.ms_gl < 80.0, f"{escena.ms_gl:.1f} ms"))

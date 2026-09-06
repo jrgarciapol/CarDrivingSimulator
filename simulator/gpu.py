@@ -80,12 +80,15 @@ uniform mat4 u_view;
 uniform mat4 u_proj;
 in vec3 in_pos;
 in vec4 in_col;
+in vec3 in_uv;
 out vec4 v_col;
 out vec3 v_view;
+out vec3 v_uv;
 void main() {
     vec4 p = u_view * vec4(in_pos, 1.0);
     v_view = p.xyz;
     v_col = in_col;
+    v_uv = in_uv;
     gl_Position = u_proj * p;
 }
 """
@@ -93,11 +96,69 @@ void main() {
 _FS_ESCENA = """#version 330
 uniform vec3 u_bruma_col;
 uniform float u_bruma_d;            // 0 = sin bruma
+uniform float u_texturas;           // 1 = grano procedural en asfalto y hierba
 in vec4 v_col;
 in vec3 v_view;
+in vec3 v_uv;                       // estacion (m, modulo), desplazamiento, semiancho
 out vec4 f_col;
+
+// ruido de valor suave sobre coordenadas del MUNDO (estacion,
+// desplazamiento): el grano queda fijo al asfalto y fluye bajo el coche
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+float ruido(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash12(i), hash12(i + vec2(1.0, 0.0)), f.x),
+               mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
 void main() {
     vec3 c = v_col.rgb;
+    float tipo = v_col.a * 255.0;
+    float alfa = 1.0;
+    if (tipo < 252.5) {
+        alfa = v_col.a;                       // huellas y demas translucidos
+    } else if (u_texturas > 0.5 && tipo < 254.5) {
+        // el grano fino se funde con la distancia (si no, chispea a lo
+        // lejos); las manchas grandes aguantan mas
+        float d = length(v_view);
+        float fino = 1.0 - smoothstep(25.0, 110.0, d);
+        float medio = 1.0 - smoothstep(120.0, 500.0, d);
+        vec2 uv = v_uv.xy;
+        float n = v_uv.y, hw = v_uv.z;
+        if (tipo > 253.5) {
+            // ASFALTO: arido fino, manchas de tono y RODADAS (dos franjas
+            // mas oscuras y pulidas por carril, donde pasan las ruedas)
+            float g1 = ruido(uv * 7.0);
+            float g2 = ruido(uv * vec2(0.9, 1.6) + 7.3);
+            float tono = 1.0 + 0.20 * (g1 - 0.5) * fino + 0.14 * (g2 - 0.5) * medio;
+            float lc = hw > 2.2 ? hw * 0.5 : 0.0;
+            float an = abs(n);
+            float rod = exp(-pow((an - lc - 0.8) / 0.16, 2.0))
+                      + exp(-pow((an - lc + 0.8) / 0.16, 2.0));
+            rod = clamp(rod, 0.0, 1.0) * medio;
+            tono *= 1.0 - 0.09 * rod;
+            // el borde del asfalto, mas sucio y deshecho
+            float borde = smoothstep(0.35, 0.0, hw - an) * medio;
+            tono *= 1.0 - 0.10 * borde;
+            c *= tono;
+        } else {
+            // HIERBA: matas finas, manchas de un verde mas seco y una
+            // franja de tierra pegada al borde de la calzada
+            float g1 = ruido(uv * 3.2);
+            float g2 = ruido(uv * vec2(0.25, 0.4) + 3.1);
+            vec3 seco = c * vec3(1.06, 0.98, 0.72);
+            c = mix(c, seco, 0.55 * g2 * medio);
+            c *= 1.0 + 0.28 * (g1 - 0.5) * fino + 0.08 * (g1 - 0.5) * medio;
+            float fuera = abs(n) - hw;             // m desde el borde del asfalto
+            float tierra = smoothstep(1.4, 0.2, fuera) * (0.55 + 0.45 * g1) * medio;
+            c = mix(c, vec3(0.44, 0.37, 0.26) * (0.8 + 0.4 * g1), 0.45 * tierra);
+        }
+    }
     if (u_bruma_d > 1.0) {
         // misma ley que tenia el render de SDL, pero por pixel y con la
         // distancia real a la camara en vez de la estacion sobre el eje
@@ -105,7 +166,7 @@ void main() {
         float bruma = 0.92 * (1.0 - exp(-pow(d / u_bruma_d, 1.6)));
         c = mix(c, u_bruma_col, bruma);
     }
-    f_col = vec4(c, v_col.a);
+    f_col = vec4(c, alfa);
 }
 """
 
@@ -275,7 +336,15 @@ void main() {
 }
 """
 
-_VERTICE = np.dtype([("pos", "f4", 3), ("col", "u1", 4)])
+# pos, color (el alfa es el TIPO de superficie: 255 liso, 254 asfalto, 253
+# hierba; menos, translucido) y uv = (estacion mod PERIODO_TEX, desplazamiento
+# del eje, semiancho de calzada) para el grano procedural fijado al mundo
+_VERTICE = np.dtype([("pos", "f4", 3), ("col", "u1", 4), ("uv", "f4", 3)])
+_FORMATO_VERTICE = "3f 4f1 3f"
+TIPO_LISO, TIPO_ASFALTO, TIPO_HIERBA = 255, 254, 253
+#: periodo (m) con que se repite el grano a lo largo del circuito: la
+#: estacion se reduce modulo esto para que el ruido no pierda precision
+PERIODO_TEX = 1024.0
 
 #: huellas de neumatico: puntos que se guardan (anillo: las mas viejas se
 #: borran), separacion minima entre puntos de un trazo, semiancho de la
@@ -667,7 +736,7 @@ class GpuScene:
         self.vbo = ctx.buffer(reserve=64 * 1024 * _VERTICE.itemsize)
         self.ibo = ctx.buffer(reserve=96 * 1024 * 4)
         self.vao = ctx.vertex_array(
-            self.prog, [(self.vbo, "3f 4f1", "in_pos", "in_col")],
+            self.prog, [(self.vbo, _FORMATO_VERTICE, "in_pos", "in_col", "in_uv")],
             index_buffer=self.ibo, index_element_size=4)
         tam = (self.W, self.H)
         m = max(0, min(8, int(msaa)))
@@ -917,21 +986,26 @@ class GpuScene:
         GW = ANCHO_HIERBA
         borde = np.full(n_sec, GW)
         bandas = [
-            (-borde, -hw - kw, grass_c, 0.0),
-            (-hw - kw, -hw, kerb_c, 0.0),
-            (-hw, -hw + 0.06, road_c, 0.0),
-            (-hw + 0.06, -hw + 0.42, edge_c, 0.0),
-            (-hw + 0.42, hw - 0.42, road_c, 0.0),
-            (hw - 0.42, hw - 0.06, edge_c, 0.0),
-            (hw - 0.06, hw, road_c, 0.0),
-            (hw, hw + kw, kerb_c, 0.0),
-            (hw + kw, borde, grass_c, 0.0),
+            (-borde, -hw - kw, grass_c, 0.0, TIPO_HIERBA),
+            (-hw - kw, -hw, kerb_c, 0.0, TIPO_LISO),
+            (-hw, -hw + 0.06, road_c, 0.0, TIPO_ASFALTO),
+            (-hw + 0.06, -hw + 0.42, edge_c, 0.0, TIPO_ASFALTO),
+            (-hw + 0.42, hw - 0.42, road_c, 0.0, TIPO_ASFALTO),
+            (hw - 0.42, hw - 0.06, edge_c, 0.0, TIPO_ASFALTO),
+            (hw - 0.06, hw, road_c, 0.0, TIPO_ASFALTO),
+            (hw, hw + kw, kerb_c, 0.0, TIPO_LISO),
+            (hw + kw, borde, grass_c, 0.0, TIPO_HIERBA),
         ]
         if rl_c is not None:
-            bandas.append((li - 0.30, li + 0.30, rl_c, LEVANTE_TRAZADA))
+            bandas.append((li - 0.30, li + 0.30, rl_c, LEVANTE_TRAZADA, TIPO_LISO))
         n_q = n_sec - 1
+        # estacion absoluta (modulo el periodo del grano) de cada seccion:
+        # asi el grano queda FIJO al mundo y fluye bajo el coche
+        s_abs = np.mod(np.mod(s0 + rels, float(track.length)), PERIODO_TEX)
+        # la linea de meta (damero) va lisa
+        liso = meta[:, 0] if meta.any() else np.zeros(n_sec, dtype=bool)
         vertices = np.empty((len(bandas), n_q, 4), dtype=_VERTICE)
-        for b, (oL, oR, col, lev) in enumerate(bandas):
+        for b, (oL, oR, col, lev, tipo) in enumerate(bandas):
             oL = np.broadcast_to(oL, (n_sec,))
             oR = np.broadcast_to(oR, (n_sec,))
             pl = np.stack([x + hx * oL * cb, elev - oL * sb + lev,
@@ -945,7 +1019,13 @@ class GpuScene:
             v["pos"][:, 3] = pr[1:]
             c = np.clip(col[:-1], 0, 255).astype(np.uint8)
             v["col"][:, :, :3] = c[:, None, :]
-            v["col"][:, :, 3] = 255
+            v["col"][:, :, 3] = np.where(liso[:-1], TIPO_LISO, tipo)[:, None]
+            v["uv"][:, 0, 0] = v["uv"][:, 1, 0] = s_abs[:-1]
+            v["uv"][:, 2, 0] = v["uv"][:, 3, 0] = s_abs[1:]
+            v["uv"][:, 0, 1], v["uv"][:, 2, 1] = oL[:-1], oL[1:]
+            v["uv"][:, 1, 1], v["uv"][:, 3, 1] = oR[:-1], oR[1:]
+            v["uv"][:, :, 2] = hw[:-1, None]
+        self._vertices = vertices              # (pruebas)
         idx = self._indices(len(bandas), n_q)
 
         # --- huellas de neumatico sobre el asfalto ---------------------------
@@ -1028,6 +1108,8 @@ class GpuScene:
             self.prog["u_view"].write(vista.T.astype("f4").tobytes())
             self.prog["u_bruma_col"].value = tuple(bruma_col)
             self.prog["u_bruma_d"].value = bruma_d
+            self.prog["u_texturas"].value = (
+                1.0 if getattr(cfg, "GFX_TEXTURAS", True) else 0.0)
             datos = vertices.reshape(-1).tobytes()
             if len(datos) > self.vbo.size:
                 self.vbo.orphan(len(datos) * 2)
@@ -1404,6 +1486,7 @@ class GpuScene:
         vb["pos"] = pos
         vb["col"][:, :, :3] = np.clip(col, 0, 255).astype(np.uint8)[:, None, :]
         vb["col"][:, :, 3] = 255
+        vb["uv"] = 0.0
         base = np.arange(n, dtype=np.int32) * 4
         idx = np.stack([base, base + 1, base + 2, base + 1, base + 3, base + 2],
                        axis=1).reshape(-1)
@@ -1477,6 +1560,7 @@ class GpuScene:
         vb["pos"] = pos
         vb["col"][:, :3] = np.clip(col, 0, 255).astype(np.uint8)
         vb["col"][:, 3] = 255
+        vb["uv"] = 0.0
         return vb, np.arange(len(pos), dtype=np.int32)
 
     # -- huellas de neumatico -----------------------------------------------
@@ -1558,6 +1642,7 @@ class GpuScene:
         w /= np.maximum(np.linalg.norm(w, axis=1), 1e-9)[:, None]
         w *= HUELLA_SEMIANCHO
         v = np.empty((m, 4), dtype=_VERTICE)
+        v["uv"] = 0.0
         v["pos"][:, 0] = p0 - w
         v["pos"][:, 1] = p0 + w
         v["pos"][:, 2] = p1 - w
@@ -1770,6 +1855,7 @@ class GpuScene:
             return None
         n_tot = sum(len(v) for v, _ in quads)
         vb = np.empty((n_tot, 4), dtype=_VERTICE)
+        vb["uv"] = 0.0
         k0 = 0
         for v, c in quads:
             n = len(v)

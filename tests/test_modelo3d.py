@@ -205,6 +205,8 @@ def main():
         st.s, st.vx = 3000.0, 30.0
         st.omega[:] = [8.0, 8.0, 8.0, 8.0]
         cfg.GFX_GPU_ASYNC = False
+        cfg.GFX_TEXTURAS = False      # el grano del suelo (por pixel) se mide
+                                      # en test_gpu; aqui se mide el modelo
         cfg.CAR_MODEL_3D = "f1"
         sdl2.SDL_RenderClear(ren)
         scene.draw_scene(pista, st, True, 2.5, 6.5, 0.35, 0.0, None, 0.0,

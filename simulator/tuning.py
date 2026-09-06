@@ -15,6 +15,7 @@ F5 = TODOS por defecto, ESC/ENTER = volver.
 """
 
 import ast
+import math
 import ctypes
 import os
 import re
@@ -124,6 +125,21 @@ def get_entries():
     return _ENTRIES
 
 
+def _paso_redondo(s):
+    """El paso mas cercano de la serie 1, 2, 5 x 10^k: con pasos "de calculo"
+    (el giro del volante iba de 22,5 en 22,5 grados) la rejilla no pasaba por
+    los numeros redondos y desde 922,5 no habia forma de volver a 900."""
+    if s <= 0.0:
+        return s
+    k = math.floor(math.log10(s))
+    mejor = None
+    for m in (1.0, 2.0, 5.0, 10.0):
+        cand = m * 10.0 ** k
+        if mejor is None or abs(math.log(cand / s)) < abs(math.log(mejor / s)):
+            mejor = cand
+    return round(mejor, 10)
+
+
 def _step(e, big):
     if e["is_bool"]:
         return 1
@@ -132,6 +148,7 @@ def _step(e, big):
     else:
         base = abs(e["default"]) or 1.0
         s = base * (0.25 if big else 0.05)
+    s = _paso_redondo(s)
     if e["is_int"]:
         s = max(1, round(s))
     return s

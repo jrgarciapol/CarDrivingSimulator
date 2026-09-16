@@ -371,6 +371,19 @@ def main():
         cfg.TRACK_POLES = True
         cfg.CHEVRON_MAX_RADIUS = 200.0
 
+        # --- estado_gpu.txt: por que se usa (o no) la GPU, legible en Modo Juego
+        cfg.GFX_GPU = True
+        gpu._escena = None
+        esc_o = gpu.obtener(ren)
+        txt = open(gpu.ESTADO_GPU, encoding="utf-8").read() if os.path.exists(gpu.ESTADO_GPU) else ""
+        r.append(check("obtener() deja en estado_gpu.txt el render de GPU y la "
+                       "version de moderngl del ultimo arranque",
+                       esc_o is not None and "Render GPU:" in txt and "moderngl:" in txt,
+                       txt.strip().replace(chr(10), " | ")[:120]))
+        if esc_o is not None:
+            esc_o.close()
+        gpu._escena = None
+
         # --- grano procedural en asfalto y hierba (GFX_TEXTURAS) -------------
         st.s, st.vx = 3000.0, 25.0
         cfg.SKY_CLOUDS = 0.0

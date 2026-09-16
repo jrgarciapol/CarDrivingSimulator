@@ -95,9 +95,14 @@ echo "Instalando dependencias del juego (pysdl2, pysdl2-dll, numpy)..."
 # moderngl (escena 3D en la GPU) es OPCIONAL: si no hubiera rueda para este
 # Python el juego sigue con el render de SDL, asi que su fallo no debe tumbar
 # la instalacion entera
-echo "Instalando moderngl (escena en la GPU; opcional)..."
-if ! "$VENV/bin/python" -m pip install --quiet "moderngl>=5.10"; then
-    echo "  (sin moderngl: el juego usara el renderizador de SDL)"
+echo "Instalando moderngl (escena en la GPU: coches 3D, cielo, asfalto)..."
+if "$VENV/bin/python" -m pip install --quiet "moderngl>=5.10"; then
+    echo "  moderngl $("$VENV/bin/python" -c 'import moderngl; print(moderngl.__version__)'): OK"
+else
+    echo "  AVISO: no se ha podido instalar moderngl. SIN el, el juego usa el"
+    echo "  renderizador de SDL: sin modelos 3D de los coches, sin nubes, sin"
+    echo "  grano en el asfalto ni huellas. Vuelve a ejecutar este guion con"
+    echo "  conexion, o instala a mano: .venv/bin/python -m pip install moderngl"
 fi
 
 # --- 4. comprobacion -------------------------------------------------------
@@ -127,5 +132,6 @@ chmod +x "$RAIZ/jugar.sh"
 echo
 echo "== Listo =="
 echo "Para jugar:                 ./jugar.sh"
+echo "Estado del render de GPU:   cat estado_gpu.txt   (lo escribe el juego al arrancar)"
 echo "Sin preset de rendimiento:  .venv/bin/python -m simulator.main"
 echo "Con el volante conectado, se detecta solo y tiene prioridad sobre el mando."

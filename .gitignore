@@ -4,6 +4,7 @@ __pycache__/
 venv/
 records.json
 settings.json
+estado_gpu.txt
 jugar.sh
 
 # Informes de diagnostico del volante: los escribe la propia maquina donde

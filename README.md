@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **464 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **465 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -532,6 +532,26 @@ distrobox enter sim
 sudo pacman -S --needed python python-pip sdl2
 pip install pysdl2 numpy && python -m simulator.main --rendimiento
 ```
+
+### Si en la Deck no se ven los coches 3D, las nubes ni el grano del asfalto
+
+Todo eso lo pinta la **escena en la GPU** (`moderngl`), que en el instalador
+va aparte y como opcional. Si el `.venv` se creó antes de que el juego lo
+usara, o la descarga falló, el juego arranca igual con el renderizador de
+SDL y se queda como estaba. Para ponerlo al día:
+
+```bash
+git pull
+bash tools/instalar_steamdeck.sh        # reinstala las dependencias, moderngl incluido
+.venv/bin/python -c "import moderngl; print(moderngl.__version__)"
+./jugar.sh
+```
+
+El juego escribe en **`estado_gpu.txt`** (junto a `settings.json`) por qué
+usa o no la GPU en el último arranque, para leerlo después de jugar en Modo
+Juego, donde no hay consola: `Render GPU: AMD ... (contexto compartido con
+SDL)` es lo bueno; `falta moderngl` o `GFX_GPU APAGADO EN AJUSTES` dicen
+qué falta. En AJUSTES, `GFX_GPU` tiene que estar en SÍ.
 
 ### Añadirlo a Steam — IMPRESCINDIBLE para que el mando funcione
 

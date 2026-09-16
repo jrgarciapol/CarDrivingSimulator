@@ -46,6 +46,7 @@ juego sigue con el renderizador de SDL como si nada.
 import contextlib
 import ctypes
 import math
+import os
 import time
 
 import numpy as np
@@ -1999,17 +2000,42 @@ def obtener(sdl_renderer):
         _escena = None
     if _escena is None:
         _escena = GpuScene(sdl_renderer, W, H, getattr(cfg, "GFX_MSAA", 4))
+        lineas = []
         if _escena.ok:
             modo = ("contexto compartido con SDL, sin lectura"
                     if _escena.compartido else
                     "contexto propio + lectura del fotograma")
-            print(f"Render GPU: {_escena.info.get('GL_RENDERER', '?')} "
-                  f"(OpenGL {_escena.info.get('GL_VERSION', '?')}, "
-                  f"MSAA x{_escena.msaa}; {modo})")
+            lineas.append(f"Render GPU: {_escena.info.get('GL_RENDERER', '?')} "
+                          f"(OpenGL {_escena.info.get('GL_VERSION', '?')}, "
+                          f"MSAA x{_escena.msaa}; {modo})")
             if not _escena.compartido and _escena.motivo_compartido:
-                print(f"  (sin contexto compartido: "
-                      f"{_escena.motivo_compartido})")
+                lineas.append(f"  (sin contexto compartido: "
+                              f"{_escena.motivo_compartido})")
         else:
-            print(f"Render GPU no disponible ({_escena.motivo}): "
-                  "se usa el renderizador de SDL")
+            lineas.append(f"Render GPU no disponible ({_escena.motivo}): "
+                          "se usa el renderizador de SDL")
+        for ln in lineas:
+            print(ln)
+        _anotar_estado(lineas, W, H)
     return _escena if _escena.ok else None
+
+
+#: archivo, junto a settings.json, con el estado del render de GPU del
+#: ultimo arranque: en una Steam Deck en Modo Juego no hay consola donde
+#: leer por que se usa (o no) la GPU
+ESTADO_GPU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                          "estado_gpu.txt")
+
+
+def _anotar_estado(lineas, W, H):
+    try:
+        import datetime
+        import platform
+        with open(ESTADO_GPU, "w", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S}  "
+                    f"Python {platform.python_version()}  ventana {W}x{H}\n")
+            f.write(f"moderngl: {getattr(moderngl, '__version__', 'NO INSTALADO') if moderngl else 'NO INSTALADO'}\n")
+            for ln in lineas:
+                f.write(ln + "\n")
+    except OSError:
+        pass

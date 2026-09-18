@@ -76,6 +76,7 @@ uniform vec3 u_luz;                  // hacia el sol, en el espacio de la escena
 uniform vec3 u_cam;                  // posicion de la camara, idem
 uniform vec3 u_cielo;                // color del cielo (ambiente por arriba)
 uniform float u_alfa_max;            // tope de opacidad de los cristales (cabina)
+uniform float u_atenua;              // luz que llega al coche (0,25 dentro de un tunel)
 uniform vec3 u_suelo;                // color del suelo (ambiente por abajo)
 in vec3 v_pos;
 in vec3 v_nrm;
@@ -114,7 +115,7 @@ void main() {
         : mix(calima, lineal(u_suelo) * 0.8, smoothstep(0.0, 0.25, -r.y));
     float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
     col = mix(col, entorno, fres * 0.55) + sol * espec;
-    f_col = vec4(pow(col, vec3(1.0 / 2.2)), min(v_col.a, u_alfa_max));
+    f_col = vec4(pow(col * u_atenua, vec3(1.0 / 2.2)), min(v_col.a, u_alfa_max));
 }
 """
 
@@ -439,7 +440,7 @@ class ModeloGpu:
 
     def dibujar(self, vista, proy, matrices, luz, cam=(0.0, 1.0, -6.0),
                 cielo=(0.45, 0.65, 0.95), suelo=(0.25, 0.45, 0.2),
-                alfa_max=1.0):
+                alfa_max=1.0, atenua=1.0):
         """Pinta todas las piezas. ``matrices``: lista de 5 matrices 4x4
         (carroceria, DI, DD, TI, TD) modelo -> escena. ``luz``: vector
         unitario hacia el sol en el espacio de la escena; ``cam`` la
@@ -449,6 +450,7 @@ class ModeloGpu:
         85 % (lo que traen los modelos) no dejaria ver la carretera."""
         p = self.prog
         p["u_alfa_max"].value = float(alfa_max)
+        p["u_atenua"].value = float(atenua)
         p["u_view"].write(vista.T.astype("f4").tobytes())
         p["u_proj"].write(proy.T.astype("f4").tobytes())
         p["u_luz"].value = tuple(float(v) for v in luz)

@@ -12,8 +12,8 @@ leido por el juego para:
 
         d >  10 m            PUENTE     (terraplen mas alto no se hace)
         0,5 < d <= 10 m      TERRAPLEN  (talud 3H:2V hasta el terreno)
-        -30 <= d < -0,5 m    DESMONTE   (talud 1H:1V hasta el terreno)
-        d < -30 m            TUNEL      (desmonte mas hondo no se hace)
+        -20 <= d < -0,5 m    DESMONTE   (talud 5H:4V hasta el terreno)
+        d < -20 m            TUNEL      (desmonte mas hondo no se hace)
         |d| <= 0,5 m         A NIVEL
 
     con longitudes minimas (un tunel de 20 m o un puente de 12 m no
@@ -43,7 +43,7 @@ NOMBRES = {A_NIVEL: "a nivel", TERRAPLEN: "terraplen", DESMONTE: "desmonte",
 
 #: reglas de seccion (m)
 TERRAPLEN_MAX = 10.0        # por encima, puente
-DESMONTE_MAX = 30.0         # por debajo, tunel
+DESMONTE_MAX = 20.0         # por debajo, tunel (con 30 salian paredes de 30 m)
 UMBRAL_NIVEL = 0.5          # |d| menor: a nivel
 TUNEL_MIN = 60.0            # longitudes minimas
 PUENTE_MIN = 40.0
@@ -52,7 +52,13 @@ UNIR_PUENTES = 30.0
 
 #: taludes (H:V) y seccion del tunel
 TALUD_TERRAPLEN = 1.5       # 3H:2V
-TALUD_DESMONTE = 1.0        # 1H:1V
+TALUD_DESMONTE = 1.25       # 5H:4V (con 1H:1V los desmontes hondos eran muros)
+#: el puente se decide con el terreno mas bajo a menos de esto del eje: en
+#: media ladera el relleno del lado de abajo puede ser enorme aunque bajo
+#: el eje haya solo unos metros
+PUENTE_LATERAL = 8.0
+#: alcance lateral minimo de la ladera (m) aunque otra carretera pase cerca
+ALCANCE_MIN = 6.0
 TUNEL_ANCHO = 10.0          # m de anchura libre (7 de calzada + arcenes)
 TUNEL_GALIBO = 6.5          # m de altura libre en el eje
 #: puente
@@ -163,8 +169,8 @@ def _base_difusa(x, y, elev, x0, y0, paso, nx, ny, iteraciones=600,
     return z
 
 
-def generar(track, amplitud=50.0, semilla=1, paso=10.0, margen=400.0,
-            desplazamiento=10.0):
+def generar(track, amplitud=40.0, semilla=1, paso=10.0, margen=400.0,
+            desplazamiento=6.0):
     """El campo de alturas de un circuito: dict con x0, y0, paso y la
     rejilla ``alturas`` [ny, nx] (fila = y). ``amplitud`` (m) escala el
     relieve; ``margen`` (m) es lo que la rejilla sobresale del circuito;
@@ -224,6 +230,8 @@ class Terreno:
         self.paso = float(campo["paso"])
         self.alturas = np.asarray(campo["alturas"], dtype=np.float64)
         self.amplitud = float(campo.get("amplitud", 0.0))
+        self.desplazamiento = float(campo.get("desplazamiento", 0.0))
+        self.semilla = int(campo.get("semilla", 1))
         self.seccion = None
         self.d_eje = None
         if track is not None:
@@ -244,21 +252,28 @@ class Terreno:
     def clasificar(self, track):
         """Seccion tipo de cada segmento (ver reglas arriba) y d_eje, la
         diferencia rasante - terreno bajo el eje."""
-        x, y, _ = planta(track)
+        x, y, h = planta(track)
         elev = np.array([s.y for s in track.segments])
         d = elev - self.altura(x, y)
         self.d_eje = d
+        # relleno del lado de abajo: el terreno mas bajo a +-PUENTE_LATERAL
+        # del eje (una carretera a media ladera puede tener 3 m de relleno
+        # bajo el eje y 20 en el borde de abajo: eso es un puente)
+        cx, sy = np.cos(h), -np.sin(h)
+        h_lat = np.minimum(self.altura(x + PUENTE_LATERAL * cx, y + PUENTE_LATERAL * sy),
+                           self.altura(x - PUENTE_LATERAL * cx, y - PUENTE_LATERAL * sy))
+        self.d_puente = elev - np.minimum(h_lat, self.altura(x, y))
         L = cfg.SEGMENT_LENGTH
         n = len(d)
         sec = np.full(n, A_NIVEL, dtype=np.int8)
         sec[d > UMBRAL_NIVEL] = TERRAPLEN
         sec[d < -UMBRAL_NIVEL] = DESMONTE
-        sec[d > TERRAPLEN_MAX] = PUENTE
+        sec[(self.d_puente > TERRAPLEN_MAX) & (d > -UMBRAL_NIVEL)] = PUENTE
         sec[d < -DESMONTE_MAX] = TUNEL
         # un tunel no puede alargarse sobre un valle (d > 10) ni un puente
         # meterse en la montana (d < -30): esas celdas bloquean
         for tipo, minimo, unir, bloqueo in (
-                (TUNEL, TUNEL_MIN, UNIR_TUNELES, d > TERRAPLEN_MAX),
+                (TUNEL, TUNEL_MIN, UNIR_TUNELES, self.d_puente > TERRAPLEN_MAX),
                 (PUENTE, PUENTE_MIN, UNIR_PUENTES, d < -DESMONTE_MAX)):
             otro = PUENTE if tipo == TUNEL else TUNEL
             sec = _consolidar(sec, tipo, int(round(minimo / L)),
@@ -281,6 +296,7 @@ class Terreno:
         if self.seccion is None:
             self.clasificar(track)
         x, y, h = planta(track)
+        self.planta_xyh = (x, y, h)
         elev = np.array([s.y for s in track.segments])
         hw = np.array([s.half_w for s in track.segments])
         N = len(elev)
@@ -288,6 +304,32 @@ class Terreno:
         borde = hw + kw
         cabeza = borde + BERMA
         cx, sy = np.cos(h), -np.sin(h)            # direccion lateral derecha
+        # ALCANCE lateral: hasta la mitad de la distancia a la carretera mas
+        # cercana que no sea este mismo tramo (horquillas, ida y vuelta):
+        # sin esto la ladera de la carretera de arriba pasaba por encima de
+        # la de abajo ("la hierba le pasa por encima al trazado")
+        alcance = np.full(N, LATERALES[-1] + 60.0)
+        celda = 60.0
+        cix = np.floor(x / celda).astype(int)
+        ciy = np.floor(y / celda).astype(int)
+        rejilla = {}
+        for i, (a, b) in enumerate(zip(cix, ciy)):
+            rejilla.setdefault((a, b), []).append(i)
+        ii = np.arange(N)
+        for i in range(N):
+            vec = []
+            for da in (-1, 0, 1):
+                for db in (-1, 0, 1):
+                    vec.extend(rejilla.get((cix[i] + da, ciy[i] + db), ()))
+            if len(vec) < 2:
+                continue
+            v = np.array(vec)
+            ds = np.abs((v - i + N // 2) % N - N // 2) * cfg.SEGMENT_LENGTH
+            otros = v[ds > 80.0]
+            if len(otros):
+                dist = np.hypot(x[otros] - x[i], y[otros] - y[i]).min()
+                alcance[i] = max(ALCANCE_MIN, 0.5 * dist)
+        self.alcance = alcance
         lat = np.zeros((N, 20))
         alt = np.zeros((N, 20))
         relleno = np.zeros((N, 2), dtype=bool)
@@ -319,9 +361,11 @@ class Terreno:
             # en puente y tunel no hay talud: la ladera natural empieza junto
             # a la plataforma (por debajo del tablero, por encima del tubo)
             n_pie = np.where(estructura, cabeza + 0.5, n_pie)
+            n_pie = np.minimum(n_pie, np.maximum(alcance, cabeza + 0.5))
             z_pie = np.where(estructura, self.altura(x + lado * n_pie * cx,
                                                      y + lado * n_pie * sy), z_pie)
-            n_lad = n_pie[:, None] + LATERALES[None, :]
+            n_lad = np.minimum(n_pie[:, None] + LATERALES[None, :],
+                               np.maximum(alcance, n_pie + 0.01)[:, None])
             z_lad = self.altura(x[:, None] + lado * n_lad * cx[:, None],
                                 y[:, None] + lado * n_lad * sy[:, None])
             cols = np.concatenate([borde[:, None], cabeza[:, None], n_pie[:, None],

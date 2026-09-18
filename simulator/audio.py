@@ -131,7 +131,7 @@ class EngineSound:
                engine_on: bool = True, speed: float = 0.0,
                understeer: float = 0.0, oversteer: float = 0.0, *,
                gear: int = 0, scrub: float = None, spin: float = 0.0,
-               lock: float = 0.0, brake: float = 0.0):
+               lock: float = 0.0, brake: float = 0.0, tunel: float = 0.0):
         """Encola audio si la cola se está quedando corta. Llamar cada frame.
 
         Parámetros nuevos (opcionales, keyword) para acoplar el sonido de los
@@ -361,6 +361,24 @@ class EngineSound:
             else:
                 self._adas_rp = 0.0
 
+        # ECO DEL TUNEL: las paredes devuelven el sonido con retardo. Tres
+        # reflexiones (53, 97 y 151 ms) con realimentacion, filtradas en
+        # graves (el hormigon se come los agudos) y dosificadas por ``tunel``
+        # (0 fuera, 1 en el fondo). Los retardos son mayores que el bloque,
+        # asi que cada bloque solo depende de los anteriores.
+        self._eco_nivel = getattr(self, "_eco_nivel", 0.0) * 0.85 + max(0.0, min(1.0, tunel)) * 0.15
+        if not hasattr(self, "_eco_hist"):
+            self._eco_hist = np.zeros(int(rate * 0.5))
+            self._f_eco = _Cont(6)
+        if self._eco_nivel > 0.01:
+            g = self._eco_nivel
+            eco = np.zeros(n)
+            for ms, gk in ((53, 0.50), (97, 0.32), (151, 0.22)):
+                D = int(rate * ms / 1000.0)
+                eco += gk * self._eco_hist[-D:-D + n] if D > n else 0.0
+            eco = self._f_eco(eco) * g
+            wave = wave + eco
+        self._eco_hist = np.concatenate([self._eco_hist[n:], wave])
         # limitador suave: la saturación dura del int16 mete distorsión
         # desagradable; tanh comprime los picos sin recortar bruscamente
         wave = np.tanh(wave * 1.1) / 1.1

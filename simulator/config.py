@@ -645,6 +645,13 @@ CAMERA_ISO_YAW = 30.0        # grados a un lado del rumbo desde donde mira
 CAMERA_ISO_AHEAD = 12.0      # m por delante del coche donde apunta el centro
                              # de la isométrica (para ver lo que viene)
                              # [0 .. 60]
+CAMERA_GRADE_GAIN = 1.3      # exageración VISUAL de las pendientes: la cota
+                             # de la escena se escala respecto a la cámara
+                             # (1 = real; con 1,3 un 10 % se ve como un 13 %).
+                             # Solo lo que se ve, la física no cambia
+                             # [1.0 .. 2.5]
+CAMERA_BANK_GAIN = 1.3       # exageración visual del peralte (calzada y
+                             # cámara solidaria; 1 = real) [1.0 .. 2.5]
 CAMERA_DEPTH = 1.2           # proyección (1/tan(fov/2)); subir acerca el
                              # coche a la parte baja de la pantalla, como
                              # los juegos comerciales [0.7 .. 1.6]

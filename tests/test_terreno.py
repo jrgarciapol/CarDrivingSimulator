@@ -12,6 +12,8 @@
 import os
 import sys
 
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -126,6 +128,91 @@ def main():
     cfg.TRACK_FILE = "tracks/c-50.csv"
     r.append(check("la C-50 no tiene terreno y carga como siempre",
                    Track().terreno is None))
+    # --- pintado: laderas, puentes y tuneles en la escena de la GPU ----------
+    import ctypes
+    import sdl2
+    from simulator import gpu
+    from simulator import render as render_mod
+    from simulator.physics import Car
+    W, H = 640, 400
+    cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT, cfg.WINDOW_AUTO = W, H, False
+    cfg.GFX_GPU_ASYNC = False
+    cfg.SKY_CLOUDS = 0.0
+    sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO)
+    win = sdl2.SDL_CreateWindow(b"t", 0, 0, W, H, sdl2.SDL_WINDOW_HIDDEN)
+    ren = sdl2.SDL_CreateRenderer(win, -1, 0)
+    escena = gpu.GpuScene(ren, W, H, msaa=4)
+    if not escena.ok:
+        print(f"[AVISO] sin OpenGL aqui ({escena.motivo}): se salta el pintado")
+    else:
+        def leer():
+            buf = (ctypes.c_uint8 * (W * H * 4))()
+            sdl2.SDL_RenderReadPixels(ren, None, sdl2.SDL_PIXELFORMAT_ABGR8888, buf, W * 4)
+            return np.frombuffer(buf, dtype=np.uint8).reshape(H, W, 4)[:, :, :3].astype(int)
+        scene = render_mod.Renderer(ren)
+        scene.gpu = escena
+        cfg.TRACK_FILE = "tracks/m-50.csv"
+        pista = Track()
+        st = Car().state
+        st.vx = 15.0
+
+        def fotograma(s_pos):
+            st.s = s_pos
+            sdl2.SDL_RenderClear(ren)
+            scene.draw_scene(pista, st, False, cam_height=1.35, cam_back=0.0,
+                             yaw_gain=None, cam_forward=0.5)
+            sdl2.SDL_RenderPresent(ren)
+            return leer()
+        # desmonte: hay cuadrilateros de roca (talud 1H:1V) a la vista
+        i_des = int(np.nonzero(sec == terreno.DESMONTE)[0][100])
+        im_des = fotograma(i_des * L)
+        vb, _ = escena._montana_bloque
+        tipos = vb["col"][:, 0, 3]
+        r.append(check("en desmonte la escena de montana pinta miles de cuadrilateros "
+                       "y entre ellos taludes de ROCA",
+                       escena.montana_dibujada > 1000 and (tipos == gpu.TIPO_ROCA).sum() > 20,
+                       f"{escena.montana_dibujada} cuadrilateros, "
+                       f"{int((tipos == gpu.TIPO_ROCA).sum())} de roca"))
+        # puente: pilas (tablas grises lisas) y caras del tablero
+        k_p, m_p = max(t.tramos(terreno.PUENTE), key=lambda km: km[1])
+        im_pue = fotograma((k_p + m_p // 2) * L)
+        vb, _ = escena._montana_bloque
+        lisos = (vb["col"][:, 0, 3] == gpu.TIPO_LISO)
+        pilas = lisos & (vb["col"][:, 0, 0] == 140)
+        r.append(check("en el puente mas largo se pintan pilas hasta el terreno y las "
+                       "caras del tablero",
+                       pilas.sum() >= 4 and (lisos & ~pilas).sum() > 20,
+                       f"{int(pilas.sum())} tablas de pila, {int((lisos & ~pilas).sum())} caras"))
+        # tunel: dentro, arriba hay boveda (nada de azul) y la imagen es mucho
+        # mas oscura que fuera; en la boca de salida vuelve a verse el cielo
+        k_t, m_t = max(t.tramos(terreno.TUNEL), key=lambda km: km[1])
+        fuera = fotograma((k_t - 60) * L)
+        dentro = fotograma((k_t + m_t // 2) * L)
+        arriba = dentro[6, W // 2]
+        r.append(check("dentro del tunel no se ve cielo (boveda encima) y la imagen es "
+                       "mucho mas oscura que fuera",
+                       not (arriba[2] > arriba[1] + 20) and dentro.mean() < 0.6 * fuera.mean(),
+                       f"arriba {arriba}, media dentro {dentro.mean():.0f} fuera {fuera.mean():.0f}"))
+        vb, _ = escena._montana_bloque
+        r.append(check("...el tubo (hastiales y boveda) y el asfalto van con los "
+                       "materiales del tunel",
+                       (vb["col"][:, 0, 3] == gpu.TIPO_PARED_TUNEL).sum() > 200
+                       and (escena._vertices["col"][:, :, 0, 3] == gpu.TIPO_ASFALTO_TUNEL).any()))
+        salida = fotograma((k_t + m_t - 4) * L)
+        zona = salida[int(H * 0.3):int(H * 0.7), int(W * 0.35):int(W * 0.65)]
+        azul = ((zona[:, :, 2] > zona[:, :, 1] + 20) & (zona[:, :, 2] > zona[:, :, 0] + 40)).sum()
+        r.append(check("a 16 m de la boca de salida se ve el cielo por el arco (pixeles "
+                       "azules en el centro de la imagen)", azul > 50, f"{azul} px"))
+        # en la C-90 no hay montana
+        cfg.TRACK_FILE = "tracks/c-90.csv"
+        c90 = Track()
+        st.s = 3000.0
+        scene.draw_scene(c90, st, False, cam_height=1.35, cam_back=0.0,
+                         yaw_gain=None, cam_forward=0.5)
+        r.append(check("en la C-90 (sin terreno) no se pinta nada de montana",
+                       escena.montana_dibujada == 0))
+        escena.close()
+
     n_ok = sum(1 for v in r if v)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")
     return 0 if n_ok == len(r) else 1

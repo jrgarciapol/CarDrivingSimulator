@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **478 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **484 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -503,9 +503,24 @@ cortos se alargan y los casi seguidos se unen, sin pisar la otra
 estructura). En la M-50 salen 6 túneles (hasta 472 m) y 4 puentes (hasta
 1 km): 5 % del recorrido en túnel, 7 % en puente y el resto en desmonte o
 terraplén. `Track` carga el terreno solo cuando existe junto al `.csv`;
-los demás circuitos siguen como estaban. (Lo que está hecho es el terreno y
-la clasificación; el pintado de laderas, puentes y túneles con su
-iluminación viene en las siguientes tandas.)
+los demás circuitos siguen como estaban.
+
+**Cómo se pinta.** Por segmento se precalcula el perfil transversal (20
+puntos: borde de calzada, berma de 1 m, pie o cresta del talud sobre el
+terreno, y la ladera natural a 5, 12, 25, 45, 75, 120 y 180 m a cada lado)
+y cada fotograma la escena de la GPU lo interpola a sus secciones y lo
+convierte en bandas: ladera de hierba, talud de **roca con estratos** en
+los desmontes y de hierba en los terraplenes, sombreadas por el sol según
+su inclinación. En los **puentes** no hay talud: se ve el valle debajo, las
+caras del tablero de 1,5 m, los pretiles y **pilas cada 30 m** hasta el
+terreno. En los **túneles** la calzada entra en un tubo de hastiales de
+1,5 m y bóveda de medio punto de 5 m de radio, con aceras de hormigón; la
+roca del desmonte de acceso hace de boquilla. Dentro no hay sol: el
+sombreador pone **luminarias en bóveda cada 12 m** (charcos de luz en la
+calzada, anillos en la bóveda) y los **faros del coche** (un cono hacia
+delante), todo fundido con la luz de día en los 40 m de cada boca; el
+modelo del coche se oscurece y el fondo del cielo se apaga. Coste: unos
+6.000 cuadriláteros y 2-3 ms más de malla por fotograma en la M-50.
 
 ## Jugar en Steam Deck
 

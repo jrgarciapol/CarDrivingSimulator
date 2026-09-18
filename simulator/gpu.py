@@ -81,15 +81,17 @@ uniform mat4 u_view;
 uniform mat4 u_proj;
 in vec3 in_pos;
 in vec4 in_col;
-in vec3 in_uv;
+in vec4 in_uv;
 out vec4 v_col;
 out vec3 v_view;
-out vec3 v_uv;
+out vec4 v_uv;
+out vec3 v_pos;
 void main() {
     vec4 p = u_view * vec4(in_pos, 1.0);
     v_view = p.xyz;
     v_col = in_col;
     v_uv = in_uv;
+    v_pos = in_pos;
     gl_Position = u_proj * p;
 }
 """
@@ -99,10 +101,28 @@ uniform vec3 u_bruma_col;
 uniform float u_bruma_d;            // 0 = sin bruma
 uniform float u_texturas;           // 1 = grano procedural en asfalto y hierba
 uniform float u_lod_dist;           // > 0: distancia fija para atenuar el grano (ortografica)
+uniform float u_coche_x;            // x del coche en la escena (faros)
+uniform float u_faros;              // 1 = faros encendidos
 in vec4 v_col;
 in vec3 v_view;
-in vec3 v_uv;                       // estacion (m, modulo), desplazamiento, semiancho
+in vec4 v_uv;                       // estacion (m, modulo), desplazamiento, semiancho, luz de dia
+in vec3 v_pos;                      // posicion en la escena (coche en x = u_coche_x, z = 0)
 out vec4 f_col;
+
+// LUZ DENTRO DEL TUNEL: luminarias en boveda cada 12 m (charcos de luz en
+// la calzada, mas fuertes en el centro) y los FAROS del coche, un cono
+// hacia delante que se abre y se apaga con la distancia; todo se funde
+// con la luz de dia (v_uv.w) cerca de las bocas
+float luz_tunel(float s, float n, vec3 pos) {
+    float p = mod(s + 6.0, 12.0) - 6.0;
+    float lamp = exp(-p * p / 7.0) * clamp(1.35 - abs(n) / 5.0, 0.35, 1.0);
+    float dz = pos.z;
+    float dx = pos.x - u_coche_x;
+    float ancho = 1.3 + 0.14 * max(dz, 0.0);
+    float faro = u_faros * step(0.0, dz) * exp(-dx * dx / (ancho * ancho))
+               * clamp(1.0 - dz / 70.0, 0.0, 1.0) * clamp(dz / 4.0, 0.0, 1.0);
+    return 0.11 + 0.62 * lamp + 0.75 * faro;
+}
 
 // ruido de valor suave sobre coordenadas del MUNDO (estacion,
 // desplazamiento): el grano queda fijo al asfalto y fluye bajo el coche
@@ -122,8 +142,26 @@ void main() {
     vec3 c = v_col.rgb;
     float tipo = v_col.a * 255.0;
     float alfa = 1.0;
-    if (tipo < 252.5) {
+    if (tipo < 249.5) {
         alfa = v_col.a;                       // huellas y demas translucidos
+    } else if (tipo < 252.5) {
+        // materiales de montana: asfalto en tunel (252), roca (251) y
+        // pared/boveda del tunel (250)
+        float d = u_lod_dist > 0.0 ? u_lod_dist : length(v_view);
+        float fino = 1.0 - smoothstep(25.0, 110.0, d);
+        vec2 uv = v_uv.xy;
+        if (u_texturas > 0.5) {
+            float g1 = ruido(uv * (tipo > 251.5 ? 7.0 : 2.5));
+            c *= 1.0 + (tipo > 251.5 ? 0.2 : 0.3) * (g1 - 0.5) * fino;
+        }
+        if (tipo < 251.5 && tipo > 250.5) {
+            // roca: estratos horizontales (bandas por cota)
+            c *= 0.92 + 0.16 * ruido(vec2(v_pos.y * 1.7, uv.x * 0.05));
+        }
+        if (tipo > 251.5 || tipo < 250.5) {
+            float luz = luz_tunel(v_uv.x, v_uv.y, v_pos);
+            c = mix(c * min(luz, 1.15), c, clamp(v_uv.w, 0.0, 1.0));
+        }
     } else if (u_texturas > 0.5 && tipo < 254.5) {
         // el grano fino se funde con la distancia (si no, chispea a lo
         // lejos); las manchas grandes aguantan mas
@@ -200,6 +238,7 @@ uniform float u_nubes;       // cobertura de nubes 0..1 (0 = cielo limpio)
 uniform float u_tiempo;      // segundos: las nubes derivan con el viento
 uniform float u_orto;        // 1 = vista ortografica: los rayos son paralelos
                              // e inclinados, todo el fondo es suelo
+uniform float u_oscuro;      // 0..1: dentro de un tunel el fondo se apaga
 out vec4 f_col;
 
 float hash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
@@ -260,7 +299,7 @@ float ladera(float sl, float az) {
 
 void main() {
     if (u_orto > 0.5) {
-        f_col = vec4(mix(u_hierba, u_calima, 0.12), 1.0);
+        f_col = vec4(mix(u_hierba, u_calima, 0.12) * (1.0 - u_oscuro), 1.0);
         return;
     }
     // NDC con "arriba" hacia la primera fila de la imagen (el framebuffer
@@ -340,16 +379,20 @@ void main() {
             col = mix(col, u_bruma_col, bruma);
         }
     }
-    f_col = vec4(col, 1.0);
+    f_col = vec4(col * (1.0 - u_oscuro), 1.0);
 }
 """
 
 # pos, color (el alfa es el TIPO de superficie: 255 liso, 254 asfalto, 253
 # hierba; menos, translucido) y uv = (estacion mod PERIODO_TEX, desplazamiento
 # del eje, semiancho de calzada) para el grano procedural fijado al mundo
-_VERTICE = np.dtype([("pos", "f4", 3), ("col", "u1", 4), ("uv", "f4", 3)])
-_FORMATO_VERTICE = "3f 4f1 3f"
+_VERTICE = np.dtype([("pos", "f4", 3), ("col", "u1", 4), ("uv", "f4", 4)])
+_FORMATO_VERTICE = "3f 4f1 4f"
 TIPO_LISO, TIPO_ASFALTO, TIPO_HIERBA = 255, 254, 253
+#: materiales del terreno de montana: asfalto DENTRO de un tunel (luz de
+#: luminarias y faros), roca de los desmontes y paredes/boveda del tunel;
+#: uv.w es la luz de dia (1 fuera, 0 en el fondo del tunel)
+TIPO_ASFALTO_TUNEL, TIPO_ROCA, TIPO_PARED_TUNEL = 252, 251, 250
 #: periodo (m) con que se repite el grano a lo largo del circuito: la
 #: estacion se reduce modulo esto para que el ruido no pierda precision
 PERIODO_TEX = 1024.0
@@ -1031,17 +1074,32 @@ class GpuScene:
         kw = cfg.KERB_WIDTH
         GW = ANCHO_HIERBA
         borde = np.full(n_sec, GW)
+        # terreno de montana: la ladera sustituye a la franja de hierba plana
+        # y dentro de los tuneles el asfalto lleva la luz de las luminarias
+        terr = getattr(track, "terreno", None)
+        en_tunel = np.zeros(n_sec, dtype=bool)
+        luz_dia = np.ones(n_sec)
+        if terr is not None:
+            terr.perfiles(track)
+            en_tunel = terr.seccion[sm] == 4          # terreno.TUNEL
+            luz_dia = terr.luz_dia[sm]
+        asf = np.where(en_tunel, TIPO_ASFALTO_TUNEL, TIPO_ASFALTO)
+        if en_tunel.any():
+            # dentro del tunel el piano es la acera de hormigon
+            kerb_c = np.where(en_tunel[:, None], np.array((165.0, 163.0, 155.0)), kerb_c)
+        piano_t = np.where(en_tunel, TIPO_PARED_TUNEL, TIPO_LISO)
         bandas = [
-            (-borde, -hw - kw, grass_c, 0.0, TIPO_HIERBA),
-            (-hw - kw, -hw, kerb_c, 0.0, TIPO_LISO),
-            (-hw, -hw + 0.06, road_c, 0.0, TIPO_ASFALTO),
-            (-hw + 0.06, -hw + 0.42, edge_c, 0.0, TIPO_ASFALTO),
-            (-hw + 0.42, hw - 0.42, road_c, 0.0, TIPO_ASFALTO),
-            (hw - 0.42, hw - 0.06, edge_c, 0.0, TIPO_ASFALTO),
-            (hw - 0.06, hw, road_c, 0.0, TIPO_ASFALTO),
-            (hw, hw + kw, kerb_c, 0.0, TIPO_LISO),
-            (hw + kw, borde, grass_c, 0.0, TIPO_HIERBA),
+            (-hw - kw, -hw, kerb_c, 0.0, piano_t),
+            (-hw, -hw + 0.06, road_c, 0.0, asf),
+            (-hw + 0.06, -hw + 0.42, edge_c, 0.0, asf),
+            (-hw + 0.42, hw - 0.42, road_c, 0.0, asf),
+            (hw - 0.42, hw - 0.06, edge_c, 0.0, asf),
+            (hw - 0.06, hw, road_c, 0.0, asf),
+            (hw, hw + kw, kerb_c, 0.0, piano_t),
         ]
+        if terr is None:
+            bandas.insert(0, (-borde, -hw - kw, grass_c, 0.0, TIPO_HIERBA))
+            bandas.append((hw + kw, borde, grass_c, 0.0, TIPO_HIERBA))
         if rl_c is not None:
             bandas.append((li - 0.30, li + 0.30, rl_c, LEVANTE_TRAZADA, TIPO_LISO))
         n_q = n_sec - 1
@@ -1052,6 +1110,7 @@ class GpuScene:
         liso = meta[:, 0] if meta.any() else np.zeros(n_sec, dtype=bool)
         vertices = np.empty((len(bandas), n_q, 4), dtype=_VERTICE)
         for b, (oL, oR, col, lev, tipo) in enumerate(bandas):
+            tipo = np.broadcast_to(tipo, (n_sec,))
             oL = np.broadcast_to(oL, (n_sec,))
             oR = np.broadcast_to(oR, (n_sec,))
             pl = np.stack([x + hx * oL * cb, elev - oL * sb + lev,
@@ -1065,13 +1124,23 @@ class GpuScene:
             v["pos"][:, 3] = pr[1:]
             c = np.clip(col[:-1], 0, 255).astype(np.uint8)
             v["col"][:, :, :3] = c[:, None, :]
-            v["col"][:, :, 3] = np.where(liso[:-1], TIPO_LISO, tipo)[:, None]
+            v["col"][:, :, 3] = np.where(liso[:-1], TIPO_LISO, tipo[:-1])[:, None]
             v["uv"][:, 0, 0] = v["uv"][:, 1, 0] = s_abs[:-1]
             v["uv"][:, 2, 0] = v["uv"][:, 3, 0] = s_abs[1:]
             v["uv"][:, 0, 1], v["uv"][:, 2, 1] = oL[:-1], oL[1:]
             v["uv"][:, 1, 1], v["uv"][:, 3, 1] = oR[:-1], oR[1:]
             v["uv"][:, :, 2] = hw[:-1, None]
+            v["uv"][:, 0, 3] = v["uv"][:, 1, 3] = luz_dia[:-1]
+            v["uv"][:, 2, 3] = v["uv"][:, 3, 3] = luz_dia[1:]
         self._vertices = vertices              # (pruebas)
+        # --- montana: laderas, taludes, puentes y tuneles -----------------------
+        mont = None
+        if terr is not None:
+            mont = self._montana(track, terr, s0, rels, x, z, hx, hz, elev, cb, sb,
+                                 hw, kw, sm, grass_c, s_abs, luz_dia,
+                                 float(self.rumbo[int(s0 / L) % N]))
+        self.montana_dibujada = 0 if mont is None else len(mont[1]) // 6
+        self._montana_bloque = mont            # (pruebas)
         idx = self._indices(len(bandas), n_q)
 
         # --- huellas de neumatico sobre el asfalto ---------------------------
@@ -1142,6 +1211,13 @@ class GpuScene:
             pc["u_bruma_col"].value = tuple(bruma_col)
             pc["u_bruma_d"].value = bruma_d
             pc["u_orto"].value = 1.0 if orto else 0.0
+            # dentro de un tunel el fondo (cielo y suelo del sombreador) se
+            # apaga: lo que asome por una rendija de la malla es oscuridad
+            oscuro = 0.0
+            terr_c = getattr(track, "terreno", None)
+            if terr_c is not None and getattr(terr_c, "luz_dia", None) is not None:
+                oscuro = 1.0 - float(terr_c.luz_dia[int(s0 / L) % N])
+            pc["u_oscuro"].value = oscuro
             pc["u_sol"].value = 1.0 if (pal["sun"] and sol_px) else 0.0
             pc["u_sol_px"].value = sol_px or (-1e4, -1e4)
             pc["u_sol_az"].value = float(SOL_AZIMUT)
@@ -1164,6 +1240,8 @@ class GpuScene:
             # mismo tamano en perspectiva
             self.prog["u_lod_dist"].value = (
                 float(self._orto[1]) * cam.f / 2.0 if orto else 0.0)
+            self.prog["u_coche_x"].value = float(car_state.n)
+            self.prog["u_faros"].value = 1.0
             datos = vertices.reshape(-1).tobytes()
             if len(datos) > self.vbo.size:
                 self.vbo.orphan(len(datos) * 2)
@@ -1172,6 +1250,17 @@ class GpuScene:
             self.vbo.write(datos)
             self.ibo.write(idx.tobytes())
             self.vao.render(moderngl.TRIANGLES, vertices=len(idx))
+            # montana: laderas, taludes, tablero y pilas, tubo del tunel
+            if mont is not None:
+                vm, im = mont
+                dm = vm.reshape(-1).tobytes()
+                if len(dm) > self.vbo.size:
+                    self.vbo.orphan(len(dm) * 2)
+                if im.nbytes > self.ibo.size:
+                    self.ibo.orphan(im.nbytes * 2)
+                self.vbo.write(dm)
+                self.ibo.write(im.tobytes())
+                self.vao.render(moderngl.TRIANGLES, vertices=len(im))
             # huellas: translucidas sobre el asfalto, con profundidad pero
             # empujadas hacia la camara para que no peleen con el
             if hue is not None:
@@ -1386,8 +1475,15 @@ class GpuScene:
             # ruedas y queda la vista interior de siempre
             if m.cristales == 0:
                 mats = [None] + mats[1:]
+        # dentro de un tunel al coche le llega la luz de las luminarias, no
+        # la del sol: se atenua segun la luz de dia del segmento
+        atenua = 1.0
+        terr = getattr(track, "terreno", None)
+        if terr is not None and getattr(terr, "luz_dia", None) is not None:
+            iseg = int(st.s / cfg.SEGMENT_LENGTH) % len(terr.luz_dia)
+            atenua = 0.3 + 0.7 * float(terr.luz_dia[iseg])
         m.dibujar(vista, proy, mats, luz, cam_pos, cielo, suelo,
-                  alfa_max=0.3 if cabina else 1.0)
+                  alfa_max=0.3 if cabina else 1.0, atenua=atenua)
 
     def _bloquear_textura(self):
         """Bloquea la textura de la escena y devuelve (bufer ctypes sobre sus
@@ -1616,6 +1712,187 @@ class GpuScene:
         vb["col"][:, 3] = 255
         vb["uv"] = 0.0
         return vb, np.arange(len(pos), dtype=np.int32)
+
+    # -- terreno de montana ---------------------------------------------------
+    def _montana(self, track, terr, s0, rels, x, z, hx, hz, elev, cb, sb, hw,
+                 kw, sm, grass_c, s_abs, luz_dia, rumbo_seg):
+        """Geometria del terreno a la vista, en el espacio de la escena:
+        laderas hasta 180 m con sus taludes (terraplen 3H:2V con hierba,
+        desmonte 1H:1V en roca), tablero, pretiles y pilas de los puentes,
+        y tubo (hastiales + boveda de medio punto) y aceras de los tuneles.
+        Los perfiles vienen precalculados por segmento (terreno.perfiles) y
+        se interpolan a cada seccion. Todo vectorizado: un solo bloque de
+        cuadrilateros por familia. (vertices [n,4], indices) o None."""
+        from . import terreno as tmod
+        n_sec = len(rels)
+        n_q = n_sec - 1
+        Ltot = float(track.length)
+        L = cfg.SEGMENT_LENGTH
+        sa = np.mod(s0 + rels, Ltot)
+        nseg = len(terr.perfil_lat)
+        i0 = (sa / L).astype(int) % nseg
+        i1 = (i0 + 1) % nseg
+        f = ((sa / L) - np.floor(sa / L))[:, None]
+        lat = terr.perfil_lat[i0] * (1 - f) + terr.perfil_lat[i1] * f      # (n,20)
+        alt = terr.perfil_alt[i0] * (1 - f) + terr.perfil_alt[i1] * f
+        tipo_s = terr.seccion[sm]
+        relleno = terr.talud_relleno[sm]                                  # (n,2)
+        puente = tipo_s == tmod.PUENTE
+        tunel = tipo_s == tmod.TUNEL
+        # borde y berma siguen el peralte de la calzada
+        alt[:, 8:12] = elev[:, None] - lat[:, 8:12] * sb[:, None]
+        az = SOL_AZIMUT - rumbo_seg
+        ce = math.cos(SOL_ELEVACION)
+        luz = np.array([math.sin(az) * ce, math.sin(SOL_ELEVACION), math.cos(az) * ce])
+        roca = np.array((128.0, 114.0, 98.0))
+        acera = np.array((165.0, 163.0, 155.0))
+        gris = np.array((150.0, 150.0, 150.0))
+        gris_c = np.array((175.0, 175.0, 172.0))
+
+        def familia(la, lb, za, zb, col, tipo, mascara):
+            """Cuadrilateros entre las curvas (la, za) y (lb, zb), arrays
+            (n_sec, B) de B bandas, para las secciones con mascara (n_sec, B)
+            a los dos extremos. Devuelve (pos, col, tipo, uvn, luzdia, j)."""
+            ok = mascara[:-1] & mascara[1:]                              # (n_q, B)
+            if not ok.any():
+                return None
+            jq, jb = np.nonzero(ok)                                      # indices (q, banda)
+            X = x[:, None]; Z = z[:, None]; HX = hx[:, None]; HZ = hz[:, None]
+            pa = np.stack([X + HX * la, za, Z + HZ * la], axis=2)        # (n_sec, B, 3)
+            pb = np.stack([X + HX * lb, zb, Z + HZ * lb], axis=2)
+            pos = np.stack([pa[jq, jb], pb[jq, jb], pa[jq + 1, jb], pb[jq + 1, jb]], axis=1)
+            dl, dz = lb - la, zb - za
+            ln = np.hypot(dl, dz) + 1e-9
+            nl, nu = -dz / ln, dl / ln
+            nrm = np.stack([HX * nl, nu, HZ * nl], axis=2)[jq, jb]
+            nrm[nrm[:, 1] < 0] *= -1.0
+            sombra = 0.58 + 0.42 * np.clip(nrm @ luz, 0.0, 1.0)
+            c = np.broadcast_to(col, (n_sec,) + col.shape[-2:])[jq, jb] * sombra[:, None]
+            t = np.broadcast_to(tipo, mascara.shape)[jq, jb]
+            uvn = np.stack([la[jq, jb], lb[jq, jb], la[jq + 1, jb], lb[jq + 1, jb]], axis=1)
+            ld = np.stack([luz_dia[jq], luz_dia[jq + 1]], axis=1)
+            return pos, c, t, uvn, ld, jq
+
+        bloques = []
+        # --- perfil: 18 bandas (0-1 .. 6-7 ladera izq, 7-8 talud, 8-9 berma,
+        #     10-11 berma, 11-12 talud, 12-13 .. 18-19 ladera der)
+        CA = np.array(list(range(0, 9)) + list(range(10, 19)))
+        CB = CA + 1
+        la, lb = lat[:, CA], lat[:, CB]
+        za, zb = alt[:, CA], alt[:, CB]
+        B = len(CA)
+        col = np.broadcast_to(grass_c[:, None, :], (n_sec, B, 3)).copy()
+        tipo = np.full((n_sec, B), TIPO_HIERBA, dtype=np.int64)
+        masc = np.ones((n_sec, B), dtype=bool)
+        for jb, jlado in ((7, 0), (10, 1)):                 # taludes
+            rel = relleno[:, jlado] & ~tunel
+            col[:, jb] = np.where(rel[:, None], grass_c * 0.82, roca)
+            tipo[:, jb] = np.where(rel, TIPO_HIERBA, TIPO_ROCA)
+            masc[:, jb] = ~puente
+        for jb in (8, 9):                                   # bermas / aceras
+            col[:, jb] = np.where(tunel[:, None], acera, grass_c)
+            tipo[:, jb] = np.where(tunel, TIPO_PARED_TUNEL, TIPO_HIERBA)
+            # (la acera va a ras: levantada 15 cm dejaba una rendija por la
+            # que se veia el fondo verde del cielo entre el piano y ella)
+        bloques.append(familia(la, lb, za, zb, col, tipo, masc))
+        # --- puentes: caras del tablero, pretiles y el terreno de debajo
+        if puente.any():
+            m = puente[:, None]
+            can = tmod.PUENTE_CANTO
+            la = np.stack([lat[:, 9], lat[:, 10], lat[:, 9], lat[:, 10], lat[:, 7]], axis=1)
+            lb = np.stack([lat[:, 9], lat[:, 10], lat[:, 9], lat[:, 10], lat[:, 12]], axis=1)
+            za = np.stack([alt[:, 9], alt[:, 10], alt[:, 9] + 0.9, alt[:, 10] + 0.9, alt[:, 7]], axis=1)
+            zb = np.stack([alt[:, 9] - can, alt[:, 10] - can, alt[:, 9], alt[:, 10], alt[:, 12]], axis=1)
+            col = np.empty((n_sec, 5, 3))
+            col[:, 0:2] = gris
+            col[:, 2:4] = gris_c
+            col[:, 4] = grass_c
+            tipo = np.array([TIPO_LISO] * 4 + [TIPO_HIERBA])[None, :]
+            bloques.append(familia(la, lb, za, zb, col, np.broadcast_to(tipo, (n_sec, 5)),
+                                   np.broadcast_to(m, (n_sec, 5))))
+        # --- tuneles: tubo de hastiales y boveda de medio punto
+        if tunel.any():
+            semi = tmod.TUNEL_ANCHO / 2.0
+            h_muro = tmod.TUNEL_GALIBO - semi
+            ang = np.linspace(0.0, math.pi, 9)
+            anillo = [(semi, 0.0), (semi, h_muro)]
+            anillo += [(semi * math.cos(a), h_muro + semi * math.sin(a)) for a in ang[1:-1]]
+            anillo += [(-semi, h_muro), (-semi, 0.0)]
+            an = np.array(anillo)                                        # (K, 2)
+            na, ya = an[:-1, 0][None, :], an[:-1, 1][None, :]
+            nb, yb = an[1:, 0][None, :], an[1:, 1][None, :]
+            E = elev[:, None]; SB = sb[:, None]
+            la = np.broadcast_to(na, (n_sec, len(na[0])))
+            lb = np.broadcast_to(nb, (n_sec, len(nb[0])))
+            za = E - na * SB + ya
+            zb = E - nb * SB + yb
+            pared = np.array((135.0, 133.0, 126.0))
+            alt_rel = (ya + yb) / (2.0 * tmod.TUNEL_GALIBO)
+            col = np.broadcast_to(pared[None, None, :] * (0.85 + 0.15 * alt_rel)[:, :, None],
+                                  (n_sec, len(na[0]), 3))
+            tipo = np.full((n_sec, len(na[0])), TIPO_PARED_TUNEL)
+            bloques.append(familia(la, lb, za, zb, col, tipo,
+                                   np.broadcast_to(tunel[:, None], (n_sec, len(na[0])))))
+        bloques = [b for b in bloques if b is not None]
+        if not bloques:
+            return None
+        m = sum(len(b[0]) for b in bloques)
+        vb = np.empty((m, 4), dtype=_VERTICE)
+        k0 = 0
+        for pos, c, t, uvn, ld, jq in bloques:
+            n = len(pos)
+            vb["pos"][k0:k0 + n] = pos
+            vb["col"][k0:k0 + n, :, :3] = np.clip(c, 0, 255).astype(np.uint8)[:, None, :]
+            vb["col"][k0:k0 + n, :, 3] = t[:, None]
+            vb["uv"][k0:k0 + n, 0, 0] = vb["uv"][k0:k0 + n, 1, 0] = s_abs[jq]
+            vb["uv"][k0:k0 + n, 2, 0] = vb["uv"][k0:k0 + n, 3, 0] = s_abs[jq + 1]
+            vb["uv"][k0:k0 + n, :, 1] = uvn
+            vb["uv"][k0:k0 + n, :, 2] = hw[jq, None]
+            vb["uv"][k0:k0 + n, 0, 3] = vb["uv"][k0:k0 + n, 1, 3] = ld[:, 0]
+            vb["uv"][k0:k0 + n, 2, 3] = vb["uv"][k0:k0 + n, 3, 3] = ld[:, 1]
+            k0 += n
+        base = np.arange(m, dtype=np.int32) * 4
+        ib = np.stack([base, base + 1, base + 2, base + 1, base + 3, base + 2],
+                      axis=1).reshape(-1)
+        # pilas de los puentes cada 30 m, a estaciones fijas: dos tablas
+        # cruzadas de 1,4 m desde el tablero hasta el terreno bajo el eje
+        if puente.any():
+            paso = tmod.PUENTE_PILA_CADA
+            ini = math.ceil((s0 + max(rels[0], -10.0)) / paso) * paso - s0
+            est = np.arange(ini, min(rels[-1], 500.0), paso)
+            if len(est):
+                jj = np.searchsorted(rels, est).clip(1, len(rels) - 1)
+                okp = puente[jj] & puente[jj - 1]
+                est, jj = est[okp], jj[okp]
+            if len(est):
+                xi, zi = np.interp(est, rels, x), np.interp(est, rels, z)
+                hxi, hzi = np.interp(est, rels, hx), np.interp(est, rels, hz)
+                ei = np.interp(est, rels, elev)
+                hwi = np.interp(est, rels, hw)
+                sabs = np.mod(s0 + est, Ltot)
+                iseg = (sabs / L).astype(int) % len(terr.d_eje)
+                fondo = ei - terr.d_eje[iseg]
+                pilas = []
+                for lado in (-1.0, 1.0):
+                    o = lado * (hwi - 1.0)
+                    pie = np.stack([xi + hxi * o, fondo, zi + hzi * o], axis=1)
+                    cima = np.stack([xi + hxi * o, ei - tmod.PUENTE_CANTO, zi + hzi * o], axis=1)
+                    for (ax, az_) in ((1.0, 0.0), (0.0, 1.0)):
+                        d = np.stack([np.full(len(pie), 0.7 * ax), np.zeros(len(pie)),
+                                      np.full(len(pie), 0.7 * az_)], axis=1)
+                        pilas.append(np.stack([pie - d, pie + d, cima - d, cima + d], axis=1))
+                pp = np.concatenate(pilas)
+                vp = np.empty((len(pp), 4), dtype=_VERTICE)
+                vp["pos"] = pp
+                vp["col"][:, :, :3] = 140
+                vp["col"][:, :, 3] = TIPO_LISO
+                vp["uv"] = 0.0
+                bp = np.arange(len(pp), dtype=np.int32) * 4 + m * 4
+                ip = np.stack([bp, bp + 1, bp + 2, bp + 1, bp + 3, bp + 2],
+                              axis=1).reshape(-1)
+                vb = np.concatenate([vb, vp])
+                ib = np.concatenate([ib, ip])
+        return vb, ib
 
     # -- huellas de neumatico -----------------------------------------------
     def marcar_huella(self, rueda, s, n, intensidad, largo_pista):

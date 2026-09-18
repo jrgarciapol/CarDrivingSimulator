@@ -58,6 +58,14 @@ TUNEL_GALIBO = 6.5          # m de altura libre en el eje
 #: puente
 PUENTE_CANTO = 1.5          # m de canto del tablero
 PUENTE_PILA_CADA = 30.0     # m entre pilas
+#: perfil transversal: berma (m) entre el borde de la calzada y el talud, y
+#: distancias (m) desde el pie/cabeza del talud a las que se muestrea la
+#: ladera natural
+BERMA = 1.0
+LATERALES = np.array([5.0, 12.0, 25.0, 45.0, 75.0, 120.0, 180.0])
+TALUD_BUSQUEDA = 62.0       # m maximos de talud antes de darlo por perdido
+#: luz de dia dentro del tunel: metros desde la boca hasta oscuridad total
+TUNEL_LUZ_DIA = 40.0
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +265,86 @@ class Terreno:
                               int(round(unir / L)), bloqueo | (sec == otro))
         self.seccion = sec
         return sec
+
+    # -- perfiles transversales -------------------------------------------------
+    def perfiles(self, track):
+        """Precalcula, para cada segmento, el perfil transversal a los dos
+        lados: desplazamientos laterales (con signo, m) y cotas (m) de
+        [borde de calzada, cabeza del talud (berma), pie/cresta del talud
+        sobre el terreno, y 7 puntos de la ladera natural hasta 180 m].
+        Por lado, 10 puntos; en total 20, de izquierda a derecha. Tambien
+        ``talud_relleno`` (True = terraplen, la ladera baja; False =
+        desmonte, sube) y ``luz_dia`` (1 fuera del tunel, 0 en su interior
+        a mas de TUNEL_LUZ_DIA m de la boca)."""
+        if getattr(self, "perfil_lat", None) is not None:
+            return
+        if self.seccion is None:
+            self.clasificar(track)
+        x, y, h = planta(track)
+        elev = np.array([s.y for s in track.segments])
+        hw = np.array([s.half_w for s in track.segments])
+        N = len(elev)
+        kw = float(cfg.KERB_WIDTH)
+        borde = hw + kw
+        cabeza = borde + BERMA
+        cx, sy = np.cos(h), -np.sin(h)            # direccion lateral derecha
+        lat = np.zeros((N, 20))
+        alt = np.zeros((N, 20))
+        relleno = np.zeros((N, 2), dtype=bool)
+        estructura = (self.seccion == PUENTE) | (self.seccion == TUNEL)
+        for j, lado in enumerate((-1.0, 1.0)):
+            # busqueda del pie del talud: la recta del talud desde la cabeza
+            # (baja 3H:2V si el terreno esta por debajo, sube 1H:1V si esta
+            # por encima) hasta donde corta el terreno
+            n_c = cabeza[:, None] + np.arange(0.0, TALUD_BUSQUEDA + 1e-6, 2.0)[None, :]
+            X = x[:, None] + lado * n_c * cx[:, None]
+            Y = y[:, None] + lado * n_c * sy[:, None]
+            ht = self.altura(X, Y)
+            baja = elev > ht[:, 0]
+            zs = np.where(baja[:, None],
+                          elev[:, None] - (n_c - cabeza[:, None]) / TALUD_TERRAPLEN,
+                          elev[:, None] + (n_c - cabeza[:, None]) / TALUD_DESMONTE)
+            dif = zs - ht
+            cruza = np.sign(dif) != np.sign(dif[:, :1])
+            cruza[:, 0] = False
+            hay = cruza.any(axis=1)
+            k = np.where(hay, np.argmax(cruza, axis=1), n_c.shape[1] - 1)
+            k = np.maximum(k, 1)
+            ii = np.arange(N)
+            d0, d1 = dif[ii, k - 1], dif[ii, k]
+            t = np.where(np.abs(d1 - d0) > 1e-9, d0 / (d0 - d1 + 1e-12), 1.0)
+            t = np.clip(t, 0.0, 1.0)
+            n_pie = n_c[ii, k - 1] + t * (n_c[ii, k] - n_c[ii, k - 1])
+            z_pie = ht[ii, k - 1] + t * (ht[ii, k] - ht[ii, k - 1])
+            # en puente y tunel no hay talud: la ladera natural empieza junto
+            # a la plataforma (por debajo del tablero, por encima del tubo)
+            n_pie = np.where(estructura, cabeza + 0.5, n_pie)
+            z_pie = np.where(estructura, self.altura(x + lado * n_pie * cx,
+                                                     y + lado * n_pie * sy), z_pie)
+            n_lad = n_pie[:, None] + LATERALES[None, :]
+            z_lad = self.altura(x[:, None] + lado * n_lad * cx[:, None],
+                                y[:, None] + lado * n_lad * sy[:, None])
+            cols = np.concatenate([borde[:, None], cabeza[:, None], n_pie[:, None],
+                                   n_lad], axis=1) * lado
+            zz = np.concatenate([elev[:, None], elev[:, None], z_pie[:, None], z_lad],
+                                axis=1)
+            if lado < 0:
+                lat[:, :10] = cols[:, ::-1]
+                alt[:, :10] = zz[:, ::-1]
+            else:
+                lat[:, 10:] = cols
+                alt[:, 10:] = zz
+            relleno[:, j] = baja
+        self.perfil_lat, self.perfil_alt, self.talud_relleno = lat, alt, relleno
+        # luz de dia en los tuneles: distancia a la boca mas cercana
+        tun = self.seccion == TUNEL
+        L = cfg.SEGMENT_LENGTH
+        dist = np.full(N, np.inf)
+        for k0, m in self.tramos(TUNEL):
+            for j in range(m):
+                dist[(k0 + j) % N] = min(j, m - 1 - j) * L
+        self.luz_dia = np.where(tun, np.clip(1.0 - dist / TUNEL_LUZ_DIA, 0.0, 1.0), 1.0)
+        self.luz_dia[tun & (dist == 0)] = 1.0
 
     def resumen(self, track):
         """Texto con el reparto de secciones y la lista de tuneles y

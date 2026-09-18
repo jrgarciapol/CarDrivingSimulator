@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **465 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **478 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -473,6 +473,40 @@ sube y baja además con los baches del firme que siente la física. No se
 representa la caída de las ruedas ni el recorrido independiente de cada
 esquina.
 
+## Circuito de montaña M-50 y terreno
+
+`tracks/m-50.csv` es la **carretera de montaña**: misma familia de radios que
+la C-50 (85 a 280 m, Vp 50) con otra planta, **rampas del 10 %** y **peralte
+del 10 %** (5,7°) en las curvas, fuera de la Norma a propósito (que se queda
+en 7 y 7). La genera `python tools/make_carretera.py M-50`.
+
+Lo nuevo es que esta carretera **corta un terreno**. `tools/make_terreno.py`
+construye un campo de alturas en planta (`m-50.terreno.npz`, rejilla de
+10 m): la cota de la rasante se rasteriza y se difunde (ecuación del calor
+con la carretera fija) para tener una base suave que sigue a la carretera,
+se sube 10 m (media ladera) y se le suma un relieve de seis octavas de
+ruido con semilla fija (laderas de 2,4 km hasta barrancos de 75 m, amplitud
+50 m). En los cruces a distinto nivel el terreno va con la carretera de
+arriba y la de abajo pasa en túnel. Con la diferencia entre rasante y
+terreno bajo el eje, cada segmento recibe su **sección tipo**:
+
+| d = rasante − terreno | sección | detalle |
+|---|---|---|
+| d > 10 m | **puente** | tablero de 1,5 m de canto, pilas cada 30 m |
+| 0,5 < d ≤ 10 m | **terraplén** | talud 3H:2V |
+| −30 ≤ d < −0,5 m | **desmonte** | talud 1H:1V |
+| d < −30 m | **túnel** | 10 m de anchura libre, 6,5 m de gálibo, bóveda de medio punto |
+| |d| ≤ 0,5 m | a nivel | |
+
+Con longitudes mínimas de 60 m para túnel y 40 m para puente (los tramos
+cortos se alargan y los casi seguidos se unen, sin pisar la otra
+estructura). En la M-50 salen 6 túneles (hasta 472 m) y 4 puentes (hasta
+1 km): 5 % del recorrido en túnel, 7 % en puente y el resto en desmonte o
+terraplén. `Track` carga el terreno solo cuando existe junto al `.csv`;
+los demás circuitos siguen como estaban. (Lo que está hecho es el terreno y
+la clasificación; el pintado de laderas, puentes y túneles con su
+iluminación viene en las siguientes tandas.)
+
 ## Jugar en Steam Deck
 
 El simulador corre **nativo** en SteamOS, sin Proton: es Python + SDL2 y el
@@ -745,6 +779,7 @@ tools/
   make_oval.py     genera el óvalo peraltado
   ffb_info.py      diagnostico del force feedback sin SDL (solo stdlib)
   importar_modelo.py  convierte un coche .glb (Sketchfab/Blender) al .npz
+  make_terreno.py     terreno de montana de un circuito (campo de alturas + secciones)
                    del juego: piezas, ruedas y texturas (requiere Pillow)
 docs/
   FISICA.md        el modelo físico explicado para un ingeniero
@@ -757,6 +792,7 @@ tests/
   test_motor_inercia.py     cigueñal con inercia + embrague (ENGINE_MODEL)
   test_transmision.py       corte de par al cambiar + diferenciales
   test_settings.py          persistencia de reglajes y guardado de coches
+  test_terreno.py           M-50 (10 %/10 %), campo de alturas y secciones tipo
   test_ajustes.py           menu de AJUSTES: pasos redondos de las flechas
   test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte

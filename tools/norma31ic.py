@@ -26,19 +26,24 @@ VIAS = {
     "A-120": (2, 120, 700.0, 8.0),
     "C-90":  (3, 90,  350.0, 7.0),
     "C-50":  (3, 50,   85.0, 7.0),
+    # M-50: carretera de MONTANA del simulador, fuera de la Norma a
+    # proposito: misma planta que la C-50 (Vp 50, grupo 3) con rampas del
+    # 10 % y peralte maximo del 10 % (la Norma se queda en 7 y 7)
+    "M-50":  (3, 50,   85.0, 10.0),
 }
 
 # --- Tabla 5.1 / 5.2: inclinacion maxima de la rasante (%) -----------------
 # autopistas y autovias: Vp>=100 -> 4 ; Vp 90 y 80 -> 5
 # convencionales: Vp100 -> 4 ; 90 y 80 -> 5 ; 70 y 60 -> 6 ; 50 y 40 -> 7
-GRADE_MAX = {"A-120": 4.0, "C-90": 5.0, "C-50": 7.0}
+GRADE_MAX = {"A-120": 4.0, "C-90": 5.0, "C-50": 7.0, "M-50": 10.0}
 GRADE_MIN = 0.5                      # % minimo por drenaje
 
 # --- Tabla 5.3: parametros minimos Kv (visibilidad de parada) --------------
 # denominacion -> (Kv convexo, Kv concavo) en m
 KV_MIN = {"A-120": (11000.0, 7100.0),
           "C-90":  (3500.0, 3800.0),
-          "C-50":  (450.0, 1160.0)}
+          "C-50":  (450.0, 1160.0),
+          "M-50":  (450.0, 1160.0)}
 
 
 def grupo(via):
@@ -79,11 +84,13 @@ def peralte(via, R):
         if R < 7500.0:
             return 2.0
         return 0.0
-    # grupo 3: C-90..C-40
+    # grupo 3: C-90..C-40 (la M-50 escala la curva de la Tabla 4.5 a su
+    # peralte maximo propio: 10 % en el radio minimo)
+    esc = p_max(via) / 7.0
     if R <= 350.0:
-        return 7.0
+        return 7.0 * esc
     if R <= 2500.0:
-        return 7.0 - 6.65 * (1.0 - 350.0 / R) ** 1.9
+        return (7.0 - 6.65 * (1.0 - 350.0 / R) ** 1.9) * esc
     if R < 3500.0:
         return 2.0
     return 0.0

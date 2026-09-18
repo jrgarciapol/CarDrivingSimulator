@@ -355,7 +355,8 @@ def main():
                          cam_side=-0.85, cam_near=0.06)
         sdl2.SDL_RenderPresent(ren)
         cab_bus = leer()
-        centro = cab_bus[int(H * 0.7), W // 2]
+        # (a la izquierda del eje: en el centro justo cae la linea discontinua)
+        centro = cab_bus[int(H * 0.7), int(W * 0.35)]
         r.append(check("desde la cabina del autobus (sin cristales) se ve la "
                        "carretera, no la pared de la carroceria",
                        int(centro[0]) < 110 and abs(int(centro[0]) - int(centro[2])) < 25

@@ -191,6 +191,34 @@ def main():
                    and llamadas[0]["spin"] == 0
                    and llamadas[0]["lock"] > 0, str(llamadas[:1])))
 
+    # --- eco del tunel: dentro, el sonido llega con reflexiones ---------------
+    base = dict(rpm=3000.0, throttle=0.6, engine_on=True, speed=20.0)
+    def _energia(tunel, n=20):
+        """Nivel medio de n bloques tras dejar asentar el eco. El motor lleva
+        ruido aleatorio (un bloque suelto oscila un 10 %): se siembra el
+        generador para que dentro y fuera suene el MISMO ruido y la unica
+        diferencia sea el eco."""
+        np.random.seed(7)
+        for _ in range(12):                  # llenar el historial de eco
+            _generar(motor, cap, **base, tunel=tunel)
+        bloques = [_generar(motor, cap, **base, tunel=tunel).astype(float)
+                   for _ in range(n)]
+        return float(np.mean([np.abs(b).mean() for b in bloques])), bloques[-1]
+
+    e_fuera, fuera = _energia(0.0)
+    e_dentro, dentro = _energia(1.0)
+    r.append(check("dentro del tunel (tunel=1) el bloque suena distinto y con mas "
+                   "energia que fuera (las paredes devuelven el motor)",
+                   len(dentro) == len(fuera) and np.abs(dentro - fuera).mean() > 50.0
+                   and e_dentro > e_fuera * 1.04,
+                   f"diferencia media {np.abs(dentro - fuera).mean():.0f}, energia "
+                   f"{e_fuera:.0f} -> {e_dentro:.0f}"))
+    for _ in range(30):
+        _generar(motor, cap, **base, tunel=0.0)
+    otra = _generar(motor, cap, **base, tunel=0.0).astype(float)
+    r.append(check("...y al salir el eco se apaga (nivel del eco < 0,01)",
+                   motor._eco_nivel < 0.01 and len(otra) == len(fuera),
+                   f"nivel {motor._eco_nivel:.3f}"))
     motor.close()
     n_ok = sum(1 for x in r if x)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")

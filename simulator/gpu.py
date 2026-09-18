@@ -978,6 +978,18 @@ class GpuScene:
         # --- cámara ------------------------------------------------------
         elev_cam = float(self._interp(self.ely, np.array([s0]))[0])
         bank_cam = float(self._interp(self.bnk, np.array([s0]))[0])
+        # EXAGERACION VISUAL de pendientes y peraltes (solo lo que se ve):
+        # la cota se escala respecto a la de la camara y el peralte se
+        # multiplica, en la calzada, el terreno, la camara y el coche a la vez
+        gg = float(getattr(cfg, "CAMERA_GRADE_GAIN", 1.0))
+        gb = float(getattr(cfg, "CAMERA_BANK_GAIN", 1.0))
+        self._exag = (elev_cam, gg)
+        if gg != 1.0:
+            elev = elev_cam + (elev - elev_cam) * gg
+        if gb != 1.0:
+            bank_cam *= gb
+            bank_sec = np.arctan2(sb, cb) * gb
+            cb, sb = np.cos(bank_sec), np.sin(bank_sec)
         cam_x = -cam.mesh_dx
         # La calzada se construye con el peralte ABSOLUTO: a una distancia
         # lateral o del eje esta a elev - o*sin(peralte) (mas abajo por el
@@ -1576,7 +1588,7 @@ class GpuScene:
         if hay is None or not hay.any():
             return None
         alcance = min(rels[-1], 500.0)
-        act = hay[sm] & (rels >= -10.0) & (rels <= alcance)
+        act = hay[sm] & (rels <= alcance)
         lado = self._lado_bionda[sm]
         # tramos: secciones seguidas con bionda en el mismo lado
         par = act[:-1] & act[1:] & (lado[:-1] == lado[1:])
@@ -1607,7 +1619,7 @@ class GpuScene:
             bloques.append((v, np.asarray(col)[None, :] * sombra[:, None]))
         # postes cada 4 m a estaciones fijas: dos tablas cruzadas
         paso = 4.0
-        ini = math.ceil((s0 + max(rels[0], -10.0)) / paso) * paso - s0
+        ini = math.ceil((s0 + rels[0]) / paso) * paso - s0
         est = np.arange(ini, alcance, paso)
         if len(est):
             j = np.searchsorted(rels, est).clip(1, len(rels) - 1)
@@ -1671,7 +1683,7 @@ class GpuScene:
             return None
         L = float(track.length)
         ds = (arb["s"] - s0 + L / 2.0) % L - L / 2.0
-        vis = (ds > max(rels[0], -30.0)) & (ds < min(rels[-1], 650.0))
+        vis = (ds > rels[0]) & (ds < min(rels[-1], 650.0))
         if not vis.any():
             return None
         if _PLANTILLAS_ARBOL is None:
@@ -1686,6 +1698,19 @@ class GpuScene:
         o = arb["lado"][vis] * (hwi + kw + dist)
         base = np.stack([xi + hxi * o * cbi, ei - o * sbi, zi + hzi * o * cbi],
                         axis=1)
+        # con terreno de montana el arbol se planta a la cota del terreno
+        # (con la misma exageracion vertical que la escena), no a la de
+        # la calzada: si no flotaban sobre los valles y se hundian en las
+        # laderas
+        terr = getattr(track, "terreno", None)
+        if terr is not None and getattr(terr, "planta_xyh", None) is not None:
+            px, py, ph = terr.planta_xyh
+            sa = np.mod(arb["s"][vis], L)
+            ia = (sa / cfg.SEGMENT_LENGTH).astype(int) % len(px)
+            xw = px[ia] + o * np.cos(ph[ia])
+            yw = py[ia] - o * np.sin(ph[ia])
+            e_cam, gg = self._exag
+            base[:, 1] = e_cam + (terr.altura(xw, yw) - e_cam) * gg
         alto, tipo, tono = arb["alto"][vis], arb["tipo"][vis], arb["tono"][vis]
         az = SOL_AZIMUT - rumbo_seg
         ce = math.cos(SOL_ELEVACION)
@@ -1735,6 +1760,9 @@ class GpuScene:
         f = ((sa / L) - np.floor(sa / L))[:, None]
         lat = terr.perfil_lat[i0] * (1 - f) + terr.perfil_lat[i1] * f      # (n,20)
         alt = terr.perfil_alt[i0] * (1 - f) + terr.perfil_alt[i1] * f
+        e_cam, gg = self._exag
+        if gg != 1.0:
+            alt = e_cam + (alt - e_cam) * gg
         tipo_s = terr.seccion[sm]
         relleno = terr.talud_relleno[sm]                                  # (n,2)
         puente = tipo_s == tmod.PUENTE
@@ -1833,6 +1861,27 @@ class GpuScene:
             tipo = np.full((n_sec, len(na[0])), TIPO_PARED_TUNEL)
             bloques.append(familia(la, lb, za, zb, col, tipo,
                                    np.broadcast_to(tunel[:, None], (n_sec, len(na[0])))))
+            # BOQUILLAS: en la seccion de cada boca, un muro de hormigon en
+            # el plano transversal entre el arco y un contorno exterior (el
+            # emboquille), que tapa el corte de la roca alrededor del tubo
+            boca = tunel & ~(np.roll(tunel, 1) & np.roll(tunel, -1))
+            boca[-1] = False                 # (la ultima seccion no tiene par)
+            if boca.any():
+                ext = np.stack([an[:, 0] * 1.75, 1.0 + an[:, 1] * 1.45], axis=1)
+                jb = np.nonzero(boca)[0]
+                pos, cols = [], []
+                for k in range(len(an) - 1):
+                    for (n0, y0), (n1, y1), (m0, w0), (m1, w1) in (
+                            (an[k], an[k + 1], ext[k], ext[k + 1]),):
+                        pa = np.stack([x[jb] + hx[jb] * n0, elev[jb] - n0 * sb[jb] + y0, z[jb] + hz[jb] * n0], axis=1)
+                        pb = np.stack([x[jb] + hx[jb] * n1, elev[jb] - n1 * sb[jb] + y1, z[jb] + hz[jb] * n1], axis=1)
+                        pc = np.stack([x[jb] + hx[jb] * m0, elev[jb] - m0 * sb[jb] + w0, z[jb] + hz[jb] * m0], axis=1)
+                        pd = np.stack([x[jb] + hx[jb] * m1, elev[jb] - m1 * sb[jb] + w1, z[jb] + hz[jb] * m1], axis=1)
+                        pos.append(np.stack([pa, pb, pc, pd], axis=1))
+                pos = np.concatenate(pos)
+                uvn = np.zeros((len(pos), 4))
+                bloques.append((pos, np.full((len(pos), 3), 172.0), np.full(len(pos), TIPO_LISO),
+                                uvn, np.ones((len(pos), 2)), np.tile(jb, len(an) - 1)))
         bloques = [b for b in bloques if b is not None]
         if not bloques:
             return None
@@ -1858,7 +1907,7 @@ class GpuScene:
         # cruzadas de 1,4 m desde el tablero hasta el terreno bajo el eje
         if puente.any():
             paso = tmod.PUENTE_PILA_CADA
-            ini = math.ceil((s0 + max(rels[0], -10.0)) / paso) * paso - s0
+            ini = math.ceil((s0 + rels[0]) / paso) * paso - s0
             est = np.arange(ini, min(rels[-1], 500.0), paso)
             if len(est):
                 jj = np.searchsorted(rels, est).clip(1, len(rels) - 1)
@@ -1871,7 +1920,7 @@ class GpuScene:
                 hwi = np.interp(est, rels, hw)
                 sabs = np.mod(s0 + est, Ltot)
                 iseg = (sabs / L).astype(int) % len(terr.d_eje)
-                fondo = ei - terr.d_eje[iseg]
+                fondo = ei - terr.d_eje[iseg] * gg
                 pilas = []
                 for lado in (-1.0, 1.0):
                     o = lado * (hwi - 1.0)
@@ -2025,9 +2074,8 @@ class GpuScene:
         if cfg.TRACK_POLES:
             paso_b = 6.0
             s0 = float(self._frame_s0) if getattr(self, "_frame_s0", None) is not None else 0.0
-            ini = math.ceil((s0 + max(rels[0], 0.0)) / paso_b) * paso_b - s0
+            ini = math.ceil((s0 + rels[0]) / paso_b) * paso_b - s0
             est = np.arange(ini, min(rels[-1], 700.0), paso_b)
-            est = est[est >= 0.0]
             alto = float(getattr(cfg, "TRACK_POLE_HEIGHT", 2.2))
             if len(est):
                 xi, zi = np.interp(est, rels, x), np.interp(est, rels, z)
@@ -2050,7 +2098,7 @@ class GpuScene:
         r_chev = float(getattr(cfg, "CHEVRON_MAX_RADIUS", 0.0))
         if r_chev > 0.0:
             k = self.kap[sm]
-            mask = ((seg_idx % 3 == 0) & (rels >= 0.0) & (rels <= 320.0)
+            mask = ((seg_idx % 3 == 0) & (rels >= rels[0]) & (rels <= 320.0)
                     & (np.abs(k) >= 1.0 / r_chev))
             if mask.any():
                 lado = np.where(k[mask] > 0, -1.0, 1.0)      # exterior
@@ -2114,10 +2162,8 @@ class GpuScene:
 
         if getattr(cfg, "TRACK_KM_POSTS", True) and Ltot > 0:
             paso = 100.0
-            ini = math.ceil((s0 + max(rels[0], 0.0)) / paso) * paso - s0
+            ini = math.ceil((s0 + rels[0]) / paso) * paso - s0
             for d in np.arange(ini, min(rels[-1], 700.0), paso):
-                if d < 0.0:
-                    continue
                 s_abs = int(round((s0 + d) % Ltot))
                 if s_abs % 100 != 0:
                     continue
@@ -2146,7 +2192,7 @@ class GpuScene:
         sen = getattr(self, "_senales", None)
         if sen is not None and len(sen):
             ds = (sen[:, 0] - s0 + Ltot / 2.0) % Ltot - Ltot / 2.0
-            vis_s = (ds >= max(rels[0], 0.0)) & (ds <= min(rels[-1], 400.0))
+            vis_s = (ds >= rels[0]) & (ds <= min(rels[-1], 400.0))
             for d, sentido in zip(ds[vis_s], sen[vis_s, 1]):
                 hwi = float(np.interp(d, rels, hw))
                 o = hwi + kw + 1.0

@@ -403,6 +403,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
     show_line = cfg.RACING_LINE
     auto_gear = cfg.AUTO_GEAR
     orbita_cam = 0.0            # orbita suavizada de la camara elevada (rad)
+    fps_ema = 60.0              # fotogramas por segundo (media movil, HUD)
     view_mode = int(cfg.VIEW_MODE) % 7   # ver cfg.VIEW_MODE: 0 interior, 1
                                          # cabina, 2 trasera, 3 exterior, 4
                                          # elevada, 5 planta, 6 isometrica
@@ -506,6 +507,8 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         frame_dt = (now - last) / perf_freq
         last = now
         frame_dt = min(frame_dt, 0.1)
+        # fps (media movil de un segundo aprox.) para el HUD
+        fps_ema = fps_ema * 0.95 + (1.0 / max(frame_dt, 1e-4)) * 0.05
         time_scale = cfg.TIME_SCALES[time_idx]
         accumulator += frame_dt * time_scale
 
@@ -578,9 +581,15 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
         adas_o = st.oversteer
         if abs(st.n) > track.half_at(st.s) + cfg.KERB_WIDTH:
             adas_u = adas_o = 0.0
+        # dentro de un tunel el sonido rebota en las paredes (eco)
+        tunel = 0.0
+        terr = getattr(track, "terreno", None)
+        if terr is not None and getattr(terr, "luz_dia", None) is not None:
+            tunel = 1.0 - float(terr.luz_dia[int(st.s / cfg.SEGMENT_LENGTH) % len(terr.luz_dia)])
         sound.update(st.rpm, wheel.throttle, screech, st.engine_on,
                      abs(st.vx), adas_u, adas_o, gear=st.gear,
-                     scrub=scrub, spin=spin, lock=lock, brake=wheel.brake)
+                     scrub=scrub, spin=spin, lock=lock, brake=wheel.brake,
+                     tunel=tunel)
         registro.marca("sonido")
 
         # ------------------------------------------------ render
@@ -713,7 +722,7 @@ def run_session(renderer, window, wheel, ffb, sound, car_name, condition,
                                150, 4, (120, 255, 120, 255))
         hud.draw(car.state, timer.lap_time, timer.best, timer.lap_count,
                  ffb.ok, wheel.name, auto_gear, time_scale, track, car_name,
-                 condition, timer.wrong_way, timer.valid)
+                 condition, timer.wrong_way, timer.valid, fps=fps_ema)
         if show_debug:
             hud.draw_debug(wheel, car.state, surface, scene.gpu)
         if show_telemetry:

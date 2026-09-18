@@ -1318,9 +1318,13 @@ class Hud(_Dibujo):
 
     def draw(self, car_state, lap_time, best_lap, lap_count, ffb_ok, wheel_name,
              auto_gear=False, time_scale=1.0, track=None, car_name="",
-             condition="", wrong_way=False, lap_valid=True):
+             condition="", wrong_way=False, lap_valid=True, fps=None):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
+        # fotogramas por segundo (media movil), arriba a la derecha
+        if fps is not None:
+            font.draw_text(self.r, f"{fps:3.0f} FPS", W - 90, 4, 1,
+                           (200, 200, 200, 255) if fps >= 55 else (255, 120, 60, 255))
 
         # indicador de cámara lenta
         if time_scale < 0.999:

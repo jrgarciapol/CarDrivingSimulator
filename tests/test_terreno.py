@@ -86,11 +86,12 @@ def main():
                    np.all(de[sec == terreno.TERRAPLEN] > 0.0)
                    and np.all(de[sec == terreno.DESMONTE] < 0.0)
                    and np.all(np.abs(de[sec == terreno.A_NIVEL]) <= terreno.UMBRAL_NIVEL)
-                   and np.mean(de[sec == terreno.PUENTE] > terreno.TERRAPLEN_MAX) > 0.7
+                   and np.mean(t.d_puente[sec == terreno.PUENTE] > terreno.TERRAPLEN_MAX) > 0.7
                    and np.mean(de[sec == terreno.TUNEL] < -terreno.DESMONTE_MAX) > 0.7))
-    r.append(check("...y todo tramo con d > 10 m es puente y todo tramo con d < -30 m "
-                   "es tunel (no hay terraplenes ni desmontes fuera de norma)",
-                   np.all(sec[de > terreno.TERRAPLEN_MAX] == terreno.PUENTE)
+    r.append(check("...y todo tramo con relleno > 10 m (bajo el eje o a 8 m, en media "
+                   "ladera) es puente y todo tramo con d < -20 m es tunel",
+                   np.all(sec[(t.d_puente > terreno.TERRAPLEN_MAX) & (de > -terreno.UMBRAL_NIVEL)]
+                          == terreno.PUENTE)
                    and np.all(sec[de < -terreno.DESMONTE_MAX] == terreno.TUNEL)))
     tun = t.tramos(terreno.TUNEL)
     pue = t.tramos(terreno.PUENTE)
@@ -104,10 +105,12 @@ def main():
         return ((antes == otro or umbral(d_a)) and (despues == otro or umbral(d_d)))
     cortos_tun = [(k, m) for k, m in tun if m * L < terreno.TUNEL_MIN - 1e-6]
     cortos_pue = [(k, m) for k, m in pue if m * L < terreno.PUENTE_MIN - 1e-6]
+    dp = t.d_puente
     r.append(check("longitudes minimas: tuneles >= 60 m y puentes >= 40 m, salvo "
                    "los encajonados entre la otra estructura (un puente pegado a "
                    "un tunel: cresta y valle seguidos)",
-                   all(bloqueado(k, m, terreno.PUENTE, lambda d: d > terreno.TERRAPLEN_MAX)
+                   all(((sec[(k - 1) % n] == terreno.PUENTE or dp[(k - 1) % n] > terreno.TERRAPLEN_MAX)
+                        and (sec[(k + m) % n] == terreno.PUENTE or dp[(k + m) % n] > terreno.TERRAPLEN_MAX))
                        for k, m in cortos_tun)
                    and all(bloqueado(k, m, terreno.TUNEL, lambda d: d < -terreno.DESMONTE_MAX)
                            for k, m in cortos_pue),
@@ -122,7 +125,8 @@ def main():
                    f"{100 * np.mean(sec == terreno.PUENTE):.1f} %, {len(tun)} tuneles, "
                    f"{len(pue)} puentes"))
     r.append(check("el terreno es determinista (misma semilla, mismo campo)",
-                   np.allclose(terreno.generar(track, amplitud=50.0, semilla=1)["alturas"],
+                   np.allclose(terreno.generar(track, amplitud=t.amplitud, semilla=t.semilla,
+                                               desplazamiento=t.desplazamiento)["alturas"],
                                t.alturas.astype(np.float32), atol=1e-3)))
     # la C-50 no trae terreno: sigue como estaba
     cfg.TRACK_FILE = "tracks/c-50.csv"

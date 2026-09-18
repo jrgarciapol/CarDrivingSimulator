@@ -161,6 +161,21 @@ def main():
     r.append(check("...y explica el motivo",
                    "APAGADO" in gpu.estado(), gpu.estado()))
 
+    # --- FPS en el HUD ---------------------------------------------------------
+    from simulator.physics import Car as _Car
+    st2 = _Car().state
+    W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
+    limpiar()
+    hud.draw(st2, 0.0, None, 1, True, "volante")
+    sin_fps = leer()
+    limpiar()
+    hud.draw(st2, 0.0, None, 1, True, "volante", fps=118.0)
+    con_fps = leer()
+    dif = (np.abs(con_fps.astype(int) - sin_fps.astype(int)).sum(axis=2) > 30)
+    ys, xs = np.nonzero(dif)
+    r.append(check("con fps= el HUD pinta los fotogramas por segundo arriba a la "
+                   "derecha", dif.sum() > 20 and len(xs) and xs.min() > W - 100
+                   and ys.max() < 20, f"{int(dif.sum())} px"))
     n_ok = sum(1 for x in r if x)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")
     return 0 if n_ok == len(r) else 1

@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **484 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **487 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -484,26 +484,37 @@ Lo nuevo es que esta carretera **corta un terreno**. `tools/make_terreno.py`
 construye un campo de alturas en planta (`m-50.terreno.npz`, rejilla de
 10 m): la cota de la rasante se rasteriza y se difunde (ecuación del calor
 con la carretera fija) para tener una base suave que sigue a la carretera,
-se sube 10 m (media ladera) y se le suma un relieve de seis octavas de
+se sube 6 m (media ladera) y se le suma un relieve de seis octavas de
 ruido con semilla fija (laderas de 2,4 km hasta barrancos de 75 m, amplitud
-50 m). En los cruces a distinto nivel el terreno va con la carretera de
+40 m). En los cruces a distinto nivel el terreno va con la carretera de
 arriba y la de abajo pasa en túnel. Con la diferencia entre rasante y
 terreno bajo el eje, cada segmento recibe su **sección tipo**:
 
 | d = rasante − terreno | sección | detalle |
 |---|---|---|
-| d > 10 m | **puente** | tablero de 1,5 m de canto, pilas cada 30 m |
+| d > 10 m (a ±8 m del eje) | **puente** | tablero de 1,5 m de canto, pilas cada 30 m |
 | 0,5 < d ≤ 10 m | **terraplén** | talud 3H:2V |
-| −30 ≤ d < −0,5 m | **desmonte** | talud 1H:1V |
-| d < −30 m | **túnel** | 10 m de anchura libre, 6,5 m de gálibo, bóveda de medio punto |
+| −20 ≤ d < −0,5 m | **desmonte** | talud 5H:4V |
+| d < −20 m | **túnel** | 10 m de anchura libre, 6,5 m de gálibo, bóveda de medio punto |
 | |d| ≤ 0,5 m | a nivel | |
 
+El puente se decide con la **peor** de tres cotas (eje y ±8 m): a media
+ladera el eje puede estar a 8 m del terreno y el lado de abajo a 15, y eso
+era un terraplén de vértigo; ahora es puente. El desmonte se corta a 20 m y
+el talud es 5H:4V (con 30 m y 1H:1V salían muros de 30 m a ambos lados).
 Con longitudes mínimas de 60 m para túnel y 40 m para puente (los tramos
 cortos se alargan y los casi seguidos se unen, sin pisar la otra
-estructura). En la M-50 salen 6 túneles (hasta 472 m) y 4 puentes (hasta
-1 km): 5 % del recorrido en túnel, 7 % en puente y el resto en desmonte o
-terraplén. `Track` carga el terreno solo cuando existe junto al `.csv`;
-los demás circuitos siguen como estaban.
+estructura). En la M-50 salen 7 túneles (hasta 704 m) y 7 puentes (hasta
+1.150 m): 9 % del recorrido en túnel, 10 % en puente, 50 % en desmonte y
+27 % en terraplén. `Track` carga el terreno solo cuando existe junto al
+`.csv`; los demás circuitos siguen como estaban.
+
+Donde dos tramos de la carretera pasan cerca (menos de 360 m en planta y
+separados más de 80 m de estación) cada uno tiene un **alcance lateral**:
+su ladera llega hasta la mitad de la distancia al otro tramo (mínimo 6 m)
+y ahí se corta. Antes cada tramo tendía su ladera a 180 m y la del de
+arriba pasaba por encima de la calzada del de abajo ("la hierba encima de
+la carretera").
 
 **Cómo se pinta.** Por segmento se precalcula el perfil transversal (20
 puntos: borde de calzada, berma de 1 m, pie o cresta del talud sobre el
@@ -514,13 +525,32 @@ los desmontes y de hierba en los terraplenes, sombreadas por el sol según
 su inclinación. En los **puentes** no hay talud: se ve el valle debajo, las
 caras del tablero de 1,5 m, los pretiles y **pilas cada 30 m** hasta el
 terreno. En los **túneles** la calzada entra en un tubo de hastiales de
-1,5 m y bóveda de medio punto de 5 m de radio, con aceras de hormigón; la
-roca del desmonte de acceso hace de boquilla. Dentro no hay sol: el
-sombreador pone **luminarias en bóveda cada 12 m** (charcos de luz en la
-calzada, anillos en la bóveda) y los **faros del coche** (un cono hacia
-delante), todo fundido con la luz de día en los 40 m de cada boca; el
-modelo del coche se oscurece y el fondo del cielo se apaga. Coste: unos
-6.000 cuadriláteros y 2-3 ms más de malla por fotograma en la M-50.
+1,5 m y bóveda de medio punto de 5 m de radio, con aceras de hormigón; en
+cada boca hay una **boquilla de hormigón** (un marco de 1,75 veces el ancho
+del tubo y 1,45 veces su alto, plano, contra la roca del desmonte de
+acceso). Dentro no hay sol: el sombreador pone **luminarias en bóveda cada
+12 m** (charcos de luz en la calzada, anillos en la bóveda) y los **faros
+del coche** (un cono hacia delante), todo fundido con la luz de día en los
+40 m de cada boca; el modelo del coche se oscurece y el fondo del cielo se
+apaga. Los **árboles** se plantan sobre el terreno (a su cota, no a la de
+la carretera), así que en un desmonte quedan arriba, en la cresta, y en un
+puente abajo, en el valle. Coste: unos 6.000 cuadriláteros y 2-3 ms más de
+malla por fotograma en la M-50.
+
+**Sonido del túnel.** El sintetizador recibe cuánto túnel hay (1 − luz de
+día del tramo) y mezcla tres reflexiones del propio sonido (53, 97 y
+151 ms, con las paredes absorbiendo agudos), que entran y salen en medio
+segundo con las bocas: el motor retumba dentro y se apaga al salir.
+
+**Pendientes y peraltes exagerados a la vista.** Un 10 % de rampa a
+120 km/h casi no se aprecia en pantalla, así que la escena escala la cota
+respecto a la de la cámara con `CAMERA_GRADE_GAIN` (1,3: un 10 % se ve
+como un 13 %) y multiplica el peralte con `CAMERA_BANK_GAIN` (1,3), calzada,
+terreno, coche y cámara a la vez; la física sigue con los valores reales.
+Con 1,0 se ve tal cual. En las vistas aéreas los pianos, barreras, hitos,
+señales y árboles se pintan también 40 m por detrás del coche, no solo
+por delante, para que no desaparezcan justo al pasar. El HUD lleva los
+**FPS** arriba a la derecha (media móvil; en naranja por debajo de 55).
 
 ## Jugar en Steam Deck
 
@@ -811,11 +841,11 @@ tests/
   test_ajustes.py           menu de AJUSTES: pasos redondos de las flechas
   test_ffb_evdev.py         ioctl y estructuras del force feedback de Linux
   test_ffb_t300rs.py        paquetes HID del T300RS, byte a byte
-  test_audio.py             sintetizador y laboratorio de sonido
+  test_audio.py             sintetizador, laboratorio de sonido y eco del tunel
   test_gpu.py               proyeccion, geometria y fotogramas reales de la GPU
   test_gpu_compartido.py    la escena dentro del contexto OpenGL de SDL (Xvfb)
   test_modelo3d.py          importacion del .glb y pintado del modelo del coche
-  test_hud.py               atlas de fuente y esfera del velocimetro cacheada
+  test_hud.py               atlas de fuente, esfera del velocimetro cacheada y FPS
   test_registro.py          registro de rendimiento: filas, bloques y resumen
 ```
 

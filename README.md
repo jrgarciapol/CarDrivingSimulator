@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **487 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **489 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -532,9 +532,10 @@ acceso). Dentro no hay sol: el sombreador pone **luminarias en bóveda cada
 12 m** (charcos de luz en la calzada, anillos en la bóveda) y los **faros
 del coche** (un cono hacia delante), todo fundido con la luz de día en los
 40 m de cada boca; el modelo del coche se oscurece y el fondo del cielo se
-apaga. Los **árboles** se plantan sobre el terreno (a su cota, no a la de
-la carretera), así que en un desmonte quedan arriba, en la cresta, y en un
-puente abajo, en el valle. Coste: unos 6.000 cuadriláteros y 2-3 ms más de
+apaga. Los **árboles** se plantan sobre el suelo que se pinta (el perfil
+transversal: talud del desmonte o del terraplén y ladera natural), no a la
+cota de la carretera: en un desmonte suben por el talud, en un puente
+quedan abajo, en el valle. Coste: unos 6.000 cuadriláteros y 2-3 ms más de
 malla por fotograma en la M-50.
 
 **Sonido del túnel.** El sintetizador recibe cuánto túnel hay (1 − luz de
@@ -550,7 +551,8 @@ terreno, coche y cámara a la vez; la física sigue con los valores reales.
 Con 1,0 se ve tal cual. En las vistas aéreas los pianos, barreras, hitos,
 señales y árboles se pintan también 40 m por detrás del coche, no solo
 por delante, para que no desaparezcan justo al pasar. El HUD lleva los
-**FPS** arriba a la derecha (media móvil; en naranja por debajo de 55).
+**FPS** en el cuadro de tiempos, a la derecha de "VUELTA" (media móvil; en
+naranja por debajo de 55).
 
 ## Jugar en Steam Deck
 

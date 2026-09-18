@@ -519,6 +519,24 @@ def _mat_ortografica(ancho_m, alto_m, cerca, lejos):
 ORTO_DISTANCIA = 400.0
 
 
+def cota_perfil(terr, s_abs, o):
+    """Cota (m) del suelo que se pinta en la estacion ``s_abs`` (m, absoluta)
+    y el desplazamiento lateral ``o`` (m, con signo, + a la derecha): el
+    perfil transversal de 20 puntos del terreno (``terreno.perfiles``)
+    interpolado entre los dos segmentos vecinos y a lo ancho. Fuera del
+    ultimo punto del perfil se queda en su cota. Arrays de la misma forma."""
+    s_abs = np.asarray(s_abs, dtype=float)
+    o = np.asarray(o, dtype=float)
+    nseg = len(terr.perfil_lat)
+    u = s_abs / cfg.SEGMENT_LENGTH
+    i0 = u.astype(int) % nseg
+    i1 = (i0 + 1) % nseg
+    f = (u - np.floor(u))[:, None]
+    lat = terr.perfil_lat[i0] * (1 - f) + terr.perfil_lat[i1] * f
+    alt = terr.perfil_alt[i0] * (1 - f) + terr.perfil_alt[i1] * f
+    return np.array([np.interp(oi, li, ai) for oi, li, ai in zip(o, lat, alt)])
+
+
 def _plantillas_arbol():
     """Dos arboles de formas sencillas, de altura 1 y con el pie en el
     origen, como listas de triangulos (T,3,3) con su color base (T,3) y su
@@ -1698,19 +1716,16 @@ class GpuScene:
         o = arb["lado"][vis] * (hwi + kw + dist)
         base = np.stack([xi + hxi * o * cbi, ei - o * sbi, zi + hzi * o * cbi],
                         axis=1)
-        # con terreno de montana el arbol se planta a la cota del terreno
-        # (con la misma exageracion vertical que la escena), no a la de
-        # la calzada: si no flotaban sobre los valles y se hundian en las
-        # laderas
+        # con terreno de montana el arbol se planta sobre el suelo QUE SE
+        # PINTA (el perfil transversal: talud del desmonte o del terraplen y
+        # ladera natural), no sobre el campo de alturas: en un desmonte de
+        # 20 m el terreno natural a 12 m del eje esta arriba, en la cresta,
+        # y el arbol quedaba volando sobre el talud
         terr = getattr(track, "terreno", None)
-        if terr is not None and getattr(terr, "planta_xyh", None) is not None:
-            px, py, ph = terr.planta_xyh
-            sa = np.mod(arb["s"][vis], L)
-            ia = (sa / cfg.SEGMENT_LENGTH).astype(int) % len(px)
-            xw = px[ia] + o * np.cos(ph[ia])
-            yw = py[ia] - o * np.sin(ph[ia])
+        if terr is not None and getattr(terr, "perfil_lat", None) is not None:
             e_cam, gg = self._exag
-            base[:, 1] = e_cam + (terr.altura(xw, yw) - e_cam) * gg
+            h = cota_perfil(terr, np.mod(arb["s"][vis], L), o)
+            base[:, 1] = e_cam + (h - e_cam) * gg
         alto, tipo, tono = arb["alto"][vis], arb["tipo"][vis], arb["tono"][vis]
         az = SOL_AZIMUT - rumbo_seg
         ce = math.cos(SOL_ELEVACION)

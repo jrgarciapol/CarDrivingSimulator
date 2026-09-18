@@ -173,9 +173,11 @@ def main():
     con_fps = leer()
     dif = (np.abs(con_fps.astype(int) - sin_fps.astype(int)).sum(axis=2) > 30)
     ys, xs = np.nonzero(dif)
-    r.append(check("con fps= el HUD pinta los fotogramas por segundo arriba a la "
-                   "derecha", dif.sum() > 20 and len(xs) and xs.min() > W - 100
-                   and ys.max() < 20, f"{int(dif.sum())} px"))
+    r.append(check("con fps= el HUD pinta los fotogramas por segundo en el cuadro "
+                   "de tiempos (arriba a la derecha, escala 2)",
+                   dif.sum() > 150 and len(xs) and xs.min() > W - 200
+                   and xs.max() < W - 30 and ys.min() >= 30 and ys.max() <= 48,
+                   f"{int(dif.sum())} px"))
     n_ok = sum(1 for x in r if x)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")
     return 0 if n_ok == len(r) else 1

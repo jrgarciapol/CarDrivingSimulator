@@ -1321,10 +1321,6 @@ class Hud(_Dibujo):
              condition="", wrong_way=False, lap_valid=True, fps=None):
         W, H = cfg.WINDOW_WIDTH, cfg.WINDOW_HEIGHT
         st = car_state
-        # fotogramas por segundo (media movil), arriba a la derecha
-        if fps is not None:
-            font.draw_text(self.r, f"{fps:3.0f} FPS", W - 90, 4, 1,
-                           (200, 200, 200, 255) if fps >= 55 else (255, 120, 60, 255))
 
         # indicador de cámara lenta
         if time_scale < 0.999:
@@ -1375,6 +1371,12 @@ class Hud(_Dibujo):
         # tiempos
         self._fill(W - 320, 20, 300, 116, (0, 0, 0, 160))
         font.draw_text(self.r, f"VUELTA {lap_count}", W - 300, 32, 2)
+        # fotogramas por segundo (media movil) en la misma linea, a la
+        # derecha del cuadro; naranja si no se llega a 55
+        if fps is not None:
+            txt = f"{fps:3.0f} FPS"
+            font.draw_text(self.r, txt, W - 40 - font.text_width(txt, 2), 32, 2,
+                           (200, 200, 200, 255) if fps >= 55 else (255, 120, 60, 255))
         font.draw_text(self.r, f"TIEMPO {_fmt_time(lap_time)}", W - 300, 56, 2)
         best_txt = _fmt_time(best_lap) if best_lap else "--:--.-"
         font.draw_text(self.r, f"MEJOR  {best_txt}", W - 300, 80, 2, (255, 200, 60, 255))

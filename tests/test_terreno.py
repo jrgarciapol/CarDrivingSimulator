@@ -128,6 +128,31 @@ def main():
                    np.allclose(terreno.generar(track, amplitud=t.amplitud, semilla=t.semilla,
                                                desplazamiento=t.desplazamiento)["alturas"],
                                t.alturas.astype(np.float32), atol=1e-3)))
+    # --- los arboles se plantan sobre el suelo que se pinta -------------------
+    from simulator import gpu
+    t.perfiles(track)
+    hw_kw = np.array([s.half_w for s in track.segments]) + cfg.KERB_WIDTH
+    elev = np.array([s.y for s in track.segments])
+    hondo = np.nonzero((sec == terreno.DESMONTE) & (de < -12.0)
+                       & (t.perfil_lat[:, 12] > hw_kw + 1.0 + 15.0)
+                       & (t.perfil_lat[:, 7] < -(hw_kw + 1.0 + 15.0)))[0]
+    i = int(hondo[len(hondo) // 2])
+    o = np.array([12.0, -12.0])
+    h = gpu.cota_perfil(t, np.array([i * L, i * L]), o)
+    esperado = elev[i] + (12.0 - hw_kw[i] - terreno.BERMA) / terreno.TALUD_DESMONTE
+    natural = t.altura(*[np.array(v) for v in
+                         (t.planta_xyh[0][i] + o * np.cos(t.planta_xyh[2][i]),
+                          t.planta_xyh[1][i] - o * np.sin(t.planta_xyh[2][i]))])
+    r.append(check("en un desmonte hondo, a 12 m del eje el arbol se planta en el "
+                   "TALUD (cota de la rasante + 5H:4V), no en la cresta del terreno",
+                   np.allclose(h, esperado, atol=0.05) and np.all(h < natural - 3.0),
+                   f"talud {h[0]:.1f}/{h[1]:.1f} m, terreno natural "
+                   f"{natural[0]:.1f}/{natural[1]:.1f} m, rasante {elev[i]:.1f} m"))
+    lleno = np.nonzero((sec == terreno.TERRAPLEN) & (de > 5.0))[0]
+    j = int(lleno[len(lleno) // 2])
+    hj = gpu.cota_perfil(t, np.array([j * L]), np.array([12.0]))[0]
+    r.append(check("...y en un terraplen queda por debajo de la rasante",
+                   hj < elev[j] - 1.0, f"{hj:.1f} < {elev[j]:.1f}"))
     # la C-50 no trae terreno: sigue como estaba
     cfg.TRACK_FILE = "tracks/c-50.csv"
     r.append(check("la C-50 no tiene terreno y carga como siempre",

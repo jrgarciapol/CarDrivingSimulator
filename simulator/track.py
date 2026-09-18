@@ -120,6 +120,14 @@ class Track:
         self.half_w = ws[len(ws) // 2]
         self._precompute_vertical()
         self._precompute_racing_line()
+        # terreno de montana (campo de alturas + secciones tipo) si el
+        # circuito lo trae junto al .csv; si no, la franja plana de siempre
+        self.terreno = None
+        if cfg.TRACK_FILE:
+            from . import terreno as terreno_mod
+            path = os.path.join(os.path.dirname(__file__), cfg.TRACK_FILE)
+            self.terreno = terreno_mod.Terreno.cargar(
+                terreno_mod.ruta_terreno(path), self)
 
     def _apply_kerb_radius(self):
         """Pone pianos en toda curva de radio <= KERB_MAX_RADIUS.

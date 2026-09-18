@@ -63,12 +63,18 @@ P_GLORIETA = 2.0                 # % de peralte en la calzada anular
 
 CALZADA = {"A-120": dict(half_w=4.75, B=3.50, k=0.75),
            "C-90":  dict(half_w=3.75, B=3.50, k=1.00),
-           "C-50":  dict(half_w=3.25, B=3.00, k=1.00)}
+           "C-50":  dict(half_w=3.25, B=3.00, k=1.00),
+           "M-50":  dict(half_w=3.25, B=3.00, k=1.00)}
 
 PRESETS = {
     "A-120": dict(largo=60000.0, radios=[700, 800, 900, 1100, 1300, 1600, 2000]),
     "C-90":  dict(largo=45000.0, radios=[350, 400, 450, 550, 650, 800, 1000]),
     "C-50":  dict(largo=25000.0, radios=[85, 100, 120, 150, 180, 220, 280]),
+    # M-50: la carretera de MONTANA: misma familia de radios que la C-50,
+    # otra planta (otras semillas), rampas del 10 % y peralte del 10 %; el
+    # terreno que la carretera corta lo genera tools/make_terreno.py
+    "M-50":  dict(largo=25000.0, radios=[85, 100, 120, 150, 180, 220, 280],
+                  semillas=(20260918, 51505150), descripcion="carretera de montana"),
 }
 
 
@@ -348,7 +354,8 @@ def generar(via):
     p = PRESETS[via]
     Rg = radio_glorieta()
     mitad = (p["largo"] - 2.0 * math.pi * Rg) / 2.0
-    mitades = [tramo(via, mitad, 20250831), tramo(via, mitad, 77771234)]
+    s1, s2 = p.get("semillas", (20250831, 77771234))
+    mitades = [tramo(via, mitad, s1), tramo(via, mitad, s2)]
     mitades = cerrar(via, mitades, Rg)
 
     pts, quien, pos, (gx, gy) = recorrer(via, mitades, Rg)
@@ -444,9 +451,12 @@ def generar(via):
     return ok
 
 
-def main():
+def main(argv=None):
+    """Sin argumentos genera todos los presets; con nombres, solo esos
+    (p.ej. ``python tools/make_carretera.py M-50``)."""
+    vias = [v.upper() for v in (argv or sys.argv[1:])] or list(PRESETS)
     todo = True
-    for via in PRESETS:
+    for via in vias:
         todo = generar(via) and todo
         print()
     print("CUMPLE LA NORMA EN TODO" if todo else "HAY INCUMPLIMIENTOS")

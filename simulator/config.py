@@ -581,6 +581,12 @@ SEGMENT_LENGTH = 4.0         # m por segmento (no cambiar si se usan
                              # circuitos importados)
 DRAW_DISTANCE = 220          # segmentos dibujados; bajar si va lento
                              # [100 .. 400]
+
+# ===========================================================================
+# VISTAS 1 Y 2: INTERIOR Y CABINA
+# ===========================================================================
+# (la tecla C pasa de una vista a otra; cada coche redefine estas alturas y
+# posiciones en su .car, por eso son reglaje de COCHE en el menú)
 CAMERA_HEIGHT = 1.35         # m, altura del OJO del conductor en la vista
                              # interior; cada coche la redefine en su .car
                              # (formula a ras de suelo, autobus en lo alto)
@@ -600,6 +606,10 @@ CAMERA_FORWARD_COCKPIT = 0.4 # m que el ojo va por delante del centro del
 CAMERA_SIDE_COCKPIT = -0.38  # m del ojo a la IZQUIERDA (negativo) o derecha
                              # del eje del coche en la vista de cabina: el
                              # puesto de conducción [-1.2 .. 1.2]
+
+# ===========================================================================
+# VISTAS 3 Y 4: TRASERA CERCANA Y EXTERIOR
+# ===========================================================================
 CAMERA_HEIGHT_REAR = 2.0     # m, altura de la cámara de la vista trasera
                              # CERCANA (el coche visto desde atrás, pegado)
                              # [0.8 .. 3.5]
@@ -612,6 +622,10 @@ CAMERA_BACK_CHASE = 6.5      # m que la cámara de la vista exterior va por
                              # DETRÁS del coche. Es la distancia real; el
                              # FOV (CAMERA_DEPTH) solo cambia cuánto ocupa
                              # en pantalla [3.0 .. 15.0]
+
+# ===========================================================================
+# VISTA 5: ELEVADA (vista de pájaro baja)
+# ===========================================================================
 CAMERA_HEIGHT_HIGH = 9.0     # m, altura de la cámara de la vista ELEVADA
                              # (vista de pájaro baja: da la distancia a la
                              # curva sin perder el detalle) [3.0 .. 30.0]
@@ -626,6 +640,10 @@ CAMERA_ORBIT_HIGH = 45.0     # grados, como máximo, que la cámara elevada se
                              # para ver la trayectoria de lado sin perder la
                              # carretera de delante; 0 = siempre detrás,
                              # negativo = lado EXTERIOR [-80 .. 80]
+
+# ===========================================================================
+# VISTAS 6 Y 7: PLANTA E ISOMÉTRICA
+# ===========================================================================
 CAMERA_HEIGHT_PLAN = 26.0    # m, altura de la cámara de PLANTA (casi cenital
                              # en perspectiva: el plano con relieve)
                              # [8.0 .. 60.0]
@@ -645,6 +663,10 @@ CAMERA_ISO_YAW = 30.0        # grados a un lado del rumbo desde donde mira
 CAMERA_ISO_AHEAD = 12.0      # m por delante del coche donde apunta el centro
                              # de la isométrica (para ver lo que viene)
                              # [0 .. 60]
+
+# ===========================================================================
+# CÁMARA: COMÚN A TODAS LAS VISTAS
+# ===========================================================================
 CAMERA_GRADE_GAIN = 1.3      # exageración VISUAL de las pendientes: la cota
                              # de la escena se escala respecto a la cámara
                              # (1 = real; con 1,3 un 10 % se ve como un 13 %).
@@ -672,6 +694,10 @@ CAMERA_GLEAN = 1.0           # la cabeza del piloto cae hacia FUERA con la
 CAMERA_SHAKE = 1.0           # temblor visual por baches y patinaje. SOLO
                              # visual: no toca la física ni las cargas.
                              # 0 = imagen quieta [0 .. 3]
+
+# ===========================================================================
+# HUD Y AYUDAS EN PANTALLA
+# ===========================================================================
 RACING_LINE = True           # trazada ideal (tecla L): verde = margen,
                              # ámbar = al límite, rojo = no llegas a frenar
 MINIMAP = True               # plano del circuito COMPLETO arriba a la
@@ -771,6 +797,17 @@ TRACK_TREES = True           # árboles en la franja de hierba (solo con la
 TREE_SPACING_M = 40.0        # m entre árboles a lo largo del circuito (se
                              # reparten al azar a un lado u otro y a
                              # distintas distancias del borde) [15 .. 150]
+TREE_HEIGHT_M = 14.0         # m, altura MEDIA de los árboles (cada uno entre
+                             # el 60 y el 140 %; un pino adulto mide 15-25 m)
+                             # [4 .. 30]
+TREE_HILLSIDE_M = 120.0      # m de ladera, a cada lado, que se puebla de
+                             # BOSQUE en los circuitos con terreno (M-50):
+                             # los árboles se plantan más allá de la cresta
+                             # del desmonte o del pie del terraplén, a la cota
+                             # del terreno, con la misma densidad por hectárea
+                             # que la franja (una fila cada 20 m de ladera).
+                             # 0 = solo la franja junto a la carretera
+                             # [0 .. 180]
 TRACK_GUARDRAIL_RADIUS = 250.0  # BIONDA (barrera metalica) en el exterior de
                              # toda curva de radio menor que este valor (m),
                              # prolongada 20 m antes y despues; 0 = sin

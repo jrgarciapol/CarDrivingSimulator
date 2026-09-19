@@ -325,7 +325,10 @@ class Terreno:
                 continue
             v = np.array(vec)
             ds = np.abs((v - i + N // 2) % N - N // 2) * cfg.SEGMENT_LENGTH
-            otros = v[ds > 80.0]
+            # "otro tramo" = a mas de 250 m de estacion: con 80 m una curva
+            # de 85 m de radio se veia a si misma (cuerda de 77 m) y se
+            # cortaba la ladera a 40 m en media montana
+            otros = v[ds > 250.0]
             if len(otros):
                 dist = np.hypot(x[otros] - x[i], y[otros] - y[i]).min()
                 alcance[i] = max(ALCANCE_MIN, 0.5 * dist)

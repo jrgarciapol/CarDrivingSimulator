@@ -62,6 +62,20 @@ def main():
     ent_int = ent["SPEEDO_STEP_KMH"]
     r.append(check("los enteros conservan pasos enteros (2 y 10 para 20..100)",
                    tuning._step(ent_int, False) == 2 and tuning._step(ent_int, True) == 10))
+    # --- las vistas van en submenus propios (secciones de config.py) -------
+    secciones = {e["section"]: e["name"] for e in tuning.get_entries()}
+    vistas = [s for s in secciones if s.startswith("VISTA")]
+    r.append(check("cada vista (o pareja) tiene su categoria en el menu: interior "
+                   "y cabina, trasera y exterior, elevada, planta e isometrica, "
+                   "mas la comun de camara y la del HUD",
+                   len(vistas) == 4
+                   and ent["CAMERA_HEIGHT"]["section"] == ent["CAMERA_SIDE_COCKPIT"]["section"]
+                   and ent["CAMERA_HEIGHT_HIGH"]["section"].startswith("VISTA 5")
+                   and ent["CAMERA_ISO_YAW"]["section"] == ent["CAMERA_HEIGHT_PLAN"]["section"]
+                   and ent["CAMERA_GRADE_GAIN"]["section"].startswith("CAMARA: COMUN")
+                   and ent["RACING_LINE"]["section"].startswith("HUD")
+                   and ent["CAMERA_HEIGHT"]["section"] != ent["CAMERA_HEIGHT_REAR"]["section"],
+                   ", ".join(vistas)))
     n_ok = sum(1 for x in r if x)
     print(f"\n{n_ok}/{len(r)} pruebas correctas")
     return 0 if n_ok == len(r) else 1

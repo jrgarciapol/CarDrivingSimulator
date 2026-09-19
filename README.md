@@ -75,7 +75,7 @@ jugar con **mando** (Steam Deck, XBox, PlayStation) o con teclado.
   fluctuar la carga vertical y el agarre — se ven en el asfalto, se sienten
   en el temblor de cámara y en la textura del volante.
 - Relación de dirección real (900° de volante ≈ ±37° en las ruedas).
-- Verificado con una batería de **489 pruebas** (`python tests/`): 120 de
+- Verificado con una batería de **491 pruebas** (`python tests/`): 120 de
   comportamiento (0-100 en ~7 s, frenada 100-0 en ~39 m con ABS, subviraje
   estable en el límite, AWD saliendo más rápido que RWD, deriva por
   peralte…), más pruebas de **magnitudes contra primeros principios**
@@ -446,9 +446,10 @@ con el asfalto (así se alarga hacia el lado opuesto al disco del sol, gira
 con el coche y desaparece con lluvia). Ambas van sin test de profundidad
 para que no se corten con las rasantes.
 En la franja de hierba hay **árboles** (`TRACK_TREES`, uno cada
-`TREE_SPACING_M` metros): frondosos y pinos de formas sencillas, plantados
-al azar con semilla fija (siempre los mismos en cada circuito), sombreados
-por el sol y con la bruma de la distancia; cuestan unos 1.500 triángulos por
+`TREE_SPACING_M` metros, de `TREE_HEIGHT_M` de altura media, cada uno entre
+el 60 y el 140 %): frondosos y pinos de formas sencillas, plantados al azar
+con semilla fija (siempre los mismos en cada circuito), sombreados por el
+sol y con la bruma de la distancia; cuestan unos 1.500 triángulos por
 fotograma. Las balizas de borde van a estaciones fijas cada 6 m, sea cual
 sea el paso de la malla. Al derrapar o bloquear sobre asfalto las ruedas
 dejan **huellas de goma** (`TRACK_SKID_MARKS`): cada rueda anota su
@@ -510,7 +511,8 @@ estructura). En la M-50 salen 7 túneles (hasta 704 m) y 7 puentes (hasta
 `.csv`; los demás circuitos siguen como estaban.
 
 Donde dos tramos de la carretera pasan cerca (menos de 360 m en planta y
-separados más de 80 m de estación) cada uno tiene un **alcance lateral**:
+separados más de 250 m de estación, para que una curva no se vea a sí
+misma) cada uno tiene un **alcance lateral**:
 su ladera llega hasta la mitad de la distancia al otro tramo (mínimo 6 m)
 y ahí se corta. Antes cada tramo tendía su ladera a 180 m y la del de
 arriba pasaba por encima de la calzada del de abajo ("la hierba encima de
@@ -534,9 +536,15 @@ del coche** (un cono hacia delante), todo fundido con la luz de día en los
 40 m de cada boca; el modelo del coche se oscurece y el fondo del cielo se
 apaga. Los **árboles** se plantan sobre el suelo que se pinta (el perfil
 transversal: talud del desmonte o del terraplén y ladera natural), no a la
-cota de la carretera: en un desmonte suben por el talud, en un puente
-quedan abajo, en el valle. Coste: unos 6.000 cuadriláteros y 2-3 ms más de
-malla por fotograma en la M-50.
+cota de la carretera, y la ladera lleva **bosque**: `TREE_HILLSIDE_M`
+metros a cada lado (120) más allá de la cresta del desmonte o del pie del
+terraplén, una fila cada 20 m de ladera con el espaciado de la franja, sin
+pasar del alcance del tramo (unos 7.000 árboles en la M-50, 200 a la
+vista). La hierba lejos de la calzada lleva **rodales de matorral** más
+oscuro y **calvas de tierra seca** de 20-40 m que no se funden con la
+distancia, y la roca cambia de tono por zonas: la montaña deja de ser un
+verde plano. Coste: unos 6.000 cuadriláteros y 2-3 ms más de malla por
+fotograma en la M-50.
 
 **Sonido del túnel.** El sintetizador recibe cuánto túnel hay (1 − luz de
 día del tramo) y mezcla tres reflexiones del propio sonido (53, 97 y

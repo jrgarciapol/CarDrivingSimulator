@@ -202,6 +202,25 @@ def main():
                        escena.montana_dibujada > 1000 and (tipos == gpu.TIPO_ROCA).sum() > 20,
                        f"{escena.montana_dibujada} cuadrilateros, "
                        f"{int((tipos == gpu.TIPO_ROCA).sum())} de roca"))
+        # bosque en la ladera: miles de arboles mas alla de la cresta o del
+        # pie, todos dentro del alcance lateral del tramo y con la altura
+        # media de TREE_HEIGHT_M
+        arb = escena._arboles_track
+        lad = arb["ladera"]
+        ia = (np.mod(arb["s"][lad], pista.length) / L).astype(int) % len(t.perfil_lat)
+        o_abs = arb["dist"][lad] + hw_kw[ia]
+        pie = np.where(arb["lado"][lad] > 0, t.perfil_lat[ia, 12], -t.perfil_lat[ia, 7])
+        fin = np.where(arb["lado"][lad] > 0, t.perfil_lat[ia, 19], -t.perfil_lat[ia, 0])
+        r.append(check("la M-50 lleva un bosque en la ladera (miles de arboles), todos "
+                       "mas alla de la cresta o del pie del talud y dentro del alcance "
+                       "del tramo, con la altura de TREE_HEIGHT_M (60-140 %)",
+                       lad.sum() > 1000 and np.all(o_abs > pie + 2.9)
+                       and np.all(o_abs < fin - 1.9)
+                       and abs(arb["alto"].mean() - cfg.TREE_HEIGHT_M) < 0.1 * cfg.TREE_HEIGHT_M
+                       and arb["alto"].max() <= 1.4 * cfg.TREE_HEIGHT_M + 1e-6,
+                       f"{int(lad.sum())} de ladera, {int((~lad).sum())} de franja, "
+                       f"ladera hasta {o_abs.max():.0f} m del eje, altura media "
+                       f"{arb['alto'].mean():.1f} m"))
         # puente: pilas (tablas grises lisas) y caras del tablero
         k_p, m_p = max(t.tramos(terreno.PUENTE), key=lambda km: km[1])
         im_pue = fotograma((k_p + m_p // 2) * L)

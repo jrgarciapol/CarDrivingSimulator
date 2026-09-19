@@ -50,7 +50,11 @@ CD = 0.309                     # coef. de arrastre aerodinamico (turismo ~0.30)
 FRONTAL_AREA = 1.90             # m2, area frontal del coche
 CL = 1.117                     # coef. de carga aerodinamica (0 = sin apendices)
 AERO_DF_FRONT_SHARE = 0.44        # fraccion de carga aero en el eje delantero
-BRAKE_FORCE_MAX = 26000.0         # N, fuerza maxima de frenada total
+BRAKE_FORCE_MAX = 20000.0         # N, fuerza maxima de frenada total (el
+                                  # agarre da unos 17.400 N: el ABS solo
+                                  # entra en el ultimo 15 % del pedal; con
+                                  # 26.000 bloqueaba a media pisada y con
+                                  # 16.000 frenaba mal en curva)
 BRAKE_BIAS_FRONT = 0.68           # fraccion de frenada al eje delantero
 CAMERA_HEIGHT = 1.05              # m, ojo del conductor: casi tumbado
 SUSP_CAMBER_GAIN = 0.55            # rad/m: geometria de circuito

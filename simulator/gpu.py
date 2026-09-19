@@ -155,8 +155,11 @@ void main() {
             c *= 1.0 + (tipo > 251.5 ? 0.2 : 0.3) * (g1 - 0.5) * fino;
         }
         if (tipo < 251.5 && tipo > 250.5) {
-            // roca: estratos horizontales (bandas por cota)
+            // roca: estratos horizontales (bandas por cota) y manchas
+            // grandes de tono (roca mas clara o mas oxidada por zonas)
             c *= 0.92 + 0.16 * ruido(vec2(v_pos.y * 1.7, uv.x * 0.05));
+            float m = ruido(uv * 0.06 + 3.0);
+            c = mix(c, c * vec3(1.14, 1.04, 0.90), 0.6 * smoothstep(0.55, 0.75, m));
         }
         if (tipo > 251.5 || tipo < 250.5) {
             float luz = luz_tunel(v_uv.x, v_uv.y, v_pos);
@@ -197,6 +200,15 @@ void main() {
             float fuera = abs(n) - hw;             // m desde el borde del asfalto
             float tierra = smoothstep(1.4, 0.2, fuera) * (0.55 + 0.45 * g1) * medio;
             c = mix(c, vec3(0.44, 0.37, 0.26) * (0.8 + 0.4 * g1), 0.45 * tierra);
+            // LADERA (lejos de la calzada): rodales de matorral mas oscuro y
+            // calvas de tierra seca de 20-40 m que NO se funden con la
+            // distancia (son grandes): la montana deja de ser un verde plano
+            float lejos = smoothstep(6.0, 18.0, fuera);
+            float p1 = ruido(uv * 0.04 + 11.0);
+            float p2 = ruido(uv * 0.09 + 5.0);
+            float sh = clamp(c.g / 0.55, 0.4, 1.4);       // conserva la sombra del sol
+            c = mix(c, vec3(0.12, 0.27, 0.10) * sh, lejos * 0.85 * smoothstep(0.46, 0.62, p1));
+            c = mix(c, vec3(0.62, 0.52, 0.33) * sh, lejos * 0.80 * smoothstep(0.54, 0.70, p2));
         }
     }
     if (u_bruma_d > 1.0) {
@@ -534,7 +546,14 @@ def cota_perfil(terr, s_abs, o):
     f = (u - np.floor(u))[:, None]
     lat = terr.perfil_lat[i0] * (1 - f) + terr.perfil_lat[i1] * f
     alt = terr.perfil_alt[i0] * (1 - f) + terr.perfil_alt[i1] * f
-    return np.array([np.interp(oi, li, ai) for oi, li, ai in zip(o, lat, alt)])
+    # interpolacion lineal por filas (np.interp vectorizado: el perfil va
+    # de izquierda a derecha; fuera de el se queda en el extremo)
+    k = np.clip((lat <= o[:, None]).sum(axis=1) - 1, 0, lat.shape[1] - 2)
+    r = np.arange(len(o))
+    la, lb = lat[r, k], lat[r, k + 1]
+    za, zb = alt[r, k], alt[r, k + 1]
+    t = np.clip((o - la) / (lb - la + 1e-9), 0.0, 1.0)
+    return za + t * (zb - za)
 
 
 def _plantillas_arbol():
@@ -1677,18 +1696,45 @@ class GpuScene:
         de la calzada, altura, tipo y tono, repartidos al azar (con semilla
         fija: siempre los mismos) cada TREE_SPACING_M metros."""
         paso = float(getattr(cfg, "TREE_SPACING_M", 40.0))
+        alto_m = float(getattr(cfg, "TREE_HEIGHT_M", 14.0))
         L = float(track.length)
         n = int(L / max(paso, 5.0))
         if n <= 0:
             return None
         rng = np.random.default_rng(int(L * 7.0) + self.N)
         s = (np.arange(n) * paso + rng.uniform(-0.4, 0.4, n) * paso) % L
-        return dict(s=s,
-                    lado=np.where(rng.random(n) < 0.5, -1.0, 1.0),
-                    dist=rng.uniform(4.0, 24.0, n),
-                    alto=rng.uniform(5.0, 11.0, n),
-                    tipo=(rng.random(n) < 0.45).astype(int),
-                    tono=rng.uniform(0.80, 1.15, n))
+        arb = dict(s=s,
+                   lado=np.where(rng.random(n) < 0.5, -1.0, 1.0),
+                   dist=rng.uniform(4.0, 24.0, n),
+                   alto=alto_m * rng.uniform(0.6, 1.4, n),
+                   tipo=(rng.random(n) < 0.45).astype(int),
+                   tono=rng.uniform(0.80, 1.15, n),
+                   ladera=np.zeros(n, dtype=bool))
+        # BOSQUE en la ladera (circuitos con terreno): mas alla de la cresta
+        # del desmonte o del pie del terraplen, hasta TREE_HILLSIDE_M, sin
+        # pasar del alcance lateral del tramo (no invadir la carretera vecina)
+        terr = getattr(track, "terreno", None)
+        lad = float(getattr(cfg, "TREE_HILLSIDE_M", 0.0))
+        if terr is not None and lad > 0.0:
+            terr.perfiles(track)
+            filas = max(1, int(round(lad / 20.0)))
+            m = n * filas * 2
+            s2 = rng.uniform(0.0, L, m)
+            lado2 = np.where(rng.random(m) < 0.5, -1.0, 1.0)
+            i = (s2 / cfg.SEGMENT_LENGTH).astype(int) % len(terr.perfil_lat)
+            lat = terr.perfil_lat
+            pie = np.where(lado2 > 0, lat[i, 12], -lat[i, 7])     # cresta/pie
+            fin = np.where(lado2 > 0, lat[i, 19], -lat[i, 0])     # alcance
+            o_abs = pie + 3.0 + rng.uniform(0.0, 1.0, m) * lad
+            hw_kw = np.array([sg.half_w for sg in track.segments])[i] + cfg.KERB_WIDTH
+            ok = o_abs < fin - 2.0
+            arb = {k: np.concatenate([arb[k], v[ok]]) for k, v in dict(
+                s=s2, lado=lado2, dist=o_abs - hw_kw,
+                alto=alto_m * rng.uniform(0.6, 1.4, m),
+                tipo=(rng.random(m) < 0.6).astype(int),
+                tono=rng.uniform(0.75, 1.15, m),
+                ladera=np.ones(m, dtype=bool)).items()}
+        return arb
 
     def _arboles(self, track, s0, rels, x, z, hx, hz, elev, cb, sb, hw, kw,
                  rumbo_seg):
@@ -1712,7 +1758,10 @@ class GpuScene:
         ei = np.interp(d, rels, elev)
         cbi, sbi = np.interp(d, rels, cb), np.interp(d, rels, sb)
         hwi = np.interp(d, rels, hw)
-        dist = np.minimum(arb["dist"][vis], ANCHO_HIERBA - hwi - kw - 3.0)
+        # los de la franja no salen de la hierba; los de la ladera van donde
+        # se plantaron (ya acotados al alcance del tramo)
+        dist = np.where(arb["ladera"][vis], arb["dist"][vis],
+                        np.minimum(arb["dist"][vis], ANCHO_HIERBA - hwi - kw - 3.0))
         o = arb["lado"][vis] * (hwi + kw + dist)
         base = np.stack([xi + hxi * o * cbi, ei - o * sbi, zi + hzi * o * cbi],
                         axis=1)

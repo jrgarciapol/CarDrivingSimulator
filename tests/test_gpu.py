@@ -249,7 +249,9 @@ def main():
         i_max = int(np.argmax(np.abs(bancos)))       # la curva mas peraltada
         st.s = i_max * cfg.SEGMENT_LENGTH + 2.0
         sdl2.SDL_RenderClear(ren)
+        cfg.TRACK_TREES = False        # un arbol en la columna tapaba el horizonte
         escena.dibujar(ov, st, cam, True, pal)
+        cfg.TRACK_TREES = True
         sdl2.SDL_RenderPresent(ren)
         img = leer().astype(int)
 

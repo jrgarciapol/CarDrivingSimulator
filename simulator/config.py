@@ -694,6 +694,12 @@ CAMERA_GLEAN = 1.0           # la cabeza del piloto cae hacia FUERA con la
 CAMERA_SHAKE = 1.0           # temblor visual por baches y patinaje. SOLO
                              # visual: no toca la física ni las cargas.
                              # 0 = imagen quieta [0 .. 3]
+CAR_BODY_MOTION_EXAG = 5.0   # exageración visual del CABECEO, BALANCEO y
+                             # BOTE de la carrocería en pantalla (coche de
+                             # cajas y modelo 3D en las vistas exteriores;
+                             # en la de cabina la cámara va con ella). Solo
+                             # visual: la física no cambia. 1 = real; cada
+                             # coche lo redefine en su .car [1 .. 5]
 
 # ===========================================================================
 # HUD Y AYUDAS EN PANTALLA
@@ -751,8 +757,6 @@ CHEVRON_MAX_RADIUS = 200.0   # PANELES DIRECCIONALES (chevrons) en el exterior
                              # que dice hacia dónde y cómo de cerrada es la
                              # curva antes de entrar. 0 = sin chevrons
                              # [0 .. 800]
-CAR_BODY_MOTION_EXAG = 5.0   # exageración visual del cabeceo/balanceo de la
-                             # carrocería en pantalla; 1 = real [1 .. 5] 3
 TELEM_DOT_LOAD_GAIN = 8.0    # F2: cuánto crece el diámetro del punto del
                              # círculo de fricción con la carga de la rueda
                              # (radio px = 1 + ganancia x carga/estática);
